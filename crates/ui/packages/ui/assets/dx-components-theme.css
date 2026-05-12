@@ -1,0 +1,120 @@
+/* This file contains the theme variables for the styled dioxus components. You only
+ * need to import this file once in your project root.
+ */
+
+html[data-theme="dark"] {
+  --dark: initial;
+  --light: ;
+}
+
+html[data-theme="light"] {
+  --dark: ;
+  --light: initial;
+}
+
+html[data-theme="dark"] [class~="dxc-system"] {
+  --dxc-light-on: ;
+  --dxc-dark-on: initial;
+}
+
+html[data-theme="light"] [class~="dxc-system"] {
+  --dxc-light-on: initial;
+  --dxc-dark-on: ;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --dark: initial;
+    --light: ;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --dark: ;
+    --light: initial;
+  }
+}
+
+:root {
+  /* Primary colors */
+  --primary-color: var(--dark, hsl(223.8136 0.0000% 9.0527%)) var(--light, hsl(223.8136 -172.5242% 100.0000%));
+  --primary-color-1: var(--dark, hsl(223.8136 0.0000% 5.5945%)) var(--light, hsl(223.8136 0.0011% 99.3410%));
+  --primary-color-2: var(--dark, hsl(223.8136 0.0000% 9.0527%)) var(--light, hsl(223.8136 -172.5242% 100.0000%));
+  --primary-color-3: var(--dark, hsl(223.8136 0.0000% 14.9382%)) var(--light, hsl(223.8136 0.0001% 93.4480%));
+  --primary-color-4: var(--dark, hsl(223.8136 0.0000% 25.0471%)) var(--light, hsl(223.8136 0.0001% 93.4480%));
+  --primary-color-5: var(--dark, hsl(223.8136 0.0000% 14.9382%)) var(--light, hsl(223.8136 0.0001% 93.4480%));
+  --primary-color-6: var(--dark, hsl(223.8136 0.0000% 14.9382%)) var(--light, hsl(223.8136 0.0002% 96.0587%));
+  --primary-color-7: var(--dark, hsl(223.8136 0.0000% 45.1519%)) var(--light, hsl(223.8136 0.0000% 63.0163%));
+
+  /* Secondary colors */
+  --secondary-color: var(--dark, hsl(223.8136 0.0004% 98.0256%)) var(--light, hsl(223.8136 0.0000% 3.9388%));
+  --secondary-color-1: var(--dark, hsl(223.8136 0.0004% 98.0256%)) var(--light, hsl(223.8136 0.0000% 3.9388%));
+  --secondary-color-2: var(--dark, hsl(223.8136 0.0001% 89.8161%)) var(--light, hsl(223.8136 0.0000% 9.0527%));
+  --secondary-color-3: var(--dark, hsl(223.8136 0.0004% 98.0256%)) var(--light, hsl(223.8136 0.0000% 3.9388%));
+  --secondary-color-4: var(--dark, hsl(223.8136 0.0004% 98.0256%)) var(--light, hsl(223.8136 0.0000% 9.0527%));
+  --secondary-color-5: var(--dark, hsl(223.8136 0.0000% 63.0163%)) var(--light, hsl(223.8136 0.0000% 45.1519%));
+  --secondary-color-6: var(--dark, hsl(223.8136 0.0000% 32.1993%)) var(--light, hsl(223.8136 0.0001% 89.8161%));
+
+  /* Highlight colors */
+  --focused-border-color: var(--dark, hsl(223.8136 0.0000% 45.1519%)) var(--light, hsl(223.8136 0.0000% 63.0163%));
+  --primary-success-color: var(--dark, #02271c) var(--light, #ecfdf5);
+  --secondary-success-color: var(--dark, #b6fae3) var(--light, #10b981);
+  --primary-warning-color: var(--dark, #342203) var(--light, #fffbeb);
+  --secondary-warning-color: var(--dark, #feeac7) var(--light, #f59e0b);
+  --primary-error-color: var(--dark, hsl(358.7594 101.8439% 69.8357%)) var(--light, hsl(351.7303 123.6748% 40.5257%));
+  --secondary-error-color: var(--dark, hsl(358.7594 101.8439% 69.8357%)) var(--light, hsl(351.7303 123.6748% 40.5257%));
+  --contrast-error-color: var(--dark, var(--secondary-color-3)) var(--light, var(--primary-color));
+  --primary-info-color: var(--dark, var(--primary-color-5)) var(--light, var(--primary-color));
+  --secondary-info-color: var(--dark, var(--primary-color-7)) var(--light, var(--secondary-color-3));
+
+  /* Token colors */
+  --background: var(--primary-color);
+  --foreground: var(--secondary-color);
+  --card: var(--primary-color-1);
+  --card-foreground: var(--secondary-color);
+  --popover: var(--primary-color-2);
+  --popover-foreground: var(--secondary-color);
+  --primary: var(--secondary-color-2);
+  --primary-foreground: var(--primary-color-2);
+  --secondary: var(--primary-color-3);
+  --secondary-foreground: var(--secondary-color);
+  --muted: var(--primary-color-3);
+  --muted-foreground: var(--secondary-color-5);
+  --accent: var(--primary-color-4);
+  --accent-foreground: var(--secondary-color-1);
+  --destructive: var(--primary-error-color);
+  --destructive-foreground: var(--secondary-color-1);
+  --border: var(--primary-color-5);
+  --input: var(--primary-color-6);
+  --ring: var(--focused-border-color);
+
+  --chart-1: var(--dark, hsl(211.7880 101.9718% 78.6759%)) var(--light, hsl(211.7880 101.9718% 78.6759%));
+  --chart-2: var(--dark, hsl(217.4076 91.3672% 59.5787%)) var(--light, hsl(217.4076 91.3672% 59.5787%));
+  --chart-3: var(--dark, hsl(221.4336 86.3731% 54.0624%)) var(--light, hsl(221.4336 86.3731% 54.0624%));
+  --chart-4: var(--dark, hsl(223.6587 78.7180% 47.8635%)) var(--light, hsl(223.6587 78.7180% 47.8635%));
+  --chart-5: var(--dark, hsl(226.5426 70.0108% 39.9224%)) var(--light, hsl(226.5426 70.0108% 39.9224%));
+
+  --sidebar: var(--dark, hsl(223.8136 0.0000% 14.9382%)) var(--light, hsl(223.8136 0.0004% 98.0256%));
+  --sidebar-foreground: var(--dark, hsl(223.8136 0.0004% 98.0256%)) var(--light, hsl(223.8136 0.0000% 3.9388%));
+  --sidebar-primary: var(--dark, hsl(225.3451 84.0953% 48.9841%)) var(--light, hsl(223.8136 0.0000% 9.0527%));
+  --sidebar-primary-foreground: var(--dark, hsl(223.8136 0.0004% 98.0256%)) var(--light, hsl(223.8136 0.0004% 98.0256%));
+  --sidebar-accent: var(--dark, hsl(223.8136 0.0000% 14.9382%)) var(--light, hsl(223.8136 0.0002% 96.0587%));
+  --sidebar-accent-foreground: var(--dark, hsl(223.8136 0.0004% 98.0256%)) var(--light, hsl(223.8136 0.0000% 9.0527%));
+  --sidebar-border: var(--dark, hsl(223.8136 0.0000% 15.5096%)) var(--light, hsl(223.8136 0.0001% 89.8161%));
+  --sidebar-ring: var(--dark, hsl(223.8136 0.0000% 32.1993%)) var(--light, hsl(223.8136 0.0000% 63.0163%));
+
+  --font-sans: DM Sans, ui-sans-serif, sans-serif, system-ui;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono: Geist Mono, ui-monospace, monospace;
+
+  --radius: 1rem;
+  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+  --shadow-sm: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
+  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 1px 2px -1px hsl(0 0% 0% / 0.10);
+  --shadow-md: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 2px 4px -1px hsl(0 0% 0% / 0.10);
+  --shadow-lg: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 4px 6px -1px hsl(0 0% 0% / 0.10);
+  --shadow-xl: 0 1px 3px 0px hsl(0 0% 0% / 0.10), 0 8px 10px -1px hsl(0 0% 0% / 0.10);
+  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+}

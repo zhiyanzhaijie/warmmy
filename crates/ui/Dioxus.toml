@@ -1,0 +1,6 @@
+[application]
+name = "warmmy"
+
+[bundle]
+identifier = "com.zhiyanzhaijie.warmmy"
+publisher = "zhiyanzhaijie"

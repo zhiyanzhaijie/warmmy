@@ -1,17 +1,19 @@
 use dioxus::prelude::*;
 use ui::{
-    features::{BlogFeature as Blog, HomeFeature as Home},
-    Navbar,
+    layouts::AppLayout,
+    views::{ChatView, HomeView, MeView},
 };
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 enum Route {
-    #[layout(DesktopNavbar)]
+    #[layout(DesktopLayout)]
     #[route("/")]
-    Home {},
-    #[route("/blog/:id")]
-    Blog { id: i32 },
+    HomeView {},
+    #[route("/chat")]
+    ChatView {},
+    #[route("/me")]
+    MeView {},
 }
 
 const MAIN_CSS: Asset = asset!("/assets/main.css");
@@ -22,32 +24,35 @@ fn main() {
 
 #[component]
 fn App() -> Element {
-    // Build cool things ✌️
 
     rsx! {
-        // Global app resources
-        document::Link { rel: "stylesheet", href: MAIN_CSS }
-
         Router::<Route> {}
     }
 }
 
-/// A desktop-specific Router around the shared `Navbar` component
-/// which allows us to use the desktop-specific `Route` enum.
-#[component]
-fn DesktopNavbar() -> Element {
-    rsx! {
-        Navbar {
-            Link {
-                to: Route::Home {},
-                "Home"
-            }
-            Link {
-                to: Route::Blog { id: 1 },
-                "Blog"
-            }
-        }
 
-        Outlet::<Route> {}
+#[component]
+fn DesktopLayout() -> Element {
+    rsx! {
+        AppLayout {
+            nav {
+                Link {
+                    to: Route::HomeView {},
+                    "home"
+                }
+                " · "
+                Link {
+                    to: Route::ChatView {},
+                    "/chat"
+                }
+                " · "
+                Link {
+                    to: Route::MeView {},
+                    "/me"
+                }
+            }
+            Outlet::<Route> {}
+        }
+        document::Link { rel: "stylesheet", href: MAIN_CSS }
     }
 }
