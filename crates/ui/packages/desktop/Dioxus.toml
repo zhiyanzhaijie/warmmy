@@ -1,3 +1,3 @@
 [application]
 tailwind_input = "tailwind.css"
-tailwind_output = "assets/web.css"
+tailwind_output = "assets/desktop.css"

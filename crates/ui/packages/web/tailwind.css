@@ -1,2 +1,5 @@
 @import "tailwindcss";
-@import "./assets/theme.css";
+@import "../ui/assets/theme.css";
+
+@source "./src/**/*.{rs,html,css}";
+@source "../ui/src/**/*.{rs,html,css}";

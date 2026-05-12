@@ -1,13 +1,14 @@
 use dioxus::prelude::*;
-use ui::{
-    layouts::AppLayout,
-    views::{ChatView, HomeView, MeView},
-};
+use ui::views::{ChatView, HomeView, MeView};
+
+mod layouts;
+use layouts::RootLayout;
+const MOBILE_CSS: Asset = asset!("/assets/mobile.css");
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 enum Route {
-    #[layout(MobileLayout)]
+    #[layout(RootLayout)]
     #[route("/")]
     HomeView {},
     #[route("/chat")]
@@ -16,43 +17,14 @@ enum Route {
     MeView {},
 }
 
-const MAIN_CSS: Asset = asset!("/assets/main.css");
-
 fn main() {
     dioxus::launch(App);
 }
 
 #[component]
 fn App() -> Element {
-
     rsx! {
+        document::Stylesheet { href: MOBILE_CSS }
         Router::<Route> {}
-    }
-}
-
-
-#[component]
-fn MobileLayout() -> Element {
-    rsx! {
-        AppLayout {
-            nav {
-                Link {
-                    to: Route::HomeView {},
-                    "home"
-                }
-                " · "
-                Link {
-                    to: Route::ChatView {},
-                    "/chat"
-                }
-                " · "
-                Link {
-                    to: Route::MeView {},
-                    "/me"
-                }
-            }
-            Outlet::<Route> {}
-        }
-        document::Link { rel: "stylesheet", href: MAIN_CSS }
     }
 }

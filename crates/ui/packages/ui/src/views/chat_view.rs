@@ -6,6 +6,7 @@ use crate::blocks::ChatBlock;
 pub fn ChatView() -> Element {
     rsx! {
         main {
+            class: "h-full min-h-0",
             ChatBlock {}
         }
     }

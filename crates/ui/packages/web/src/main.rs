@@ -1,8 +1,5 @@
 use dioxus::prelude::*;
-use ui::{
-    layouts::AppLayout,
-    views::{ChatView, HomeView, MeView},
-};
+use ui::views::{ChatView, HomeView, MeView};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
@@ -17,7 +14,7 @@ enum Route {
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
-const MAIN_CSS: Asset = asset!("/assets/main.css");
+const WEB_CSS: Asset = asset!("/assets/web.css");
 
 fn main() {
     dioxus::launch(App);
@@ -25,18 +22,15 @@ fn main() {
 
 #[component]
 fn App() -> Element {
-
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
         Router::<Route> {}
     }
 }
 
-
 #[component]
 fn WebLayout() -> Element {
     rsx! {
-        AppLayout {
             nav {
                 Link {
                     to: Route::HomeView {},
@@ -54,7 +48,6 @@ fn WebLayout() -> Element {
                 }
             }
             Outlet::<Route> {}
-        }
-        document::Link { rel: "stylesheet", href: MAIN_CSS }
+        document::Link { rel: "stylesheet", href: WEB_CSS }
     }
 }

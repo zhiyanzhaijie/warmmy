@@ -1,12 +1,12 @@
 use dioxus::prelude::*;
 use dioxus_icons::lucide::X;
-use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::dialog::{
     self, DialogCtx, DialogDescriptionProps, DialogRootProps, DialogTitleProps,
 };
+use dioxus_primitives::dioxus_attributes::attributes;
 use dioxus_primitives::merge_attributes;
 
-#[css_module("/src/components/sheet/style.css")]
+#[css_module("/src/components/ui/sheet/style.css")]
 struct Styles;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -86,7 +86,9 @@ pub fn SheetContent(
 }
 
 #[component]
-pub fn SheetContentClose(#[props(extends = GlobalAttributes)] attributes: Vec<Attribute>) -> Element {
+pub fn SheetContentClose(
+    #[props(extends = GlobalAttributes)] attributes: Vec<Attribute>,
+) -> Element {
     let base = attributes!(button {
         class: Styles::dx_sheet_close,
     });
