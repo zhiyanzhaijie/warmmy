@@ -1,0 +1,27 @@
+[database]
+url = "sqlite://warmmy-example.db"
+
+[llm]
+enable_image_parsing = false
+# 1) Provider 连接配置
+[llm.providers.deepseek]
+base_url = "https://api.deepseek.com/v1"
+api_key = "replace-with-deepseek-api-key"
+
+[llm.providers.openai]
+base_url = "https://api.openai.com/v1"
+api_key = "replace-with-openai-api-key"
+
+# 2) 模型别名定义（模型 -> provider + model id）
+[llm.models.reasoning_text]
+provider = "deepseek"
+model = "deepseek-chat"
+
+[llm.models.perception_vision]
+provider = "openai"
+model = "gpt-4o-mini"
+
+# 3) 运行时路由（能力 -> 模型别名）
+[llm.routing]
+reasoning = "reasoning_text"
+perception = "perception_vision"

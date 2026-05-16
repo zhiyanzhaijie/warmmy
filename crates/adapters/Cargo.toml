@@ -12,4 +12,5 @@ thiserror = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["sync"] }
-toasty = { version = "0.5.0", features = ["postgresql"] }
+toasty = { version = "0.5.0", features = ["sqlite"] }
+rig = "0.36.0"

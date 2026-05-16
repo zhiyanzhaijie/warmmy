@@ -9,18 +9,18 @@ use domain::MealRecord;
 use super::models::MealRecordRow;
 
 #[derive(Clone)]
-pub struct PsqlMealRepo {
+pub struct SqliteMealRepo {
     db: Arc<Mutex<toasty::Db>>,
 }
 
-impl PsqlMealRepo {
+impl SqliteMealRepo {
     pub fn new(db: Arc<Mutex<toasty::Db>>) -> Self {
         Self { db }
     }
 }
 
 #[async_trait]
-impl MealRecordRepositoryPort for PsqlMealRepo {
+impl MealRecordRepositoryPort for SqliteMealRepo {
     async fn save_meal(&self, meal: &MealRecord) -> Result<(), String> {
         let foods_json = serde_json::to_string(&meal.foods).map_err(|err| err.to_string())?;
         let nutrition_json =

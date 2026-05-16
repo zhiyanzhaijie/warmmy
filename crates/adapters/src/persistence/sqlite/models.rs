@@ -12,7 +12,7 @@ pub struct UserProfileRow {
 pub struct MealRecordRow {
     #[key]
     #[auto]
-    pub id: i64,
+    pub id: i32,
     #[index]
     pub user_id: String,
     pub day_cycle: String,

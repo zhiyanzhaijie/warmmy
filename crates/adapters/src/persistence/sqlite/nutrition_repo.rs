@@ -3,11 +3,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
-pub struct PsqlNutritionRepo {
+pub struct SqliteNutritionRepo {
     db: Arc<Mutex<toasty::Db>>,
 }
 
-impl PsqlNutritionRepo {
+impl SqliteNutritionRepo {
     pub fn new(db: Arc<Mutex<toasty::Db>>) -> Self {
         Self { db }
     }

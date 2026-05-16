@@ -1,9 +1,9 @@
 use std::sync::Arc;
+use crate::common::agent::SessionMemoryPort;
 
 use domain::UserId;
 
 use crate::app_error::{AppError, AppResult};
-use crate::meal::SessionMemoryPort;
 
 #[derive(Clone)]
 pub struct MealQueryHandler {

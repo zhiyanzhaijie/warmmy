@@ -3,18 +3,17 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use application::common::agent::SessionMemoryPort;
 use async_trait::async_trait;
 use domain::UserId;
 
-use application::meal::SessionMemoryPort;
-
 #[derive(Clone, Default)]
-pub struct QdrantMemory {
+pub struct LocalMemory {
     session_messages: Arc<Mutex<HashMap<String, Vec<String>>>>,
 }
 
 #[async_trait]
-impl SessionMemoryPort for QdrantMemory {
+impl SessionMemoryPort for LocalMemory {
     async fn get_recent_dialogue(&self, user_id: &UserId) -> Result<Vec<String>, String> {
         let store = self
             .session_messages

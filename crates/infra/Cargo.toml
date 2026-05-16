@@ -7,4 +7,5 @@ authors.workspace = true
 [dependencies]
 adapters = { path = "../adapters" }
 application = { path = "../application" }
+config = "0.14"
 serde = { version = "1.0", features = ["derive"] }

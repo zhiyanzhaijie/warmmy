@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use domain::{DayCycle, MealAdvice, MealRecord, UserId};
-
-use crate::advice::{impls::build_meal_advice_prompt, KnowledgeBasePort};
+use crate::advice::impls::build_meal_advice_prompt;
 use crate::app_error::{AppError, AppResult};
-use crate::meal::{LlmPort, MealEventHandler, MealRecordRepositoryPort, SessionMemoryPort};
+use crate::common::agent::{
+    GuardrailDecision, GuardrailsPort, KnowledgeBasePort, PerceptionInput, PerceptionPort,
+    PlanningPort, ReasoningPort, SessionMemoryPort,
+};
+use crate::meal::impls::parse_food_items_from_perception;
+use crate::meal::{MealEventHandler, MealRecordRepositoryPort};
 use crate::nutrition::impls::estimate_nutrition_from_foods;
 use crate::user::UserProfileRepositoryPort;
+use domain::{DayCycle, MealAdvice, MealRecord, UserId};
 
 #[derive(Debug, Clone)]
 pub enum MealSource {
@@ -35,7 +39,10 @@ pub trait LogMealUseCase: Send + Sync {
 
 #[derive(Clone)]
 pub struct MealCommandHandler {
-    llm: Arc<dyn LlmPort>,
+    reasoning: Arc<dyn ReasoningPort>,
+    perception: Arc<dyn PerceptionPort>,
+    planning: Arc<dyn PlanningPort>,
+    guardrails: Arc<dyn GuardrailsPort>,
     memory: Arc<dyn SessionMemoryPort>,
     user_profiles: Arc<dyn UserProfileRepositoryPort>,
     meals: Arc<dyn MealRecordRepositoryPort>,
@@ -45,14 +52,20 @@ pub struct MealCommandHandler {
 
 impl MealCommandHandler {
     pub fn new(
-        llm: Arc<dyn LlmPort>,
+        reasoning: Arc<dyn ReasoningPort>,
+        perception: Arc<dyn PerceptionPort>,
+        planning: Arc<dyn PlanningPort>,
+        guardrails: Arc<dyn GuardrailsPort>,
         memory: Arc<dyn SessionMemoryPort>,
         user_profiles: Arc<dyn UserProfileRepositoryPort>,
         meals: Arc<dyn MealRecordRepositoryPort>,
         knowledge: Arc<dyn KnowledgeBasePort>,
     ) -> Self {
         Self {
-            llm,
+            reasoning,
+            perception,
+            planning,
+            guardrails,
             memory,
             user_profiles,
             meals,
@@ -65,11 +78,30 @@ impl MealCommandHandler {
         self.event_handler = Some(event_handler);
         self
     }
+
+    async fn ensure_allowed(
+        &self,
+        decision: Result<GuardrailDecision, String>,
+        phase: &str,
+    ) -> AppResult<()> {
+        match decision.map_err(AppError::upstream)? {
+            GuardrailDecision::Allow => Ok(()),
+            GuardrailDecision::Reject(reason) => {
+                Err(AppError::validation(format!("guardrails rejected {phase}: {reason}")))
+            }
+        }
+    }
 }
 
 #[async_trait]
 impl LogMealUseCase for MealCommandHandler {
     async fn handle_meal(&self, input: LogMealCommand) -> AppResult<LogMealResult> {
+        let raw_user_input = match &input.source {
+            MealSource::Text(content) => content.as_str(),
+            MealSource::ImageUrl(image_url) => image_url.as_str(),
+        };
+        self.ensure_allowed(self.guardrails.check_input(raw_user_input).await, "input")
+            .await?;
         let day_cycle = DayCycle::parse(&input.day_cycle)?;
         let profile = self
             .user_profiles
@@ -78,18 +110,22 @@ impl LogMealUseCase for MealCommandHandler {
             .map_err(AppError::upstream)?
             .ok_or_else(|| AppError::NotFound("user profile".to_string()))?;
 
-        let foods = match &input.source {
-            MealSource::Text(content) => self
-                .llm
-                .parse_meal_from_text(content)
-                .await
-                .map_err(AppError::upstream)?,
-            MealSource::ImageUrl(image_url) => self
-                .llm
-                .parse_meal_from_image(image_url)
-                .await
-                .map_err(AppError::upstream)?,
+        let instruction = "请提取食物条目并返回 JSON 数组，每个元素格式为: {\"name\": string, \"quantity\": number, \"unit\": string}。如果数量未知，quantity=1.0，unit=\"份\"。";
+        let perception_output = match &input.source {
+            MealSource::Text(content) => {
+                self.perception
+                    .perceive(PerceptionInput::Text(content.clone()), instruction)
+                    .await
+                    .map_err(AppError::upstream)?
+            }
+            MealSource::ImageUrl(image_url) => {
+                self.perception
+                    .perceive(PerceptionInput::ImageUrl(image_url.clone()), instruction)
+                    .await
+                    .map_err(AppError::upstream)?
+            }
         };
+        let foods = parse_food_items_from_perception(&perception_output).map_err(AppError::upstream)?;
 
         if foods.is_empty() {
             return Err(AppError::validation("parsed meal contains no food items"));
@@ -113,13 +149,34 @@ impl LogMealUseCase for MealCommandHandler {
             .search_user_knowledge(&input.user_id, "diet advice")
             .await
             .map_err(AppError::upstream)?;
-        let prompt = build_meal_advice_prompt(&profile, &meal, &recent_dialogue, &knowledge_hits);
-
-        let generated = self
-            .llm
-            .generate_advice(&prompt)
+        let plan_steps = self
+            .planning
+            .plan(
+                "为用户生成下一餐建议",
+                &[recent_dialogue.join(" | "), knowledge_hits.join(" | ")],
+            )
             .await
             .map_err(AppError::upstream)?;
+        let prompt = format!(
+            "{}\nPlanning steps: {}",
+            build_meal_advice_prompt(&profile, &meal, &recent_dialogue, &knowledge_hits),
+            plan_steps.join(" -> ")
+        );
+
+        let generated = self
+            .reasoning
+            .complete_text("你是专业营养顾问，请提供简洁、可执行的饮食建议。", &prompt)
+            .await
+            .map_err(AppError::upstream)?;
+        let effect = format!(
+            "save_meal_and_append_dialogue:user_id={},day_cycle={}",
+            input.user_id.as_str(),
+            day_cycle.as_str()
+        );
+        self.ensure_allowed(self.guardrails.check_effect(&effect).await, "effect")
+            .await?;
+        self.ensure_allowed(self.guardrails.check_output(&generated).await, "output")
+            .await?;
 
         self.meals.save_meal(&meal).await.map_err(AppError::upstream)?;
         self.memory

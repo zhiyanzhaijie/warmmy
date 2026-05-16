@@ -9,11 +9,11 @@ use domain::{HealthGoal, UserId, UserProfile};
 use super::models::UserProfileRow;
 
 #[derive(Clone)]
-pub struct PsqlUserRepo {
+pub struct SqliteUserRepo {
     db: Arc<Mutex<toasty::Db>>,
 }
 
-impl PsqlUserRepo {
+impl SqliteUserRepo {
     pub fn new(db: Arc<Mutex<toasty::Db>>) -> Self {
         Self { db }
     }
@@ -68,7 +68,7 @@ impl PsqlUserRepo {
 }
 
 #[async_trait]
-impl UserProfileRepositoryPort for PsqlUserRepo {
+impl UserProfileRepositoryPort for SqliteUserRepo {
     async fn find_profile(&self, user_id: &UserId) -> Result<Option<UserProfile>, String> {
         let mut db = self.db.lock().await;
         let id = user_id.as_str().to_string();

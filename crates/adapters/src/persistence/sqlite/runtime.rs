@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use application::{
     app_error::AppResult,
-    advice::KnowledgeBasePort,
+    common::agent::KnowledgeBasePort,
     meal::MealRecordRepositoryPort,
     user::UserProfileRepositoryPort,
 };
@@ -10,28 +10,33 @@ use tokio::sync::Mutex;
 
 use crate::persistence::{DbRepos, PersistenceBackend};
 
-use super::{connect_psql, db_err, PsqlAdviceRepo, PsqlMealRepo, PsqlNutritionRepo, PsqlUserRepo};
+use super::{
+    connect_sqlite, db_err, SqliteAdviceRepo, SqliteMealRepo, SqliteNutritionRepo, SqliteUserRepo,
+};
 
-pub struct PsqlBackend;
+pub struct SqliteBackend;
 
 #[async_trait::async_trait]
-impl PersistenceBackend for PsqlBackend {
+impl PersistenceBackend for SqliteBackend {
     fn name(&self) -> &'static str {
-        "postgresql+toasty"
+        "sqlite+toasty"
     }
 
     fn can_handle(&self, url: &str) -> bool {
-        url.starts_with("postgres://") || url.starts_with("postgresql://")
+        url.starts_with("sqlite://")
+            || url.starts_with("sqlite:")
+            || url.ends_with(".db")
+            || url.ends_with(".sqlite")
     }
 
     async fn build_repos(&self, database_url: &str) -> AppResult<DbRepos> {
-        let db = connect_psql(database_url).await.map_err(db_err)?;
+        let db = connect_sqlite(database_url).await.map_err(db_err)?;
         let db = Arc::new(Mutex::new(db));
 
-        let user_repo_impl = Arc::new(PsqlUserRepo::new(db.clone()));
-        let meal_repo_impl = Arc::new(PsqlMealRepo::new(db.clone()));
-        let advice_repo_impl = Arc::new(PsqlAdviceRepo::new(db.clone()));
-        let nutrition_repo = Arc::new(PsqlNutritionRepo::new(db));
+        let user_repo_impl = Arc::new(SqliteUserRepo::new(db.clone()));
+        let meal_repo_impl = Arc::new(SqliteMealRepo::new(db.clone()));
+        let advice_repo_impl = Arc::new(SqliteAdviceRepo::new(db.clone()));
+        let nutrition_repo = Arc::new(SqliteNutritionRepo::new(db));
 
         let user_repo: Arc<dyn UserProfileRepositoryPort> = user_repo_impl;
         let meal_repo: Arc<dyn MealRecordRepositoryPort> = meal_repo_impl;
