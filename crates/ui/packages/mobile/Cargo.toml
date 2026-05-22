@@ -7,8 +7,11 @@ edition = "2021"
 dioxus = { workspace = true, features = ["router", "fullstack"] }
 dioxus-icons = { version = "0.1.0", default-features = false }
 ui = { workspace = true }
+api = { workspace = true }
+infra = { path = "../../../infra", optional = true }
+anyhow = { version = "1", optional = true }
 
 [features]
 default = []
 mobile = ["dioxus/mobile"]
-server = ["dioxus/server", "ui/server"]
+server = ["dioxus/server", "ui/server", "api/server", "dep:infra", "dep:anyhow"]

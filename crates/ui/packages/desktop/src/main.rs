@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use ui::views::{ChatView, HomeView, MeView};
+use ui::views::{ChatDetailView, HomeView, MeView};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
@@ -7,8 +7,8 @@ enum Route {
     #[layout(DesktopLayout)]
     #[route("/")]
     HomeView {},
-    #[route("/chat")]
-    ChatView {},
+    #[route("/:session_id")]
+    ChatDetailView { session_id: String },
     #[route("/me")]
     MeView {},
 }
@@ -16,6 +16,9 @@ enum Route {
 const DESKTOP_CSS: Asset = asset!("/assets/desktop.css");
 
 fn main() {
+    #[cfg(feature = "server")]
+    dioxus::serve(|| async move { api::build_router(App).await });
+    #[cfg(not(feature = "server"))]
     dioxus::launch(App);
 }
 
@@ -33,11 +36,6 @@ fn DesktopLayout() -> Element {
                 Link {
                     to: Route::HomeView {},
                     "home"
-                }
-                " · "
-                Link {
-                    to: Route::ChatView {},
-                    "/chat"
                 }
                 " · "
                 Link {

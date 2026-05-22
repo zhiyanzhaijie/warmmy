@@ -23,8 +23,7 @@ pub fn RootLayout() -> Element {
 #[component]
 fn BottomNav() -> Element {
     let route = use_route::<Route>();
-    let is_home = matches!(&route, Route::HomeView { .. });
-    let is_chat = matches!(&route, Route::ChatView { .. });
+    let is_chat = matches!(&route, Route::HomeView { .. }) || matches!(&route, Route::ChatDetailView { .. });
     let is_me = matches!(&route, Route::MeView { .. });
 
     rsx! {
@@ -36,17 +35,9 @@ fn BottomNav() -> Element {
                     to: Route::HomeView {},
                     class: format!(
                         "flex flex-col items-center justify-between p-2 relative group {}",
-                        if is_home { "text-foreground" } else { "text-muted-foreground" }
-                    ),
-                    Sparkles { size: 24 }
-                }
-                Link {
-                    to: Route::ChatView {},
-                    class: format!(
-                        "flex flex-col items-center justify-between p-2 relative group {}",
                         if is_chat { "text-foreground" } else { "text-muted-foreground" }
                     ),
-                    Send { size: 24 }
+                    Sparkles { size: 24 }
                 }
                 Link {
                     to: Route::MeView {},
@@ -64,8 +55,7 @@ fn BottomNav() -> Element {
 #[component]
 fn SideNav() -> Element {
     let route = use_route::<Route>();
-    let is_home = matches!(&route, Route::HomeView { .. });
-    let is_chat = matches!(&route, Route::ChatView { .. });
+    let is_chat = matches!(&route, Route::HomeView { .. }) || matches!(&route, Route::ChatDetailView { .. });
     let is_me = matches!(&route, Route::MeView { .. });
     rsx! {
         div {
@@ -88,27 +78,14 @@ fn SideNav() -> Element {
                     to: Route::HomeView {},
                     class: format!(
                         "flex items-center lg:justify-start justify-center gap-4 p-3.5 rounded-[1.25rem] transition-all relative overflow-hidden {}",
-                        if is_home {
-                            "bg-muted text-sidebar-foreground font-bold"
-                        } else {
-                            "text-muted-foreground hover:bg-muted/50 hover:text-sidebar-foreground font-medium"
-                        }
-                    ),
-                    Sparkles { size: 24, class: "mx-auto lg:mx-0 shrink-0" }
-                    span { class: "hidden lg:block", "Home" }
-                }
-                Link {
-                    to: Route::ChatView {},
-                    class: format!(
-                        "flex items-center lg:justify-start justify-center gap-4 p-3.5 rounded-[1.25rem] transition-all relative overflow-hidden {}",
                         if is_chat {
                             "bg-muted text-sidebar-foreground font-bold"
                         } else {
                             "text-muted-foreground hover:bg-muted/50 hover:text-sidebar-foreground font-medium"
                         }
                     ),
-                    Send { size: 24, class: "mx-auto lg:mx-0 shrink-0" }
-                    span { class: "hidden lg:block", "Chat" }
+                    Sparkles { size: 24, class: "mx-auto lg:mx-0 shrink-0" }
+                    span { class: "hidden lg:block", "Diet Buddy" }
                 }
                 Link {
                     to: Route::MeView {},
