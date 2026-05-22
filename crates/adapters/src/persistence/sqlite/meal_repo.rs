@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
-use application::meal::MealRecordRepositoryPort;
+use app::meal::MealRecordRepositoryPort;
 use domain::MealRecord;
 
 use super::models::MealRecordRow;

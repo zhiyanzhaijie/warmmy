@@ -1,20 +1,13 @@
 [package]
-name = "adapters"
+name = "app"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
 [dependencies]
 domain = { path = "../domain" }
-app = { path = "../app" }
 async-trait = "0.1"
 thiserror = "2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
-async-stream = "0.3"
 futures-core = "0.3"
-futures-util = "0.3"
-tokio = { version = "1", features = ["sync"] }
-toasty = { version = "0.5.0", features = ["sqlite"] }
-chrono = { version = "0.4", features = ["serde"] }
-rig = "0.36.0"

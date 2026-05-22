@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tokio::sync::Mutex;
 
-use application::user::UserProfileRepositoryPort;
+use app::user::UserProfileRepositoryPort;
 use domain::{HealthGoal, UserId, UserProfile};
 
 use super::models::UserProfileRow;

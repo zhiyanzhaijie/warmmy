@@ -3,15 +3,21 @@ pub mod sqlite;
 
 use std::sync::Arc;
 
-use application::{
+use app::{
     app_error::{AppError, AppResult},
     common::agent::KnowledgeBasePort,
     meal::MealRecordRepositoryPort,
     user::UserProfileRepositoryPort,
 };
 
+use tokio::sync::Mutex;
+
+use app::conversation::ChatMessageRepositoryPort;
+
 pub struct DbRepos {
+    pub db: Arc<Mutex<toasty::Db>>,
     pub user_repo: Arc<dyn UserProfileRepositoryPort>,
+    pub chat_repo: Arc<dyn ChatMessageRepositoryPort>,
     pub meal_repo: Arc<dyn MealRecordRepositoryPort>,
     pub advice_repo: Arc<dyn KnowledgeBasePort>,
     pub nutrition_repo: Arc<sqlite::SqliteNutritionRepo>,

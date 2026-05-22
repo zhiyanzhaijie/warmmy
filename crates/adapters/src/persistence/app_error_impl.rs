@@ -1,3 +1,3 @@
-pub(crate) fn db_err(err: toasty::Error) -> application::app_error::AppError {
-    application::app_error::AppError::database(err)
+pub(crate) fn db_err(err: toasty::Error) -> app::app_error::AppError {
+    app::app_error::AppError::database(err)
 }

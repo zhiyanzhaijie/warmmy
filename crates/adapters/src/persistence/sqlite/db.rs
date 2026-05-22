@@ -1,12 +1,17 @@
 use toasty::Db;
 
-use super::models::{MealRecordRow, UserProfileRow};
+use super::models::{MealRecordRow, UserProfileRow, ChatMessageRow};
 
 pub async fn connect_sqlite(database_url: &str) -> toasty::Result<Db> {
     let db = toasty::Db::builder()
-        .models(toasty::models!(UserProfileRow, MealRecordRow))
+        .models(toasty::models!(UserProfileRow, MealRecordRow, ChatMessageRow))
         .connect(database_url)
         .await?;
-    db.push_schema().await?;
+    if let Err(err) = db.push_schema().await {
+        let message = err.to_string();
+        if !message.contains("already exists") {
+            return Err(err);
+        }
+    }
     Ok(db)
 }
