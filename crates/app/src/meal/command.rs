@@ -4,7 +4,6 @@ use crate::app_error::{AppError, AppResult};
 use crate::meal::{MealEventHandler, MealRecordRepositoryPort};
 use crate::nutrition::impls::estimate_nutrition_from_foods;
 use crate::user::UserProfileRepositoryPort;
-use async_trait::async_trait;
 use domain::{DayCycle, MealAdvice, MealRecord, UserId};
 
 #[derive(Debug, Clone)]
@@ -18,11 +17,6 @@ pub struct LogMealCommand {
 pub struct LogMealResult {
     pub meal: MealRecord,
     pub advice: MealAdvice,
-}
-
-#[async_trait]
-pub trait LogMealUseCase: Send + Sync {
-    async fn handle_meal(&self, input: LogMealCommand) -> AppResult<LogMealResult>;
 }
 
 #[derive(Clone)]
@@ -48,11 +42,8 @@ impl MealCommandHandler {
         self.event_handler = Some(event_handler);
         self
     }
-}
 
-#[async_trait]
-impl LogMealUseCase for MealCommandHandler {
-    async fn handle_meal(&self, input: LogMealCommand) -> AppResult<LogMealResult> {
+    pub async fn handle_meal(&self, input: LogMealCommand) -> AppResult<LogMealResult> {
         let day_cycle = DayCycle::parse(&input.day_cycle)?;
         let profile = self
             .user_profiles

@@ -4,7 +4,7 @@ use adapters::agent::builder::{AgentConfig, ConversationAgent};
 use adapters::prelude::{build_repos_by_url, SqliteNutritionRepo};
 use app::app_error::{AppError, AppResult};
 use app::common::agent::KnowledgeBasePort;
-use app::conversation::{ConversationQueryHandler, SendUserMessageUseCase};
+use app::conversation::{ConversationCommandHandler, ConversationQueryHandler};
 use app::meal::{MealCommandHandler, MealEventHandler, MealQueryHandler};
 use app::user::UserProfileQueryHandler;
 
@@ -24,7 +24,7 @@ pub struct AdviceState {
 }
 
 pub struct ConversationState {
-    pub sender: Arc<dyn SendUserMessageUseCase>,
+    pub command: ConversationCommandHandler,
     pub query: ConversationQueryHandler,
 }
 
@@ -76,12 +76,12 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
     };
 
     let conversation = ConversationState {
-        sender: Arc::new(ConversationAgent::new(
+        command: ConversationCommandHandler::new(Arc::new(ConversationAgent::new(
             agent_config,
             repos.meal_repo.clone(),
             repos.user_repo.clone(),
             repos.chat_repo.clone(),
-        )),
+        ))),
         query: ConversationQueryHandler::new(repos.chat_repo.clone()),
     };
 

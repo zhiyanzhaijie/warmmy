@@ -4,24 +4,28 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use rig::agent::MultiTurnStreamItem;
 use rig::client::CompletionClient;
-use rig::completion::Chat;
-use rig::message::Message;
+use rig::completion::Prompt;
 use rig::message::ToolChoice;
 use rig::providers::{deepseek, openai};
-use rig::streaming::{StreamedAssistantContent, StreamingChat};
+use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 
 use app::app_error::{AppError, AppResult};
 use app::conversation::{
     ChatMessageRepositoryPort, ConversationReplyStream, SendUserMessageCommand,
-    SendUserMessageResult, SendUserMessageUseCase,
+    SendUserMessageResult, ConversationAgentPort,
 };
 use app::meal::MealRecordRepositoryPort;
 use app::user::UserProfileRepositoryPort;
 use domain::UserId;
 
-use crate::agent::guardrail::{GuardrailDecision, GuardrailHook};
+use crate::agent::guardrail::GuardrailHook;
+use crate::agent::hook::WarmmyPromptHook;
+use crate::agent::memory::SessionConversationMemory;
 use crate::agent::prompt::conversation_preamble;
 use crate::agent::tools::meal_log::MealLogTool;
+
+const DEFAULT_MAX_TURNS: usize = 4;
+const DEFAULT_HISTORY_WINDOW_MESSAGES: usize = 24;
 
 #[derive(Clone)]
 pub struct AgentConfig {
@@ -36,7 +40,7 @@ pub struct ConversationAgent {
     meals: Arc<dyn MealRecordRepositoryPort>,
     user_profiles: Arc<dyn UserProfileRepositoryPort>,
     repo: Arc<dyn ChatMessageRepositoryPort>,
-    guardrail: GuardrailHook,
+    guardrail: Arc<GuardrailHook>,
 }
 
 impl ConversationAgent {
@@ -51,26 +55,8 @@ impl ConversationAgent {
             meals,
             user_profiles,
             repo,
-            guardrail: GuardrailHook,
+            guardrail: Arc::new(GuardrailHook),
         }
-    }
-
-    async fn load_rig_history(&self, user_id: &UserId, session_id: &str) -> Vec<Message> {
-        let raw = self
-            .repo
-            .find_by_session(user_id, session_id)
-            .await
-            .unwrap_or_default();
-
-        raw.into_iter()
-            .map(|msg| {
-                if msg.role == "user" {
-                    Message::user(msg.content.as_str())
-                } else {
-                    Message::assistant(msg.content.as_str())
-                }
-            })
-            .collect()
     }
 
     fn build_tool(&self, user_id: &UserId) -> MealLogTool {
@@ -80,26 +66,28 @@ impl ConversationAgent {
             self.meals.clone(),
         )
     }
+
+    fn build_memory(&self, user_id: &UserId) -> SessionConversationMemory {
+        SessionConversationMemory::new(
+            user_id.clone(),
+            self.repo.clone(),
+            DEFAULT_HISTORY_WINDOW_MESSAGES,
+        )
+    }
 }
 
 #[async_trait]
-impl SendUserMessageUseCase for ConversationAgent {
+impl ConversationAgentPort for ConversationAgent {
     async fn send_user_message(
         &self,
         command: SendUserMessageCommand,
     ) -> AppResult<SendUserMessageResult> {
-        if let GuardrailDecision::Reject(reason) = self.guardrail.check_input(&command.content) {
-            return Err(AppError::validation(reason));
-        }
-
-        let user_id = command.user_id.as_str();
+        let prompt = command.content.as_str();
         let session_id = command.session_id.as_str();
-        let history = self.load_rig_history(&command.user_id, session_id).await;
-
-        let tool = self.build_tool(&command.user_id);
-        let prompt = &command.content;
         let model = self.config.model.as_str();
         let preamble = conversation_preamble();
+        let tool = self.build_tool(&command.user_id);
+        let memory = self.build_memory(&command.user_id);
 
         let reply = match self.config.provider.as_str() {
             "openai" => {
@@ -108,14 +96,18 @@ impl SendUserMessageUseCase for ConversationAgent {
                     .base_url(&self.config.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
+                let hook = WarmmyPromptHook::new(self.guardrail.clone());
                 client
                     .agent(model)
                     .preamble(preamble)
                     .tool_choice(ToolChoice::Auto)
-                    .default_max_turns(4)
+                    .default_max_turns(DEFAULT_MAX_TURNS)
+                    .memory(memory)
+                    .hook(hook)
                     .tool(tool)
                     .build()
-                    .chat(prompt, history)
+                    .prompt(prompt)
+                    .conversation(session_id)
                     .await
                     .map_err(|e| AppError::upstream(e.to_string()))?
             }
@@ -125,28 +117,23 @@ impl SendUserMessageUseCase for ConversationAgent {
                     .base_url(&self.config.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
+                let hook = WarmmyPromptHook::new(self.guardrail.clone());
                 client
                     .agent(model)
                     .preamble(preamble)
                     .tool_choice(ToolChoice::Auto)
-                    .default_max_turns(4)
+                    .default_max_turns(DEFAULT_MAX_TURNS)
+                    .memory(memory)
+                    .hook(hook)
                     .tool(tool)
                     .build()
-                    .chat(prompt, history)
+                    .prompt(prompt)
+                    .conversation(session_id)
                     .await
                     .map_err(|e| AppError::upstream(e.to_string()))?
             }
             p => return Err(AppError::internal(format!("unsupported provider: {p}"))),
         };
-
-        let _ = self
-            .repo
-            .save_message(&command.user_id, session_id, "user", &command.content)
-            .await;
-        let _ = self
-            .repo
-            .save_message(&command.user_id, session_id, "assistant", &reply)
-            .await;
 
         Ok(SendUserMessageResult {
             reply,
@@ -158,20 +145,12 @@ impl SendUserMessageUseCase for ConversationAgent {
         &self,
         command: SendUserMessageCommand,
     ) -> AppResult<ConversationReplyStream> {
-        if let GuardrailDecision::Reject(reason) = self.guardrail.check_input(&command.content) {
-            return Err(AppError::validation(reason));
-        }
-
-        let tool = self.build_tool(&command.user_id);
         let prompt = command.content.clone();
-        let preamble = conversation_preamble();
+        let session_id = command.session_id.clone();
         let model = self.config.model.as_str();
-        let user_content = command.content;
-        let user_id = command.user_id.clone();
-        let session_id_str = command.session_id.clone();
-
-        let history = self.load_rig_history(&command.user_id, &session_id_str).await;
-        let repo = self.repo.clone();
+        let preamble = conversation_preamble();
+        let tool = self.build_tool(&command.user_id);
+        let memory = self.build_memory(&command.user_id);
 
         match self.config.provider.as_str() {
             "openai" => {
@@ -180,30 +159,31 @@ impl SendUserMessageUseCase for ConversationAgent {
                     .base_url(&self.config.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
+                let hook = WarmmyPromptHook::new(self.guardrail.clone());
                 let mut raw = client
                     .agent(model)
                     .preamble(preamble)
                     .tool_choice(ToolChoice::Auto)
-                    .default_max_turns(4)
+                    .default_max_turns(DEFAULT_MAX_TURNS)
+                    .memory(memory)
+                    .hook(hook)
                     .tool(tool)
                     .build()
-                    .stream_chat(prompt.as_str(), history)
+                    .stream_prompt(prompt)
+                    .conversation(session_id)
                     .await;
                 let s = async_stream::stream! {
                     let mut has_text_delta = false;
-                    let mut full_reply = String::new();
                     while let Some(item) = raw.next().await {
                         match item {
                             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
                                 if !text.text.is_empty() {
                                     has_text_delta = true;
-                                    full_reply.push_str(&text.text);
                                     yield Ok(text.text);
                                 }
                             }
                             Ok(MultiTurnStreamItem::FinalResponse(r)) => {
                                 if !has_text_delta && !r.response().is_empty() {
-                                    full_reply.push_str(r.response());
                                     yield Ok(r.response().to_string());
                                 }
                             }
@@ -211,8 +191,6 @@ impl SendUserMessageUseCase for ConversationAgent {
                             Err(e) => { yield Err(AppError::upstream(e.to_string())); break; }
                         }
                     }
-                    let _ = repo.save_message(&user_id, &session_id_str, "user", &user_content).await;
-                    let _ = repo.save_message(&user_id, &session_id_str, "assistant", &full_reply).await;
                 };
                 Ok(Box::pin(s))
             }
@@ -222,30 +200,31 @@ impl SendUserMessageUseCase for ConversationAgent {
                     .base_url(&self.config.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
+                let hook = WarmmyPromptHook::new(self.guardrail.clone());
                 let mut raw = client
                     .agent(model)
                     .preamble(preamble)
                     .tool_choice(ToolChoice::Auto)
-                    .default_max_turns(4)
+                    .default_max_turns(DEFAULT_MAX_TURNS)
+                    .memory(memory)
+                    .hook(hook)
                     .tool(tool)
                     .build()
-                    .stream_chat(prompt.as_str(), history)
+                    .stream_prompt(prompt)
+                    .conversation(session_id)
                     .await;
                 let s = async_stream::stream! {
                     let mut has_text_delta = false;
-                    let mut full_reply = String::new();
                     while let Some(item) = raw.next().await {
                         match item {
                             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
                                 if !text.text.is_empty() {
                                     has_text_delta = true;
-                                    full_reply.push_str(&text.text);
                                     yield Ok(text.text);
                                 }
                             }
                             Ok(MultiTurnStreamItem::FinalResponse(r)) => {
                                 if !has_text_delta && !r.response().is_empty() {
-                                    full_reply.push_str(r.response());
                                     yield Ok(r.response().to_string());
                                 }
                             }
@@ -253,8 +232,6 @@ impl SendUserMessageUseCase for ConversationAgent {
                             Err(e) => { yield Err(AppError::upstream(e.to_string())); break; }
                         }
                     }
-                    let _ = repo.save_message(&user_id, &session_id_str, "user", &user_content).await;
-                    let _ = repo.save_message(&user_id, &session_id_str, "assistant", &full_reply).await;
                 };
                 Ok(Box::pin(s))
             }

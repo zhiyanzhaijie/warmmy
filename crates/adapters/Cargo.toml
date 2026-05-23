@@ -15,6 +15,7 @@ async-stream = "0.3"
 futures-core = "0.3"
 futures-util = "0.3"
 tokio = { version = "1", features = ["sync"] }
+tracing = "0.1"
 toasty = { version = "0.5.0", features = ["sqlite"] }
 chrono = { version = "0.4", features = ["serde"] }
-rig = "0.36.0"
+rig = { package = "rig-core", version = "0.37.0" }

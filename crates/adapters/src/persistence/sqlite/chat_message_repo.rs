@@ -35,11 +35,17 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
         .await
         .map_err(|err| err.to_string())?;
 
-        Ok(rows
+        let mut messages: Vec<_> = rows
+            .into_iter()
+            .map(|row| (row.created_at, row.id, row.role, row.content))
+            .collect();
+        messages.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
+        Ok(messages
             .into_iter()
             .map(|row| ChatMessage {
-                role: row.role,
-                content: row.content,
+                role: row.2,
+                content: row.3,
             })
             .collect())
     }
