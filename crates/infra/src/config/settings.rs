@@ -6,6 +6,8 @@ use std::collections::HashMap;
 pub struct Config {
     pub database: DatabaseConfig,
     pub llm: LlmConfig,
+    #[serde(default)]
+    pub retrieval: RetrievalSettings,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -37,6 +39,27 @@ pub struct LlmModelConfig {
 pub struct LlmRoutingConfig {
     pub reasoning: String,
     pub perception: String,
+    pub embedding: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RetrievalSettings {
+    #[serde(default = "default_lancedb_path")]
+    pub lancedb_path: String,
+    #[serde(default = "default_retrieval_top_k")]
+    pub top_k: usize,
+    #[serde(default = "default_embedding_ndims")]
+    pub embedding_ndims: usize,
+}
+
+impl Default for RetrievalSettings {
+    fn default() -> Self {
+        Self {
+            lancedb_path: default_lancedb_path(),
+            top_k: default_retrieval_top_k(),
+            embedding_ndims: default_embedding_ndims(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -77,4 +100,16 @@ impl LlmConfig {
             model: model_cfg.model.clone(),
         })
     }
+}
+
+fn default_lancedb_path() -> String {
+    "data/lancedb-store".to_string()
+}
+
+fn default_retrieval_top_k() -> usize {
+    3
+}
+
+fn default_embedding_ndims() -> usize {
+    1024
 }

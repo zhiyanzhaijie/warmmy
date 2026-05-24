@@ -82,7 +82,11 @@ impl MealCommandHandler {
             "已记录{}{}餐：{}，总热量约 {:.0} kcal",
             profile.display_name,
             day_cycle.as_str(),
-            meal.foods.iter().map(|f| f.name.as_str()).collect::<Vec<_>>().join("、"),
+            meal.foods
+                .iter()
+                .map(|f| f.name.as_str())
+                .collect::<Vec<_>>()
+                .join("、"),
             calories
         );
 

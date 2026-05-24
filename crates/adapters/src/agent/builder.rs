@@ -11,17 +11,17 @@ use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 
 use app::app_error::{AppError, AppResult};
 use app::conversation::{
-    ChatMessageRepositoryPort, ConversationReplyStream, SendUserMessageCommand,
-    SendUserMessageResult, ConversationAgentPort,
+    ChatMessageRepositoryPort, ConversationAgentPort, ConversationReplyStream,
+    SendUserMessageCommand, SendUserMessageResult,
 };
-use app::meal::MealRecordRepositoryPort;
-use app::user::UserProfileRepositoryPort;
+use app::meal::MealCommandHandler;
 use domain::UserId;
 
 use crate::agent::guardrail::GuardrailHook;
 use crate::agent::hook::WarmmyPromptHook;
 use crate::agent::memory::SessionConversationMemory;
 use crate::agent::prompt::conversation_preamble;
+use crate::agent::retrieval::{build_retrieval_index, RetrievalConfig};
 use crate::agent::tools::meal_log::MealLogTool;
 
 const DEFAULT_MAX_TURNS: usize = 4;
@@ -33,12 +33,12 @@ pub struct AgentConfig {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
+    pub retrieval: RetrievalConfig,
 }
 
 pub struct ConversationAgent {
     config: AgentConfig,
-    meals: Arc<dyn MealRecordRepositoryPort>,
-    user_profiles: Arc<dyn UserProfileRepositoryPort>,
+    meal_command: Arc<MealCommandHandler>,
     repo: Arc<dyn ChatMessageRepositoryPort>,
     guardrail: Arc<GuardrailHook>,
 }
@@ -46,25 +46,19 @@ pub struct ConversationAgent {
 impl ConversationAgent {
     pub fn new(
         config: AgentConfig,
-        meals: Arc<dyn MealRecordRepositoryPort>,
-        user_profiles: Arc<dyn UserProfileRepositoryPort>,
+        meal_command: Arc<MealCommandHandler>,
         repo: Arc<dyn ChatMessageRepositoryPort>,
     ) -> Self {
         Self {
             config,
-            meals,
-            user_profiles,
+            meal_command,
             repo,
             guardrail: Arc::new(GuardrailHook),
         }
     }
 
     fn build_tool(&self, user_id: &UserId) -> MealLogTool {
-        MealLogTool::new(
-            user_id.clone(),
-            self.user_profiles.clone(),
-            self.meals.clone(),
-        )
+        MealLogTool::new(user_id.clone(), self.meal_command.clone())
     }
 
     fn build_memory(&self, user_id: &UserId) -> SessionConversationMemory {
@@ -88,6 +82,14 @@ impl ConversationAgentPort for ConversationAgent {
         let preamble = conversation_preamble();
         let tool = self.build_tool(&command.user_id);
         let memory = self.build_memory(&command.user_id);
+        let rag_top_k = self.config.retrieval.top_k;
+        tracing::info!(
+            provider = self.config.provider.as_str(),
+            model = self.config.model.as_str(),
+            session_id,
+            prompt.len = prompt.len(),
+            "agent call started"
+        );
 
         let reply = match self.config.provider.as_str() {
             "openai" => {
@@ -97,12 +99,15 @@ impl ConversationAgentPort for ConversationAgent {
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                client
+                let retrieval_index = build_retrieval_index(&self.config.retrieval).await?;
+                let agent = client
                     .agent(model)
                     .preamble(preamble)
                     .tool_choice(ToolChoice::Auto)
                     .default_max_turns(DEFAULT_MAX_TURNS)
                     .memory(memory)
+                    .dynamic_context(rag_top_k, retrieval_index);
+                agent
                     .hook(hook)
                     .tool(tool)
                     .build()
@@ -118,12 +123,15 @@ impl ConversationAgentPort for ConversationAgent {
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                client
+                let retrieval_index = build_retrieval_index(&self.config.retrieval).await?;
+                let agent = client
                     .agent(model)
                     .preamble(preamble)
                     .tool_choice(ToolChoice::Auto)
                     .default_max_turns(DEFAULT_MAX_TURNS)
                     .memory(memory)
+                    .dynamic_context(rag_top_k, retrieval_index);
+                agent
                     .hook(hook)
                     .tool(tool)
                     .build()
@@ -134,6 +142,14 @@ impl ConversationAgentPort for ConversationAgent {
             }
             p => return Err(AppError::internal(format!("unsupported provider: {p}"))),
         };
+
+        tracing::info!(
+            provider = self.config.provider.as_str(),
+            model = self.config.model.as_str(),
+            session_id = session_id,
+            reply.len = reply.len(),
+            "agent call finished"
+        );
 
         Ok(SendUserMessageResult {
             reply,
@@ -151,6 +167,14 @@ impl ConversationAgentPort for ConversationAgent {
         let preamble = conversation_preamble();
         let tool = self.build_tool(&command.user_id);
         let memory = self.build_memory(&command.user_id);
+        let rag_top_k = self.config.retrieval.top_k;
+        tracing::info!(
+            provider = self.config.provider.as_str(),
+            model = self.config.model.as_str(),
+            session_id = session_id.as_str(),
+            prompt.len = prompt.len(),
+            "agent stream started"
+        );
 
         match self.config.provider.as_str() {
             "openai" => {
@@ -160,12 +184,15 @@ impl ConversationAgentPort for ConversationAgent {
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                let mut raw = client
+                let retrieval_index = build_retrieval_index(&self.config.retrieval).await?;
+                let agent = client
                     .agent(model)
                     .preamble(preamble)
                     .tool_choice(ToolChoice::Auto)
                     .default_max_turns(DEFAULT_MAX_TURNS)
                     .memory(memory)
+                    .dynamic_context(rag_top_k, retrieval_index);
+                let mut raw = agent
                     .hook(hook)
                     .tool(tool)
                     .build()
@@ -174,18 +201,22 @@ impl ConversationAgentPort for ConversationAgent {
                     .await;
                 let s = async_stream::stream! {
                     let mut has_text_delta = false;
+                    let mut output_len = 0usize;
                     while let Some(item) = raw.next().await {
                         match item {
                             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
                                 if !text.text.is_empty() {
                                     has_text_delta = true;
+                                    output_len += text.text.len();
                                     yield Ok(text.text);
                                 }
                             }
                             Ok(MultiTurnStreamItem::FinalResponse(r)) => {
                                 if !has_text_delta && !r.response().is_empty() {
+                                    output_len += r.response().len();
                                     yield Ok(r.response().to_string());
                                 }
+                                tracing::info!(output.len = output_len, "agent stream finished");
                             }
                             Ok(_) => {}
                             Err(e) => { yield Err(AppError::upstream(e.to_string())); break; }
@@ -201,12 +232,15 @@ impl ConversationAgentPort for ConversationAgent {
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                let mut raw = client
+                let retrieval_index = build_retrieval_index(&self.config.retrieval).await?;
+                let agent = client
                     .agent(model)
                     .preamble(preamble)
                     .tool_choice(ToolChoice::Auto)
                     .default_max_turns(DEFAULT_MAX_TURNS)
                     .memory(memory)
+                    .dynamic_context(rag_top_k, retrieval_index);
+                let mut raw = agent
                     .hook(hook)
                     .tool(tool)
                     .build()
@@ -215,18 +249,22 @@ impl ConversationAgentPort for ConversationAgent {
                     .await;
                 let s = async_stream::stream! {
                     let mut has_text_delta = false;
+                    let mut output_len = 0usize;
                     while let Some(item) = raw.next().await {
                         match item {
                             Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
                                 if !text.text.is_empty() {
                                     has_text_delta = true;
+                                    output_len += text.text.len();
                                     yield Ok(text.text);
                                 }
                             }
                             Ok(MultiTurnStreamItem::FinalResponse(r)) => {
                                 if !has_text_delta && !r.response().is_empty() {
+                                    output_len += r.response().len();
                                     yield Ok(r.response().to_string());
                                 }
+                                tracing::info!(output.len = output_len, "agent stream finished");
                             }
                             Ok(_) => {}
                             Err(e) => { yield Err(AppError::upstream(e.to_string())); break; }

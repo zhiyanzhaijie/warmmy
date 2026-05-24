@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use adapters::agent::builder::{AgentConfig, ConversationAgent};
+use adapters::agent::retrieval::RetrievalConfig;
 use adapters::prelude::{build_repos_by_url, SqliteNutritionRepo};
 use app::app_error::{AppError, AppResult};
 use app::common::agent::KnowledgeBasePort;
@@ -51,23 +52,38 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
         .llm
         .resolve_route(&config.llm.routing.reasoning)
         .map_err(AppError::internal)?;
+    let embedding_route = config
+        .llm
+        .resolve_route(&config.llm.routing.embedding)
+        .map_err(AppError::internal)?;
 
     let agent_config = AgentConfig {
         provider: route.provider,
         base_url: route.base_url,
         api_key: route.api_key,
         model: route.model,
+        retrieval: RetrievalConfig {
+            lancedb_path: config.retrieval.lancedb_path.clone(),
+            embedding_provider: embedding_route.provider,
+            embedding_base_url: embedding_route.base_url,
+            embedding_api_key: embedding_route.api_key,
+            embedding_model: embedding_route.model,
+            embedding_ndims: config.retrieval.embedding_ndims,
+            top_k: config.retrieval.top_k,
+        },
     };
 
     let user = UserState {
         query: UserProfileQueryHandler::new(repos.user_repo.clone()),
     };
 
-    let meal_command = MealCommandHandler::new(repos.user_repo.clone(), repos.meal_repo.clone())
-        .with_event_handler(MealEventHandler::new());
+    let meal_command = Arc::new(
+        MealCommandHandler::new(repos.user_repo.clone(), repos.meal_repo.clone())
+            .with_event_handler(MealEventHandler::new()),
+    );
 
     let meal = MealState {
-        command: meal_command,
+        command: meal_command.as_ref().clone(),
         query: MealQueryHandler::new(repos.meal_repo.clone()),
     };
 
@@ -78,8 +94,7 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
     let conversation = ConversationState {
         command: ConversationCommandHandler::new(Arc::new(ConversationAgent::new(
             agent_config,
-            repos.meal_repo.clone(),
-            repos.user_repo.clone(),
+            meal_command,
             repos.chat_repo.clone(),
         ))),
         query: ConversationQueryHandler::new(repos.chat_repo.clone()),

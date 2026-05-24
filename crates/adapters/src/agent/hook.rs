@@ -90,15 +90,7 @@ where
         HookAction::cont()
     }
 
-    async fn on_text_delta(&self, text_delta: &str, aggregated_text: &str) -> HookAction {
-        if !text_delta.is_empty() {
-            tracing::debug!(
-                delta.len = text_delta.len(),
-                output.len = aggregated_text.len(),
-                "agent text delta"
-            );
-        }
-
+    async fn on_text_delta(&self, _text_delta: &str, _aggregated_text: &str) -> HookAction {
         HookAction::cont()
     }
 }

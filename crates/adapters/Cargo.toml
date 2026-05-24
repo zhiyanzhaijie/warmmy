@@ -18,4 +18,6 @@ tokio = { version = "1", features = ["sync"] }
 tracing = "0.1"
 toasty = { version = "0.5.0", features = ["sqlite"] }
 chrono = { version = "0.4", features = ["serde"] }
-rig = { package = "rig-core", version = "0.37.0" }
+rig = { version = "0.37.0", default-features = false, features = ["lancedb", "rustls"] }
+lancedb = { version = "0.23", default-features = false }
+arrow-array = "56.2.1"

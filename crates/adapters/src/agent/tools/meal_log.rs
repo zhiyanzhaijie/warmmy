@@ -1,12 +1,11 @@
 use std::sync::Arc;
 
-use app::meal::MealRecordRepositoryPort;
-use app::nutrition::impls::estimate_nutrition_from_foods;
-use app::user::UserProfileRepositoryPort;
-use domain::{DayCycle, FoodItem, MealRecord, UserId};
+use app::meal::{LogMealCommand, MealCommandHandler};
+use domain::{FoodItem, UserId};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
 use serde::{Deserialize, Serialize};
+
 use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
@@ -17,25 +16,21 @@ pub enum ToolError {
     Repository(String),
     #[error("domain: {0}")]
     Domain(String),
+    #[error("application: {0}")]
+    Application(String),
 }
 
 #[derive(Clone)]
 pub struct MealLogTool {
     user_id: UserId,
-    user_profiles: Arc<dyn UserProfileRepositoryPort>,
-    meals: Arc<dyn MealRecordRepositoryPort>,
+    meal_command: Arc<MealCommandHandler>,
 }
 
 impl MealLogTool {
-    pub fn new(
-        user_id: UserId,
-        user_profiles: Arc<dyn UserProfileRepositoryPort>,
-        meals: Arc<dyn MealRecordRepositoryPort>,
-    ) -> Self {
+    pub fn new(user_id: UserId, meal_command: Arc<MealCommandHandler>) -> Self {
         Self {
             user_id,
-            user_profiles,
-            meals,
+            meal_command,
         }
     }
 }
@@ -98,8 +93,6 @@ impl Tool for MealLogTool {
     }
 
     async fn call(&self, args: Self::Args) -> Result<Self::Output, Self::Error> {
-        let day_cycle = DayCycle::parse(&args.day_cycle).map_err(|e| ToolError::Domain(e.to_string()))?;
-
         let foods: Vec<FoodItem> = args
             .foods
             .into_iter()
@@ -111,29 +104,18 @@ impl Tool for MealLogTool {
             return Err(ToolError::Validation("no food items".into()));
         }
 
-        let nutrition = estimate_nutrition_from_foods(&foods);
-        let meal = MealRecord {
-            user_id: self.user_id.clone(),
-            day_cycle: day_cycle.clone(),
-            foods,
-            nutrition,
-        };
-
-        self.meals
-            .save_meal(&meal)
+        let result = self
+            .meal_command
+            .handle_meal(LogMealCommand {
+                user_id: self.user_id.clone(),
+                day_cycle: args.day_cycle,
+                foods,
+            })
             .await
-            .map_err(ToolError::Repository)?;
+            .map_err(|err| ToolError::Application(err.to_string()))?;
 
-        let display_name = self
-            .user_profiles
-            .find_profile(&self.user_id)
-            .await
-            .ok()
-            .flatten()
-            .map(|p| p.display_name)
-            .unwrap_or_else(|| "用户".into());
-
-        let food_names = meal
+        let food_names = result
+            .meal
             .foods
             .iter()
             .map(|f| f.name.as_str())
@@ -143,8 +125,8 @@ impl Tool for MealLogTool {
         Ok(MealLogOutput {
             recorded: true,
             summary: format!(
-                "已记录{display_name}的{day_cycle}：{food_names}，约 {:.0} kcal",
-                meal.nutrition.calories
+                "{}。已记录：{}，约 {:.0} kcal",
+                result.advice.summary, food_names, result.meal.nutrition.calories
             ),
         })
     }

@@ -33,7 +33,11 @@ impl UserChatQueryHandler {
         Self { repo }
     }
 
-    pub async fn get_session_history(&self, user_id: &UserId, session_id: &str) -> AppResult<Vec<ChatMessage>> {
+    pub async fn get_session_history(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+    ) -> AppResult<Vec<ChatMessage>> {
         self.repo
             .find_by_session(user_id, session_id)
             .await

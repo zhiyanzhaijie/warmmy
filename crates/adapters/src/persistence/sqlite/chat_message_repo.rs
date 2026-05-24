@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use async_trait::async_trait;
-use tokio::sync::Mutex;
 use chrono::Utc;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use app::conversation::{ChatMessage, ChatMessageRepositoryPort};
 use domain::UserId;
@@ -28,8 +28,10 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
     ) -> Result<Vec<ChatMessage>, String> {
         let mut db = self.db.lock().await;
         let rows = ChatMessageRow::filter(
-            ChatMessageRow::fields().user_id().eq(user_id.as_str())
-                .and(ChatMessageRow::fields().session_id().eq(session_id))
+            ChatMessageRow::fields()
+                .user_id()
+                .eq(user_id.as_str())
+                .and(ChatMessageRow::fields().session_id().eq(session_id)),
         )
         .exec(&mut *db)
         .await

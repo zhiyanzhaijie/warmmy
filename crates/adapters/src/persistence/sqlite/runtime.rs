@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
 use app::{
-    app_error::AppResult,
-    common::agent::KnowledgeBasePort,
-    conversation::ChatMessageRepositoryPort,
-    meal::MealRecordRepositoryPort,
+    app_error::AppResult, common::agent::KnowledgeBasePort,
+    conversation::ChatMessageRepositoryPort, meal::MealRecordRepositoryPort,
     user::UserProfileRepositoryPort,
 };
 use tokio::sync::Mutex;
