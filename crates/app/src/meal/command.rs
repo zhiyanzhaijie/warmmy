@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use crate::app_error::{AppError, AppResult};
-use crate::meal::{MealEventHandler, MealRecordRepositoryPort};
-use crate::nutrition::impls::estimate_nutrition_from_foods;
+use crate::meal::{
+    estimate_nutrition_from_foods_with_references, FoodNutritionReferenceRepositoryPort,
+    MealEventHandler, MealRecordRepositoryPort,
+};
 use crate::user::UserDietaryContextQueryHandler;
-use domain::{DayCycle, MealAdvice, MealRecord, UserId};
+use domain::{DayCycle, MealRecord, UserId};
 
 #[derive(Debug, Clone)]
 pub struct LogMealCommand {
@@ -16,13 +18,14 @@ pub struct LogMealCommand {
 #[derive(Debug, Clone)]
 pub struct LogMealResult {
     pub meal: MealRecord,
-    pub advice: MealAdvice,
+    pub summary: String,
 }
 
 #[derive(Clone)]
 pub struct MealCommandHandler {
     user_contexts: UserDietaryContextQueryHandler,
     meals: Arc<dyn MealRecordRepositoryPort>,
+    food_nutrition_references: Option<Arc<dyn FoodNutritionReferenceRepositoryPort>>,
     event_handler: Option<MealEventHandler>,
 }
 
@@ -34,8 +37,17 @@ impl MealCommandHandler {
         Self {
             user_contexts,
             meals,
+            food_nutrition_references: None,
             event_handler: None,
         }
+    }
+
+    pub fn with_food_nutrition_references(
+        mut self,
+        food_nutrition_references: Arc<dyn FoodNutritionReferenceRepositoryPort>,
+    ) -> Self {
+        self.food_nutrition_references = Some(food_nutrition_references);
+        self
     }
 
     pub fn with_event_handler(mut self, event_handler: MealEventHandler) -> Self {
@@ -57,7 +69,11 @@ impl MealCommandHandler {
             return Err(AppError::validation("meal contains no food items"));
         }
 
-        let nutrition = estimate_nutrition_from_foods(&input.foods);
+        let nutrition = estimate_nutrition_from_foods_with_references(
+            &input.foods,
+            self.food_nutrition_references.clone(),
+        )
+        .await;
         let calories = nutrition.calories;
         let meal = MealRecord {
             user_id: input.user_id.clone(),
@@ -79,7 +95,7 @@ impl MealCommandHandler {
             event_handler.handle_meal_recorded(&event).await?;
         }
 
-        let advice_summary = format!(
+        let record_summary = format!(
             "已记录{}{}餐：{}，总热量约 {:.0} kcal",
             context.profile.display_name,
             day_cycle.as_str(),
@@ -93,11 +109,7 @@ impl MealCommandHandler {
 
         Ok(LogMealResult {
             meal,
-            advice: MealAdvice {
-                summary: advice_summary,
-                next_meal_suggestion: "下一餐建议补充优质蛋白和蔬菜".to_string(),
-                warnings: Vec::new(),
-            },
+            summary: record_summary,
         })
     }
 }

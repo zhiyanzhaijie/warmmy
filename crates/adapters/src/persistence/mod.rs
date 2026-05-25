@@ -5,8 +5,7 @@ use std::sync::Arc;
 
 use app::{
     app_error::{AppError, AppResult},
-    common::agent::KnowledgeBasePort,
-    meal::MealRecordRepositoryPort,
+    meal::{FoodNutritionReferenceRepositoryPort, MealRecordRepositoryPort},
     user::{
         UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort,
         UserProfileRepositoryPort,
@@ -24,8 +23,7 @@ pub struct DbRepos {
     pub user_preferences_repo: Arc<dyn UserPreferencesRepositoryPort>,
     pub chat_repo: Arc<dyn ChatMessageRepositoryPort>,
     pub meal_repo: Arc<dyn MealRecordRepositoryPort>,
-    pub advice_repo: Arc<dyn KnowledgeBasePort>,
-    pub nutrition_repo: Arc<sqlite::SqliteNutritionRepo>,
+    pub food_nutrition_reference_repo: Arc<dyn FoodNutritionReferenceRepositoryPort>,
 }
 
 #[async_trait::async_trait]

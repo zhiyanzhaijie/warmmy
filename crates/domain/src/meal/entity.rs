@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Nutrition, UserId};
-
-use super::DayCycle;
+use super::{DayCycle, Nutrition};
+use crate::UserId;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FoodItem {

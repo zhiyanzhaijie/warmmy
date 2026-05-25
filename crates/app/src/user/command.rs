@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
 use domain::{
-    AppPreferences, DietaryPreferences, HealthExpectationId, HealthExpectationStatus,
-    HealthExpectationKind, PreferenceConfidence, UserHealthExpectation, UserId, UserPreferences,
+    AppPreferences, DietaryPreferences, HealthExpectationId, HealthExpectationKind,
+    HealthExpectationStatus, PreferenceConfidence, UserHealthExpectation, UserId, UserPreferences,
     UserProfile,
 };
 
 use crate::app_error::{AppError, AppResult};
 use crate::user::{
-    UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort,
-    UserProfileRepositoryPort,
+    UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort, UserProfileRepositoryPort,
 };
 
 #[derive(Debug, Clone)]
@@ -38,11 +37,7 @@ impl UserProfileCommandHandler {
             return Ok(profile);
         }
 
-        let profile = UserProfile::new(
-            input.user_id.as_str(),
-            input.display_name,
-            "保持饮食平衡",
-        );
+        let profile = UserProfile::new(input.user_id.as_str(), input.display_name);
 
         self.repo
             .save_profile(&profile)
@@ -99,7 +94,8 @@ impl UserHealthExpectationCommandHandler {
             return Err(AppError::validation("user id is empty"));
         }
 
-        self.ensure_profile_exists(&input.expectation.user_id).await?;
+        self.ensure_profile_exists(&input.expectation.user_id)
+            .await?;
 
         self.repo
             .save_expectation(&input.expectation)

@@ -8,11 +8,13 @@ use app::user::{
 };
 use domain::{
     AppPreferences, DietaryPreferences, ExpectationSource, HealthExpectationId,
-    HealthExpectationKind, HealthExpectationStatus, HealthGoal, UserHealthExpectation, UserId,
-    UserPreferences, UserProfile,
+    HealthExpectationKind, HealthExpectationStatus, UserHealthExpectation, UserId, UserPreferences,
+    UserProfile,
 };
 
-use super::models::{UserHealthExpectationRow, UserPreferencesRow, UserProfileRow};
+use crate::persistence::sqlite::models::{
+    UserHealthExpectationRow, UserPreferencesRow, UserProfileRow,
+};
 
 #[derive(Clone)]
 pub struct SqliteUserRepo {
@@ -33,7 +35,6 @@ impl SqliteUserRepo {
                     .update()
                     .display_name(profile.display_name.clone())
                     .introduction(profile.introduction.clone())
-                    .health_goal(profile.health_goal.as_str().to_string())
                     .allergies_json(
                         serde_json::to_string(&profile.allergies).map_err(|err| err.to_string())?,
                     )
@@ -47,7 +48,6 @@ impl SqliteUserRepo {
                     id: id,
                     display_name: profile.display_name.clone(),
                     introduction: profile.introduction.clone(),
-                    health_goal: profile.health_goal.as_str().to_string(),
                     allergies_json: serde_json::to_string(&profile.allergies)
                         .map_err(|serialize_err| serialize_err.to_string())?,
                 })
@@ -156,7 +156,6 @@ impl SqliteUserRepo {
             id: UserId::parse(&row.id).map_err(|err| err.to_string())?,
             display_name: row.display_name,
             introduction: row.introduction,
-            health_goal: HealthGoal::new(row.health_goal),
             allergies,
         })
     }

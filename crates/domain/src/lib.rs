@@ -1,10 +1,12 @@
-pub mod advice;
 pub mod error;
 pub mod meal;
-pub mod nutrition;
 pub mod user;
 
-pub use advice::*;
-pub use meal::*;
-pub use nutrition::*;
-pub use user::*;
+pub use meal::{
+    DayCycle, DayCycleInvalidError, FoodItem, FoodNutritionReference, MealRecord, Nutrition,
+};
+pub use user::{
+    AppPreferences, AppTheme, CuisinePreference, DietaryPreferences, ExpectationSource,
+    HealthExpectationId, HealthExpectationKind, HealthExpectationStatus, PreferenceConfidence,
+    UserHealthExpectation, UserId, UserIdInvalidError, UserPreferences, UserProfile,
+};

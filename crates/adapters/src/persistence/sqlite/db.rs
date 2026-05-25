@@ -1,7 +1,8 @@
 use toasty::Db;
 
 use super::models::{
-    ChatMessageRow, MealRecordRow, UserHealthExpectationRow, UserPreferencesRow, UserProfileRow,
+    ChatMessageRow, FoodNutritionReferenceRow, MealRecordRow, UserHealthExpectationRow,
+    UserPreferencesRow, UserProfileRow,
 };
 
 pub async fn connect_sqlite(database_url: &str) -> toasty::Result<Db> {
@@ -11,6 +12,7 @@ pub async fn connect_sqlite(database_url: &str) -> toasty::Result<Db> {
             UserHealthExpectationRow,
             UserPreferencesRow,
             MealRecordRow,
+            FoodNutritionReferenceRow,
             ChatMessageRow
         ))
         .connect(database_url)
@@ -57,9 +59,53 @@ fn ensure_user_extension_tables(database_url: &str) -> Result<(), rusqlite::Erro
             dietary_preferences_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS food_nutrition_reference_rows (
+            id TEXT PRIMARY KEY NOT NULL,
+            reference_id TEXT NOT NULL,
+            labels_json TEXT NOT NULL,
+            aliases_json TEXT NOT NULL,
+            basis_quantity REAL NOT NULL,
+            basis_unit TEXT NOT NULL,
+            nutrition_json TEXT NOT NULL
+        );
         "#,
     )?;
 
+    ensure_column(
+        &connection,
+        "food_nutrition_reference_rows",
+        "reference_id",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    ensure_column(
+        &connection,
+        "food_nutrition_reference_rows",
+        "labels_json",
+        "TEXT NOT NULL DEFAULT '{}' ",
+    )?;
+
+    Ok(())
+}
+
+fn ensure_column(
+    connection: &rusqlite::Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), rusqlite::Error> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    for existing in columns {
+        if existing? == column {
+            return Ok(());
+        }
+    }
+
+    connection.execute(
+        &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+        [],
+    )?;
     Ok(())
 }
 

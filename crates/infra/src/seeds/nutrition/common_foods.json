@@ -1,0 +1,173 @@
+[
+  {
+    "id": "cooked_white_rice",
+    "labels": { "zh-CN": "米饭", "en-US": "Cooked white rice" },
+    "aliases": {
+      "zh-CN": ["白米饭", "熟米饭"],
+      "en-US": ["white rice", "steamed rice"]
+    },
+    "basis_quantity": 100.0,
+    "basis_unit": "g",
+    "nutrition": {
+      "calories": 116.0,
+      "protein_g": 2.6,
+      "fat_g": 0.3,
+      "carbs_g": 25.9,
+      "fiber_g": 0.3,
+      "sugar_g": 0.1,
+      "sodium_mg": 1.0,
+      "potassium_mg": 26.0,
+      "calcium_mg": 2.0,
+      "iron_mg": 0.2,
+      "magnesium_mg": 8.0,
+      "zinc_mg": 0.4,
+      "thiamin_b1_mg": 0.02,
+      "riboflavin_b2_mg": 0.01,
+      "niacin_b3_mg": 0.4,
+      "vitamin_b6_mg": 0.04,
+      "folate_ug": 3.0
+    }
+  },
+  {
+    "id": "egg_whole",
+    "labels": { "zh-CN": "鸡蛋", "en-US": "Whole egg" },
+    "aliases": {
+      "zh-CN": ["全蛋", "煮鸡蛋"],
+      "en-US": ["egg", "boiled egg"]
+    },
+    "basis_quantity": 100.0,
+    "basis_unit": "g",
+    "nutrition": {
+      "calories": 143.0,
+      "protein_g": 12.6,
+      "fat_g": 9.5,
+      "carbs_g": 0.7,
+      "sugar_g": 0.4,
+      "saturated_fat_g": 3.1,
+      "sodium_mg": 142.0,
+      "potassium_mg": 138.0,
+      "calcium_mg": 56.0,
+      "iron_mg": 1.8,
+      "magnesium_mg": 12.0,
+      "zinc_mg": 1.3,
+      "vitamin_a_rae_ug": 160.0,
+      "vitamin_d_ug": 2.0,
+      "vitamin_e_mg": 1.1,
+      "riboflavin_b2_mg": 0.46,
+      "vitamin_b6_mg": 0.17,
+      "folate_ug": 47.0,
+      "vitamin_b12_ug": 0.9
+    }
+  },
+  {
+    "id": "beef_lean",
+    "labels": { "zh-CN": "牛肉", "en-US": "Lean beef" },
+    "aliases": {
+      "zh-CN": ["瘦牛肉"],
+      "en-US": ["beef", "lean beef"]
+    },
+    "basis_quantity": 100.0,
+    "basis_unit": "g",
+    "nutrition": {
+      "calories": 170.0,
+      "protein_g": 26.0,
+      "fat_g": 7.0,
+      "carbs_g": 0.0,
+      "saturated_fat_g": 2.8,
+      "sodium_mg": 60.0,
+      "potassium_mg": 318.0,
+      "calcium_mg": 18.0,
+      "iron_mg": 2.6,
+      "magnesium_mg": 21.0,
+      "zinc_mg": 4.8,
+      "niacin_b3_mg": 5.8,
+      "vitamin_b6_mg": 0.4,
+      "vitamin_b12_ug": 2.4
+    }
+  },
+  {
+    "id": "chicken_breast_skinless",
+    "labels": { "zh-CN": "鸡胸肉", "en-US": "Skinless chicken breast" },
+    "aliases": {
+      "zh-CN": ["鸡胸", "去皮鸡胸肉"],
+      "en-US": ["chicken breast"]
+    },
+    "basis_quantity": 100.0,
+    "basis_unit": "g",
+    "nutrition": {
+      "calories": 165.0,
+      "protein_g": 31.0,
+      "fat_g": 3.6,
+      "carbs_g": 0.0,
+      "saturated_fat_g": 1.0,
+      "sodium_mg": 74.0,
+      "potassium_mg": 256.0,
+      "calcium_mg": 15.0,
+      "iron_mg": 1.0,
+      "magnesium_mg": 29.0,
+      "zinc_mg": 1.0,
+      "niacin_b3_mg": 13.7,
+      "vitamin_b6_mg": 0.6,
+      "vitamin_b12_ug": 0.3
+    }
+  },
+  {
+    "id": "tofu_firm",
+    "labels": { "zh-CN": "豆腐", "en-US": "Firm tofu" },
+    "aliases": {
+      "zh-CN": ["北豆腐", "老豆腐"],
+      "en-US": ["tofu"]
+    },
+    "basis_quantity": 100.0,
+    "basis_unit": "g",
+    "nutrition": {
+      "calories": 76.0,
+      "protein_g": 8.1,
+      "fat_g": 4.8,
+      "carbs_g": 1.9,
+      "fiber_g": 0.3,
+      "sugar_g": 0.6,
+      "saturated_fat_g": 0.7,
+      "sodium_mg": 7.0,
+      "potassium_mg": 121.0,
+      "calcium_mg": 350.0,
+      "iron_mg": 5.4,
+      "magnesium_mg": 30.0,
+      "zinc_mg": 0.8,
+      "folate_ug": 15.0
+    }
+  },
+  {
+    "id": "broccoli_raw",
+    "labels": { "zh-CN": "西兰花", "en-US": "Broccoli" },
+    "aliases": {
+      "zh-CN": ["青花菜"],
+      "en-US": ["broccoli"]
+    },
+    "basis_quantity": 100.0,
+    "basis_unit": "g",
+    "nutrition": {
+      "calories": 34.0,
+      "protein_g": 2.8,
+      "fat_g": 0.4,
+      "carbs_g": 6.6,
+      "fiber_g": 2.6,
+      "sugar_g": 1.7,
+      "sodium_mg": 33.0,
+      "potassium_mg": 316.0,
+      "calcium_mg": 47.0,
+      "iron_mg": 0.7,
+      "magnesium_mg": 21.0,
+      "zinc_mg": 0.4,
+      "vitamin_a_rae_ug": 31.0,
+      "vitamin_c_mg": 89.2,
+      "vitamin_e_mg": 0.8,
+      "vitamin_k_ug": 101.6,
+      "thiamin_b1_mg": 0.07,
+      "riboflavin_b2_mg": 0.12,
+      "niacin_b3_mg": 0.6,
+      "vitamin_b6_mg": 0.18,
+      "folate_ug": 63.0
+    }
+  }
+]

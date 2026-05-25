@@ -6,7 +6,7 @@ use tokio::sync::Mutex;
 use app::conversation::{ChatMessage, ChatMessageRepositoryPort};
 use domain::UserId;
 
-use super::models::ChatMessageRow;
+use crate::persistence::sqlite::models::ChatMessageRow;
 
 #[derive(Clone)]
 pub struct SqliteChatMessageRepo {

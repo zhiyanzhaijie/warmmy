@@ -1,5 +1,4 @@
 pub use crate::app_error::{AppError, AppResult};
-pub use crate::common::agent::KnowledgeBasePort;
 pub use crate::common::{Page, PageMeta, Pagination};
 pub use crate::meal::{
     LogMealCommand, LogMealResult, MealCommandHandler, MealEventHandler, MealQueryHandler,
@@ -7,9 +6,8 @@ pub use crate::meal::{
 };
 pub use crate::user::{
     DeleteHealthExpectationCommand, EnsureUserProfileCommand, UserDietaryContext,
-    UserDietaryContextQueryHandler, UserProfileCommandHandler,
-    UserHealthExpectationQueryHandler,
-    UserHealthExpectationCommandHandler, UserHealthExpectationRepositoryPort,
-    UserPreferencesCommandHandler, UserPreferencesQueryHandler,
-    UserPreferencesRepositoryPort, UserProfileQueryHandler, UserProfileRepositoryPort,
+    UserDietaryContextQueryHandler, UserHealthExpectationCommandHandler,
+    UserHealthExpectationQueryHandler, UserHealthExpectationRepositoryPort,
+    UserPreferencesCommandHandler, UserPreferencesQueryHandler, UserPreferencesRepositoryPort,
+    UserProfileCommandHandler, UserProfileQueryHandler, UserProfileRepositoryPort,
 };

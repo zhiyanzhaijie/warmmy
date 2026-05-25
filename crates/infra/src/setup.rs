@@ -1,12 +1,10 @@
-use std::sync::Arc;
-
 use adapters::agent::config::AgentConfig;
 use adapters::agent::memory::long_term::rag::RagConfig;
 use adapters::agent::service::ConversationAgentService;
-use adapters::prelude::{build_repos_by_url, SqliteNutritionRepo};
+use adapters::prelude::build_repos_by_url;
 use app::app_error::{AppError, AppResult};
-use app::common::agent::KnowledgeBasePort;
 use app::conversation::{ConversationCommandHandler, ConversationQueryHandler};
+use app::meal::FoodNutritionReferenceRepositoryPort;
 use app::meal::{MealCommandHandler, MealEventHandler, MealQueryHandler};
 use app::user::{
     EnsureUserProfileCommand, UserDietaryContextQueryHandler, UserHealthExpectationCommandHandler,
@@ -14,8 +12,11 @@ use app::user::{
     UserProfileCommandHandler, UserProfileQueryHandler,
 };
 use domain::UserId;
+use std::sync::Arc;
 
 use crate::config::Config as AppConfig;
+
+const COMMON_NUTRITION_SEED: &str = include_str!("seeds/nutrition/common_foods.json");
 
 pub struct UserState {
     pub query: UserProfileQueryHandler,
@@ -32,26 +33,16 @@ pub struct MealState {
     pub query: MealQueryHandler,
 }
 
-pub struct AdviceState {
-    pub knowledge_base: Arc<dyn KnowledgeBasePort>,
-}
-
 pub struct ConversationState {
     pub command: ConversationCommandHandler,
     pub query: ConversationQueryHandler,
-}
-
-pub struct NutritionState {
-    pub repo: Arc<SqliteNutritionRepo>,
 }
 
 pub struct AppContainer {
     pub config: AppConfig,
     pub user: UserState,
     pub meal: MealState,
-    pub advice: AdviceState,
     pub conversation: ConversationState,
-    pub nutrition: NutritionState,
 }
 
 pub type AppState = AppContainer;
@@ -116,18 +107,17 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
         })
         .await?;
 
+    seed_food_nutrition_references(repos.food_nutrition_reference_repo.as_ref()).await?;
+
     let meal_command = Arc::new(
         MealCommandHandler::new(user_dietary_context, repos.meal_repo.clone())
+            .with_food_nutrition_references(repos.food_nutrition_reference_repo.clone())
             .with_event_handler(MealEventHandler::new()),
     );
 
     let meal = MealState {
         command: meal_command.as_ref().clone(),
         query: MealQueryHandler::new(repos.meal_repo.clone()),
-    };
-
-    let advice = AdviceState {
-        knowledge_base: repos.advice_repo.clone(),
     };
 
     let conversation = ConversationState {
@@ -140,16 +130,26 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
         query: ConversationQueryHandler::new(repos.chat_repo.clone()),
     };
 
-    let nutrition = NutritionState {
-        repo: repos.nutrition_repo.clone(),
-    };
-
     Ok(AppContainer {
         config,
         user,
         meal,
-        advice,
         conversation,
-        nutrition,
     })
+}
+
+async fn seed_food_nutrition_references(
+    repo: &dyn FoodNutritionReferenceRepositoryPort,
+) -> AppResult<()> {
+    let references =
+        serde_json::from_str::<Vec<domain::FoodNutritionReference>>(COMMON_NUTRITION_SEED)
+            .map_err(AppError::internal)?;
+
+    for reference in references {
+        repo.upsert_reference(&reference)
+            .await
+            .map_err(AppError::upstream)?;
+    }
+
+    Ok(())
 }

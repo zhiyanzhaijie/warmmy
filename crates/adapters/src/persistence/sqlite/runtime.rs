@@ -2,9 +2,8 @@ use std::sync::Arc;
 
 use app::{
     app_error::AppResult,
-    common::agent::KnowledgeBasePort,
     conversation::ChatMessageRepositoryPort,
-    meal::MealRecordRepositoryPort,
+    meal::{FoodNutritionReferenceRepositoryPort, MealRecordRepositoryPort},
     user::{
         UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort,
         UserProfileRepositoryPort,
@@ -14,10 +13,7 @@ use tokio::sync::Mutex;
 
 use crate::persistence::{DbRepos, PersistenceBackend};
 
-use super::{
-    connect_sqlite, db_err, SqliteAdviceRepo, SqliteChatMessageRepo, SqliteMealRepo,
-    SqliteNutritionRepo, SqliteUserRepo,
-};
+use super::{connect_sqlite, db_err, SqliteChatMessageRepo, SqliteMealRepo, SqliteUserRepo};
 
 pub struct SqliteBackend;
 
@@ -41,16 +37,15 @@ impl PersistenceBackend for SqliteBackend {
         let user_repo_impl = Arc::new(SqliteUserRepo::new(db.clone()));
         let chat_repo_impl = Arc::new(SqliteChatMessageRepo::new(db.clone()));
         let meal_repo_impl = Arc::new(SqliteMealRepo::new(db.clone()));
-        let advice_repo_impl = Arc::new(SqliteAdviceRepo::new(db.clone()));
-        let nutrition_repo = Arc::new(SqliteNutritionRepo::new(db.clone()));
 
         let user_repo: Arc<dyn UserProfileRepositoryPort> = user_repo_impl.clone();
         let user_expectation_repo: Arc<dyn UserHealthExpectationRepositoryPort> =
             user_repo_impl.clone();
         let user_preferences_repo: Arc<dyn UserPreferencesRepositoryPort> = user_repo_impl;
         let chat_repo: Arc<dyn ChatMessageRepositoryPort> = chat_repo_impl;
-        let meal_repo: Arc<dyn MealRecordRepositoryPort> = meal_repo_impl;
-        let advice_repo: Arc<dyn KnowledgeBasePort> = advice_repo_impl;
+        let meal_repo: Arc<dyn MealRecordRepositoryPort> = meal_repo_impl.clone();
+        let food_nutrition_reference_repo: Arc<dyn FoodNutritionReferenceRepositoryPort> =
+            meal_repo_impl;
 
         Ok(DbRepos {
             db,
@@ -59,8 +54,7 @@ impl PersistenceBackend for SqliteBackend {
             user_preferences_repo,
             chat_repo,
             meal_repo,
-            advice_repo,
-            nutrition_repo,
+            food_nutrition_reference_repo,
         })
     }
 }

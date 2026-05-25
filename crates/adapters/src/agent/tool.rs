@@ -72,7 +72,7 @@ impl Tool for MealLogTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: Self::NAME.to_string(),
-            description: "Record a user's meal only when the user clearly says they ate or drank something. Do not use this tool for greetings, general chat, questions, or nutrition advice without a concrete meal to log.".to_string(),
+            description: "Record a user's meal only when the user clearly says they ate or drank something. Do not use this tool for greetings, general chat, questions, or nutrition questions without a concrete meal to log.".to_string(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -138,7 +138,7 @@ impl Tool for MealLogTool {
             recorded: true,
             summary: format!(
                 "{}。已记录：{}，约 {:.0} kcal",
-                result.advice.summary, food_names, result.meal.nutrition.calories
+                result.summary, food_names, result.meal.nutrition.calories
             ),
         })
     }
@@ -169,7 +169,7 @@ impl MealLogTool {
                 meal.nutrition.protein_g,
                 meal.nutrition.carbs_g,
                 meal.nutrition.fat_g,
-                result.advice.summary
+                result.summary
             ),
             source: "meal_log".to_string(),
         };

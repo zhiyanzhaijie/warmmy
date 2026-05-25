@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
-use domain::{
-    DietaryPreferences, UserHealthExpectation, UserId, UserPreferences, UserProfile,
-};
+use domain::{DietaryPreferences, UserHealthExpectation, UserId, UserPreferences, UserProfile};
 
 use crate::app_error::{AppError, AppResult};
 use crate::user::{
-    ChatMessage, ChatMessageRepositoryPort, UserHealthExpectationRepositoryPort,
-    UserPreferencesRepositoryPort, UserProfileRepositoryPort,
+    UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort, UserProfileRepositoryPort,
 };
 
 #[derive(Clone)]
@@ -103,11 +100,11 @@ impl UserHealthExpectationQueryHandler {
         Self { repo }
     }
 
-    pub async fn list_by_user(
-        &self,
-        user_id: &UserId,
-    ) -> AppResult<Vec<UserHealthExpectation>> {
-        self.repo.list_by_user(user_id).await.map_err(AppError::upstream)
+    pub async fn list_by_user(&self, user_id: &UserId) -> AppResult<Vec<UserHealthExpectation>> {
+        self.repo
+            .list_by_user(user_id)
+            .await
+            .map_err(AppError::upstream)
     }
 }
 
@@ -124,35 +121,6 @@ impl UserPreferencesQueryHandler {
     pub async fn get_preferences(&self, user_id: &UserId) -> AppResult<Option<UserPreferences>> {
         self.repo
             .find_preferences(user_id)
-            .await
-            .map_err(AppError::upstream)
-    }
-}
-
-#[derive(Clone)]
-pub struct UserChatQueryHandler {
-    repo: Arc<dyn ChatMessageRepositoryPort>,
-}
-
-impl UserChatQueryHandler {
-    pub fn new(repo: Arc<dyn ChatMessageRepositoryPort>) -> Self {
-        Self { repo }
-    }
-
-    pub async fn get_session_history(
-        &self,
-        user_id: &UserId,
-        session_id: &str,
-    ) -> AppResult<Vec<ChatMessage>> {
-        self.repo
-            .find_by_session(user_id, session_id)
-            .await
-            .map_err(AppError::upstream)
-    }
-
-    pub async fn list_user_sessions(&self, user_id: &UserId) -> AppResult<Vec<String>> {
-        self.repo
-            .find_sessions(user_id)
             .await
             .map_err(AppError::upstream)
     }
