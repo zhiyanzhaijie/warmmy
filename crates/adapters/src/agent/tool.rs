@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use serde_json::json;
 
+use crate::agent::memory::long_term::rag::{embed_rag_document, RagConfig, RagDocument};
+
 #[derive(Debug, thiserror::Error)]
 pub enum ToolError {
     #[error("validation: {0}")]
@@ -24,13 +26,19 @@ pub enum ToolError {
 pub struct MealLogTool {
     user_id: UserId,
     meal_command: Arc<MealCommandHandler>,
+    rag_config: RagConfig,
 }
 
 impl MealLogTool {
-    pub fn new(user_id: UserId, meal_command: Arc<MealCommandHandler>) -> Self {
+    pub fn new(
+        user_id: UserId,
+        meal_command: Arc<MealCommandHandler>,
+        rag_config: RagConfig,
+    ) -> Self {
         Self {
             user_id,
             meal_command,
+            rag_config,
         }
     }
 }
@@ -122,6 +130,10 @@ impl Tool for MealLogTool {
             .collect::<Vec<_>>()
             .join("、");
 
+        if let Err(err) = self.embed_meal_memory(&result).await {
+            tracing::warn!(error = %err, "failed to embed meal log into rag memory");
+        }
+
         Ok(MealLogOutput {
             recorded: true,
             summary: format!(
@@ -129,5 +141,41 @@ impl Tool for MealLogTool {
                 result.advice.summary, food_names, result.meal.nutrition.calories
             ),
         })
+    }
+}
+
+impl MealLogTool {
+    async fn embed_meal_memory(&self, result: &app::meal::LogMealResult) -> Result<(), ToolError> {
+        let meal = &result.meal;
+        let foods = meal
+            .foods
+            .iter()
+            .map(|food| format!("{}{}{}", food.name, food.quantity, food.unit))
+            .collect::<Vec<_>>()
+            .join("、");
+        let now = chrono::Utc::now();
+        let document = RagDocument {
+            id: format!(
+                "meal:{}:{}",
+                self.user_id.as_str(),
+                now.timestamp_nanos_opt().unwrap_or_else(|| now.timestamp_micros())
+            ),
+            content: format!(
+                "用户{}记录{}餐：{}。估算营养：约{:.0}kcal，蛋白质约{:.1}g，碳水约{:.1}g，脂肪约{:.1}g。{}",
+                self.user_id.as_str(),
+                meal.day_cycle.as_str(),
+                foods,
+                meal.nutrition.calories,
+                meal.nutrition.protein_g,
+                meal.nutrition.carbs_g,
+                meal.nutrition.fat_g,
+                result.advice.summary
+            ),
+            source: "meal_log".to_string(),
+        };
+
+        embed_rag_document(&self.rag_config, document)
+            .await
+            .map_err(|err| ToolError::Application(err.to_string()))
     }
 }

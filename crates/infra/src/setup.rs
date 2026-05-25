@@ -1,18 +1,30 @@
 use std::sync::Arc;
 
-use adapters::agent::builder::{AgentConfig, ConversationAgent};
-use adapters::agent::retrieval::RetrievalConfig;
+use adapters::agent::config::AgentConfig;
+use adapters::agent::memory::long_term::rag::RagConfig;
+use adapters::agent::service::ConversationAgentService;
 use adapters::prelude::{build_repos_by_url, SqliteNutritionRepo};
 use app::app_error::{AppError, AppResult};
 use app::common::agent::KnowledgeBasePort;
 use app::conversation::{ConversationCommandHandler, ConversationQueryHandler};
 use app::meal::{MealCommandHandler, MealEventHandler, MealQueryHandler};
-use app::user::UserProfileQueryHandler;
+use app::user::{
+    EnsureUserProfileCommand, UserDietaryContextQueryHandler, UserHealthExpectationCommandHandler,
+    UserHealthExpectationQueryHandler, UserPreferencesCommandHandler, UserPreferencesQueryHandler,
+    UserProfileCommandHandler, UserProfileQueryHandler,
+};
+use domain::UserId;
 
 use crate::config::Config as AppConfig;
 
 pub struct UserState {
     pub query: UserProfileQueryHandler,
+    pub command: UserProfileCommandHandler,
+    pub dietary_context: UserDietaryContextQueryHandler,
+    pub expectation_query: UserHealthExpectationQueryHandler,
+    pub expectation_command: UserHealthExpectationCommandHandler,
+    pub preferences_query: UserPreferencesQueryHandler,
+    pub preferences_command: UserPreferencesCommandHandler,
 }
 
 pub struct MealState {
@@ -62,23 +74,50 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
         base_url: route.base_url,
         api_key: route.api_key,
         model: route.model,
-        retrieval: RetrievalConfig {
-            lancedb_path: config.retrieval.lancedb_path.clone(),
+        rag: RagConfig {
+            lancedb_path: config.rag.lancedb_path.clone(),
             embedding_provider: embedding_route.provider,
             embedding_base_url: embedding_route.base_url,
             embedding_api_key: embedding_route.api_key,
             embedding_model: embedding_route.model,
-            embedding_ndims: config.retrieval.embedding_ndims,
-            top_k: config.retrieval.top_k,
+            embedding_ndims: config.rag.embedding_ndims,
+            top_k: config.rag.top_k,
         },
     };
 
+    let user_dietary_context = UserDietaryContextQueryHandler::new(
+        repos.user_repo.clone(),
+        repos.user_expectation_repo.clone(),
+        repos.user_preferences_repo.clone(),
+    );
+
     let user = UserState {
         query: UserProfileQueryHandler::new(repos.user_repo.clone()),
+        command: UserProfileCommandHandler::new(repos.user_repo.clone()),
+        dietary_context: user_dietary_context.clone(),
+        expectation_query: UserHealthExpectationQueryHandler::new(
+            repos.user_expectation_repo.clone(),
+        ),
+        expectation_command: UserHealthExpectationCommandHandler::new(
+            repos.user_expectation_repo.clone(),
+            repos.user_repo.clone(),
+        ),
+        preferences_query: UserPreferencesQueryHandler::new(repos.user_preferences_repo.clone()),
+        preferences_command: UserPreferencesCommandHandler::new(
+            repos.user_preferences_repo.clone(),
+            repos.user_repo.clone(),
+        ),
     };
 
+    user.command
+        .ensure_profile(EnsureUserProfileCommand {
+            user_id: UserId::new_unchecked("demo-user"),
+            display_name: "Demo User".to_string(),
+        })
+        .await?;
+
     let meal_command = Arc::new(
-        MealCommandHandler::new(repos.user_repo.clone(), repos.meal_repo.clone())
+        MealCommandHandler::new(user_dietary_context, repos.meal_repo.clone())
             .with_event_handler(MealEventHandler::new()),
     );
 
@@ -92,10 +131,11 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
     };
 
     let conversation = ConversationState {
-        command: ConversationCommandHandler::new(Arc::new(ConversationAgent::new(
+        command: ConversationCommandHandler::new(Arc::new(ConversationAgentService::new(
             agent_config,
             meal_command,
             repos.chat_repo.clone(),
+            user.dietary_context.clone(),
         ))),
         query: ConversationQueryHandler::new(repos.chat_repo.clone()),
     };

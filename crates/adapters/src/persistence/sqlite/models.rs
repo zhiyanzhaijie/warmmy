@@ -9,6 +9,31 @@ pub struct UserProfileRow {
 }
 
 #[derive(Debug, Clone, toasty::Model)]
+pub struct UserHealthExpectationRow {
+    #[key]
+    pub id: String,
+    #[index]
+    pub user_id: String,
+    pub title: String,
+    pub summary: String,
+    pub kind: String,
+    pub status: String,
+    pub source_json: String,
+    pub priority: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, toasty::Model)]
+pub struct UserPreferencesRow {
+    #[key]
+    pub user_id: String,
+    pub app_preferences_json: String,
+    pub dietary_preferences_json: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, toasty::Model)]
 pub struct MealRecordRow {
     #[key]
     #[auto]

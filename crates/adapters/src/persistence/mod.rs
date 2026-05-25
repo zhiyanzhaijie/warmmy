@@ -7,7 +7,10 @@ use app::{
     app_error::{AppError, AppResult},
     common::agent::KnowledgeBasePort,
     meal::MealRecordRepositoryPort,
-    user::UserProfileRepositoryPort,
+    user::{
+        UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort,
+        UserProfileRepositoryPort,
+    },
 };
 
 use tokio::sync::Mutex;
@@ -17,6 +20,8 @@ use app::conversation::ChatMessageRepositoryPort;
 pub struct DbRepos {
     pub db: Arc<Mutex<toasty::Db>>,
     pub user_repo: Arc<dyn UserProfileRepositoryPort>,
+    pub user_expectation_repo: Arc<dyn UserHealthExpectationRepositoryPort>,
+    pub user_preferences_repo: Arc<dyn UserPreferencesRepositoryPort>,
     pub chat_repo: Arc<dyn ChatMessageRepositoryPort>,
     pub meal_repo: Arc<dyn MealRecordRepositoryPort>,
     pub advice_repo: Arc<dyn KnowledgeBasePort>,

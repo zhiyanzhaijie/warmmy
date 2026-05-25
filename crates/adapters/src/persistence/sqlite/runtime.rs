@@ -1,9 +1,14 @@
 use std::sync::Arc;
 
 use app::{
-    app_error::AppResult, common::agent::KnowledgeBasePort,
-    conversation::ChatMessageRepositoryPort, meal::MealRecordRepositoryPort,
-    user::UserProfileRepositoryPort,
+    app_error::AppResult,
+    common::agent::KnowledgeBasePort,
+    conversation::ChatMessageRepositoryPort,
+    meal::MealRecordRepositoryPort,
+    user::{
+        UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort,
+        UserProfileRepositoryPort,
+    },
 };
 use tokio::sync::Mutex;
 
@@ -39,7 +44,10 @@ impl PersistenceBackend for SqliteBackend {
         let advice_repo_impl = Arc::new(SqliteAdviceRepo::new(db.clone()));
         let nutrition_repo = Arc::new(SqliteNutritionRepo::new(db.clone()));
 
-        let user_repo: Arc<dyn UserProfileRepositoryPort> = user_repo_impl;
+        let user_repo: Arc<dyn UserProfileRepositoryPort> = user_repo_impl.clone();
+        let user_expectation_repo: Arc<dyn UserHealthExpectationRepositoryPort> =
+            user_repo_impl.clone();
+        let user_preferences_repo: Arc<dyn UserPreferencesRepositoryPort> = user_repo_impl;
         let chat_repo: Arc<dyn ChatMessageRepositoryPort> = chat_repo_impl;
         let meal_repo: Arc<dyn MealRecordRepositoryPort> = meal_repo_impl;
         let advice_repo: Arc<dyn KnowledgeBasePort> = advice_repo_impl;
@@ -47,6 +55,8 @@ impl PersistenceBackend for SqliteBackend {
         Ok(DbRepos {
             db,
             user_repo,
+            user_expectation_repo,
+            user_preferences_repo,
             chat_repo,
             meal_repo,
             advice_repo,

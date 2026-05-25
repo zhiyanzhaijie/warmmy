@@ -5,4 +5,11 @@ pub use crate::meal::{
     LogMealCommand, LogMealResult, MealCommandHandler, MealEventHandler, MealQueryHandler,
     MealRecordRepositoryPort,
 };
-pub use crate::user::{UserProfileQueryHandler, UserProfileRepositoryPort};
+pub use crate::user::{
+    DeleteHealthExpectationCommand, EnsureUserProfileCommand, UserDietaryContext,
+    UserDietaryContextQueryHandler, UserProfileCommandHandler,
+    UserHealthExpectationQueryHandler,
+    UserHealthExpectationCommandHandler, UserHealthExpectationRepositoryPort,
+    UserPreferencesCommandHandler, UserPreferencesQueryHandler,
+    UserPreferencesRepositoryPort, UserProfileQueryHandler, UserProfileRepositoryPort,
+};

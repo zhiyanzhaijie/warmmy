@@ -35,7 +35,7 @@ reasoning = "reasoning_text"
 perception = "perception_vision"
 embedding = "embedding_text"
 
-[retrieval]
+[rag]
 lancedb_path = "data/lancedb-store"
 top_k = 3
 embedding_ndims = 1024

@@ -16,7 +16,7 @@ const SOURCE_FIELD: &str = "source";
 const EMBEDDING_FIELD: &str = "embedding";
 
 #[derive(Clone, Debug)]
-pub struct RetrievalConfig {
+pub struct RagConfig {
     pub lancedb_path: String,
     pub embedding_provider: String,
     pub embedding_base_url: String,
@@ -26,25 +26,23 @@ pub struct RetrievalConfig {
     pub top_k: usize,
 }
 
-impl RetrievalConfig {
+impl RagConfig {
     pub fn validate(&self) -> AppResult<()> {
         if self.lancedb_path.trim().is_empty() {
-            return Err(AppError::internal("retrieval lancedb_path is required"));
+            return Err(AppError::internal("rag lancedb_path is required"));
         }
         if self.embedding_api_key.trim().is_empty() {
-            return Err(AppError::internal(
-                "retrieval embedding api_key is required",
-            ));
+            return Err(AppError::internal("rag embedding api_key is required"));
         }
         if self.embedding_model.trim().is_empty() {
-            return Err(AppError::internal("retrieval embedding model is required"));
+            return Err(AppError::internal("rag embedding model is required"));
         }
         if self.top_k == 0 {
-            return Err(AppError::internal("retrieval top_k must be greater than 0"));
+            return Err(AppError::internal("rag top_k must be greater than 0"));
         }
         if self.embedding_ndims == 0 {
             return Err(AppError::internal(
-                "retrieval embedding_ndims must be greater than 0",
+                "rag embedding_ndims must be greater than 0",
             ));
         }
         Ok(())
@@ -52,18 +50,15 @@ impl RetrievalConfig {
 }
 
 #[derive(Clone, Debug)]
-pub struct RetrievalProjection {
+pub struct RagDocument {
     pub id: String,
     pub content: String,
     pub source: String,
 }
 
-pub type OpenAiCompatibleRetrievalIndex =
-    LanceDbVectorIndex<rig::providers::openai::EmbeddingModel>;
+pub type OpenAiCompatibleRagIndex = LanceDbVectorIndex<rig::providers::openai::EmbeddingModel>;
 
-pub async fn build_retrieval_index(
-    config: &RetrievalConfig,
-) -> AppResult<OpenAiCompatibleRetrievalIndex> {
+pub async fn build_rag_index(config: &RagConfig) -> AppResult<OpenAiCompatibleRagIndex> {
     config.validate()?;
 
     let model = build_embedding_model(config)?;
@@ -78,21 +73,25 @@ pub async fn build_retrieval_index(
         .map_err(|e| AppError::database(e.to_string()))
 }
 
-pub async fn embed_projection(
-    config: &RetrievalConfig,
-    projection: RetrievalProjection,
-) -> AppResult<()> {
+pub async fn embed_rag_document(config: &RagConfig, projection: RagDocument) -> AppResult<()> {
     config.validate()?;
 
     if projection.id.trim().is_empty() {
-        return Err(AppError::internal("retrieval projection id is required"));
+        return Err(AppError::internal("rag document id is required"));
     }
     if projection.content.trim().is_empty() {
-        return Err(AppError::internal("retrieval projection content is required"));
+        return Err(AppError::internal("rag document content is required"));
     }
     if projection.source.trim().is_empty() {
-        return Err(AppError::internal("retrieval projection source is required"));
+        return Err(AppError::internal("rag document source is required"));
     }
+
+    tracing::info!(
+        id = projection.id.as_str(),
+        source = projection.source.as_str(),
+        content = projection.content.as_str(),
+        "embedding rag document content"
+    );
 
     let model = build_embedding_model(config)?;
     tracing::info!(
@@ -109,7 +108,7 @@ pub async fn embed_projection(
 
     if embedding.vec.len() != config.embedding_ndims {
         return Err(AppError::internal(format!(
-            "retrieval embedding dimension mismatch: expected {}, got {}",
+            "rag embedding dimension mismatch: expected {}, got {}",
             config.embedding_ndims,
             embedding.vec.len()
         )));
@@ -124,7 +123,7 @@ pub async fn embed_projection(
     );
 
     let table = open_or_create_table(config).await?;
-    let batch = retrieval_record_batch(
+    let batch = rag_record_batch(
         config.embedding_ndims,
         &projection.id,
         &projection.content,
@@ -134,7 +133,7 @@ pub async fn embed_projection(
     .map_err(|e| AppError::database(e.to_string()))?;
     let reader = RecordBatchIterator::new(
         vec![Ok(batch)],
-        Arc::new(retrieval_schema(config.embedding_ndims)),
+        Arc::new(rag_schema(config.embedding_ndims)),
     );
 
     table
@@ -146,14 +145,12 @@ pub async fn embed_projection(
     tracing::info!(
         id = projection.id.as_str(),
         source = projection.source.as_str(),
-        "embedded retrieval projection"
+        "embedded rag document"
     );
     Ok(())
 }
 
-fn build_embedding_model(
-    config: &RetrievalConfig,
-) -> AppResult<rig::providers::openai::EmbeddingModel> {
+fn build_embedding_model(config: &RagConfig) -> AppResult<rig::providers::openai::EmbeddingModel> {
     let client = openai::Client::builder()
         .api_key(&config.embedding_api_key)
         .base_url(&config.embedding_base_url)
@@ -166,7 +163,7 @@ fn build_embedding_model(
     Ok(client.embedding_model(&config.embedding_model))
 }
 
-async fn open_or_create_table(config: &RetrievalConfig) -> AppResult<lancedb::Table> {
+async fn open_or_create_table(config: &RagConfig) -> AppResult<lancedb::Table> {
     let db = lancedb::connect(&config.lancedb_path)
         .execute()
         .await
@@ -184,17 +181,14 @@ async fn open_or_create_table(config: &RetrievalConfig) -> AppResult<lancedb::Ta
             .await
             .map_err(|e| AppError::database(e.to_string()))
     } else {
-        db.create_empty_table(
-            TABLE_NAME,
-            Arc::new(retrieval_schema(config.embedding_ndims)),
-        )
-        .execute()
-        .await
-        .map_err(|e| AppError::database(e.to_string()))
+        db.create_empty_table(TABLE_NAME, Arc::new(rag_schema(config.embedding_ndims)))
+            .execute()
+            .await
+            .map_err(|e| AppError::database(e.to_string()))
     }
 }
 
-fn retrieval_schema(dims: usize) -> Schema {
+fn rag_schema(dims: usize) -> Schema {
     Schema::new(Fields::from(vec![
         Field::new(ID_FIELD, DataType::Utf8, false),
         Field::new(CONTENT_FIELD, DataType::Utf8, false),
@@ -210,7 +204,7 @@ fn retrieval_schema(dims: usize) -> Schema {
     ]))
 }
 
-fn retrieval_record_batch(
+fn rag_record_batch(
     dims: usize,
     id: &str,
     content: &str,
@@ -226,7 +220,7 @@ fn retrieval_record_batch(
     );
 
     RecordBatch::try_new(
-        Arc::new(retrieval_schema(dims)),
+        Arc::new(rag_schema(dims)),
         vec![
             Arc::new(id_array) as ArrayRef,
             Arc::new(content_array) as ArrayRef,

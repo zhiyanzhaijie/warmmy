@@ -5,12 +5,28 @@ use rig::agent::{HookAction, PromptHook, ToolCallHookAction};
 use rig::completion::{CompletionModel, CompletionResponse};
 use rig::message::Message;
 
-use crate::agent::guardrail::{GuardrailDecision, GuardrailHook};
-
 #[derive(Clone)]
 pub struct WarmmyPromptHook<M> {
     guardrail: Arc<GuardrailHook>,
     _model: PhantomData<fn() -> M>,
+}
+
+pub struct GuardrailHook;
+
+impl GuardrailHook {
+    pub fn check_input(&self, _input: &str) -> GuardrailDecision {
+        GuardrailDecision::Allow
+    }
+
+    pub fn check_output(&self, _output: &str) -> GuardrailDecision {
+        GuardrailDecision::Allow
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GuardrailDecision {
+    Allow,
+    Reject(String),
 }
 
 impl<M> WarmmyPromptHook<M> {

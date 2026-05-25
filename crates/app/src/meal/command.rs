@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::app_error::{AppError, AppResult};
 use crate::meal::{MealEventHandler, MealRecordRepositoryPort};
 use crate::nutrition::impls::estimate_nutrition_from_foods;
-use crate::user::UserProfileRepositoryPort;
+use crate::user::UserDietaryContextQueryHandler;
 use domain::{DayCycle, MealAdvice, MealRecord, UserId};
 
 #[derive(Debug, Clone)]
@@ -21,18 +21,18 @@ pub struct LogMealResult {
 
 #[derive(Clone)]
 pub struct MealCommandHandler {
-    user_profiles: Arc<dyn UserProfileRepositoryPort>,
+    user_contexts: UserDietaryContextQueryHandler,
     meals: Arc<dyn MealRecordRepositoryPort>,
     event_handler: Option<MealEventHandler>,
 }
 
 impl MealCommandHandler {
     pub fn new(
-        user_profiles: Arc<dyn UserProfileRepositoryPort>,
+        user_contexts: UserDietaryContextQueryHandler,
         meals: Arc<dyn MealRecordRepositoryPort>,
     ) -> Self {
         Self {
-            user_profiles,
+            user_contexts,
             meals,
             event_handler: None,
         }
@@ -45,12 +45,13 @@ impl MealCommandHandler {
 
     pub async fn handle_meal(&self, input: LogMealCommand) -> AppResult<LogMealResult> {
         let day_cycle = DayCycle::parse(&input.day_cycle)?;
-        let profile = self
-            .user_profiles
-            .find_profile(&input.user_id)
+        let context = self
+            .user_contexts
+            .get_context(&input.user_id)
             .await
-            .map_err(AppError::upstream)?
-            .ok_or_else(|| AppError::NotFound("user profile".to_string()))?;
+            .ok()
+            .flatten()
+            .ok_or_else(|| AppError::NotFound("user dietary context".to_string()))?;
 
         if input.foods.is_empty() {
             return Err(AppError::validation("meal contains no food items"));
@@ -80,7 +81,7 @@ impl MealCommandHandler {
 
         let advice_summary = format!(
             "已记录{}{}餐：{}，总热量约 {:.0} kcal",
-            profile.display_name,
+            context.profile.display_name,
             day_cycle.as_str(),
             meal.foods
                 .iter()
