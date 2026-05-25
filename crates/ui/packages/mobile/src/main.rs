@@ -4,6 +4,7 @@ use ui::views::{ChatDetailView, HomeView, MeView};
 mod layouts;
 use layouts::RootLayout;
 const MOBILE_CSS: Asset = asset!("/assets/mobile.css");
+const CHAT_MARKDOWN_CSS: Asset = asset!("/assets/chat-markdown.css");
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
@@ -40,6 +41,7 @@ fn main() {
 fn App() -> Element {
     rsx! {
         document::Stylesheet { href: MOBILE_CSS }
+        document::Stylesheet { href: CHAT_MARKDOWN_CSS }
         Router::<Route> {}
     }
 }

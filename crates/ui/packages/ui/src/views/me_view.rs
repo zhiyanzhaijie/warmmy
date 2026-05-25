@@ -6,6 +6,7 @@ use crate::blocks::MeBlock;
 pub fn MeView() -> Element {
     rsx! {
         main {
+            class: "h-full min-h-0 overflow-hidden",
             MeBlock {}
         }
     }

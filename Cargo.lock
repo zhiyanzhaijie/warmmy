@@ -3816,6 +3816,7 @@ dependencies = [
  "config",
  "domain",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

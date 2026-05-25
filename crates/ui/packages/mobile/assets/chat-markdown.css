@@ -1,0 +1,162 @@
+.warmmy-markdown {
+  color: inherit;
+  font-size: 0.95rem;
+  line-height: 1.72;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.warmmy-markdown > :first-child {
+  margin-top: 0;
+}
+
+.warmmy-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.warmmy-markdown p,
+.warmmy-markdown ul,
+.warmmy-markdown ol,
+.warmmy-markdown blockquote,
+.warmmy-markdown pre,
+.warmmy-markdown table {
+  margin: 0 0 0.72rem;
+}
+
+.warmmy-markdown h1,
+.warmmy-markdown h2,
+.warmmy-markdown h3,
+.warmmy-markdown h4,
+.warmmy-markdown h5,
+.warmmy-markdown h6 {
+  margin: 0.95rem 0 0.45rem;
+  color: var(--foreground);
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.warmmy-markdown h1 {
+  font-size: 1.28rem;
+}
+
+.warmmy-markdown h2 {
+  font-size: 1.15rem;
+}
+
+.warmmy-markdown h3,
+.warmmy-markdown h4,
+.warmmy-markdown h5,
+.warmmy-markdown h6 {
+  font-size: 1rem;
+}
+
+.warmmy-markdown a {
+  color: #d48700;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.warmmy-markdown ul,
+.warmmy-markdown ol {
+  padding: 0.55rem 0.75rem 0.55rem 1.35rem;
+  border: 1px solid color-mix(in oklab, var(--border) 76%, transparent);
+  border-radius: 0.9rem;
+  background: color-mix(in oklab, var(--card) 72%, transparent);
+}
+
+.warmmy-markdown ul {
+  list-style: disc;
+}
+
+.warmmy-markdown ol {
+  list-style: decimal;
+}
+
+.warmmy-markdown li + li {
+  margin-top: 0.28rem;
+}
+
+.warmmy-markdown blockquote {
+  padding: 0.62rem 0.8rem;
+  border-left: 3px solid #ffad1a;
+  border-radius: 0 0.85rem 0.85rem 0;
+  background: color-mix(in oklab, #ffad1a 12%, var(--card));
+  color: color-mix(in oklab, var(--foreground) 82%, var(--muted-foreground));
+}
+
+.warmmy-markdown code {
+  padding: 0.08rem 0.32rem;
+  border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
+  border-radius: 0.42rem;
+  background: color-mix(in oklab, var(--muted) 82%, var(--card));
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+.warmmy-markdown pre {
+  overflow-x: auto;
+  padding: 0.9rem;
+  border: 1px solid color-mix(in oklab, var(--border) 82%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in oklab, var(--muted) 78%, #ffad1a 4%);
+}
+
+.warmmy-markdown pre[style] {
+  background-color: color-mix(in oklab, var(--muted) 78%, #ffad1a 4%) !important;
+}
+
+.warmmy-markdown pre code {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.warmmy-markdown table {
+  display: block;
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-collapse: collapse;
+  border-radius: 0.85rem;
+}
+
+.warmmy-markdown th,
+.warmmy-markdown td {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.chat-stream-caret {
+  display: inline-block;
+  width: 0.5rem;
+  height: 1rem;
+  margin-left: 0.16rem;
+  border-radius: 999px;
+  background: #ffad1a;
+  vertical-align: -0.16rem;
+  animation: chat-stream-caret-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes chat-stream-caret-pulse {
+  0%,
+  100% {
+    opacity: 0.24;
+    transform: scaleY(0.78);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-stream-caret {
+    animation: none;
+  }
+}

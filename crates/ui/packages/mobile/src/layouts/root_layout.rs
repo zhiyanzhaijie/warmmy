@@ -1,6 +1,6 @@
 use crate::Route;
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{Send, Sparkles, User};
+use dioxus_icons::lucide::{House, MessageCircle, Sparkles, User};
 
 #[component]
 pub fn RootLayout() -> Element {
@@ -23,8 +23,14 @@ pub fn RootLayout() -> Element {
 #[component]
 fn BottomNav() -> Element {
     let route = use_route::<Route>();
-    let is_chat = matches!(&route, Route::HomeView { .. }) || matches!(&route, Route::ChatDetailView { .. });
+    let nav = navigator();
+    let is_home = matches!(&route, Route::HomeView { .. });
+    let is_chat = matches!(&route, Route::ChatDetailView { .. });
     let is_me = matches!(&route, Route::MeView { .. });
+
+    let open_chat = move |_| {
+        nav.push(format!("/{}", ui::today_session_id()));
+    };
 
     rsx! {
         div {
@@ -35,9 +41,20 @@ fn BottomNav() -> Element {
                     to: Route::HomeView {},
                     class: format!(
                         "flex flex-col items-center justify-between p-2 relative group {}",
+                        if is_home { "text-foreground" } else { "text-muted-foreground" }
+                    ),
+                    House { size: 24 }
+                    span { class: "text-[11px] font-semibold mt-1", "Home" }
+                }
+                button {
+                    r#type: "button",
+                    onclick: open_chat,
+                    class: format!(
+                        "flex flex-col items-center justify-between p-2 relative group bg-transparent border-0 {}",
                         if is_chat { "text-foreground" } else { "text-muted-foreground" }
                     ),
-                    Sparkles { size: 24 }
+                    MessageCircle { size: 24 }
+                    span { class: "text-[11px] font-semibold mt-1", "Chat" }
                 }
                 Link {
                     to: Route::MeView {},
@@ -46,6 +63,7 @@ fn BottomNav() -> Element {
                         if is_me { "text-foreground" } else { "text-muted-foreground" }
                     ),
                     User { size: 24 }
+                    span { class: "text-[11px] font-semibold mt-1", "Me" }
                 }
             }
         }
@@ -55,8 +73,15 @@ fn BottomNav() -> Element {
 #[component]
 fn SideNav() -> Element {
     let route = use_route::<Route>();
-    let is_chat = matches!(&route, Route::HomeView { .. }) || matches!(&route, Route::ChatDetailView { .. });
+    let nav = navigator();
+    let is_home = matches!(&route, Route::HomeView { .. });
+    let is_chat = matches!(&route, Route::ChatDetailView { .. });
     let is_me = matches!(&route, Route::MeView { .. });
+
+    let open_chat = move |_| {
+        nav.push(format!("/{}", ui::today_session_id()));
+    };
+
     rsx! {
         div {
             class: "hidden md:flex flex-col w-24 lg:w-64 h-full border-r border-border bg-sidebar pt-8 items-center lg:items-start z-50 shrink-0",
@@ -78,14 +103,28 @@ fn SideNav() -> Element {
                     to: Route::HomeView {},
                     class: format!(
                         "flex items-center lg:justify-start justify-center gap-4 p-3.5 rounded-[1.25rem] transition-all relative overflow-hidden {}",
+                        if is_home {
+                            "bg-muted text-sidebar-foreground font-bold"
+                        } else {
+                            "text-muted-foreground hover:bg-muted/50 hover:text-sidebar-foreground font-medium"
+                        }
+                    ),
+                    House { size: 24, class: "mx-auto lg:mx-0 shrink-0" }
+                    span { class: "hidden lg:block", "Home" }
+                }
+                button {
+                    r#type: "button",
+                    onclick: open_chat,
+                    class: format!(
+                        "flex items-center lg:justify-start justify-center gap-4 p-3.5 rounded-[1.25rem] transition-all relative overflow-hidden border-0 bg-transparent text-left {}",
                         if is_chat {
                             "bg-muted text-sidebar-foreground font-bold"
                         } else {
                             "text-muted-foreground hover:bg-muted/50 hover:text-sidebar-foreground font-medium"
                         }
                     ),
-                    Sparkles { size: 24, class: "mx-auto lg:mx-0 shrink-0" }
-                    span { class: "hidden lg:block", "Diet Buddy" }
+                    MessageCircle { size: 24, class: "mx-auto lg:mx-0 shrink-0" }
+                    span { class: "hidden lg:block", "Chat" }
                 }
                 Link {
                     to: Route::MeView {},

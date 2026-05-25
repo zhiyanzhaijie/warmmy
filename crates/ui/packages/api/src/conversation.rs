@@ -1,7 +1,7 @@
 use crate::impls::error::api_error;
 use crate::impls::state::State;
-use dioxus::prelude::*;
 use dioxus::fullstack::payloads::TextStream;
+use dioxus::prelude::*;
 use futures_util::StreamExt;
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -21,7 +21,7 @@ pub async fn echo(input: String, session_id: String) -> Result<EchoResponse, Ser
     let result = state
         .0
         .conversation
-        .sender
+        .command
         .send_user_message(command)
         .await
         .map_err(api_error)?;
@@ -42,7 +42,7 @@ pub async fn echo_stream(input: String, session_id: String) -> Result<TextStream
     let stream = state
         .0
         .conversation
-        .sender
+        .command
         .stream_user_message(command)
         .await
         .map_err(api_error)?;
@@ -53,7 +53,9 @@ pub async fn echo_stream(input: String, session_id: String) -> Result<TextStream
 }
 
 #[post("/api/get_session_history", state: State)]
-pub async fn get_session_history(session_id: String) -> Result<Vec<app::conversation::ChatMessage>, ServerFnError> {
+pub async fn get_session_history(
+    session_id: String,
+) -> Result<Vec<app::conversation::ChatMessage>, ServerFnError> {
     let user_id = domain::UserId::new_unchecked("demo-user");
     let result = state
         .0
