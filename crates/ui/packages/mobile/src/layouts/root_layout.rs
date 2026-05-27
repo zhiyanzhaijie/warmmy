@@ -1,9 +1,14 @@
 use crate::Route;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{House, MessageCircle, Sparkles, User};
+use ui::blocks::{provide_current_user_context, ConversationTransitionContext};
 
 #[component]
 pub fn RootLayout() -> Element {
+    let pending = use_signal(|| None);
+    use_context_provider(|| ConversationTransitionContext { pending });
+    provide_current_user_context();
+
     rsx! {
         div {
             class: "flex w-full h-[100dvh] bg-background text-foreground overflow-hidden font-sans",

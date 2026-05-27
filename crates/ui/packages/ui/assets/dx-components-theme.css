@@ -118,3 +118,141 @@ html[data-theme="light"] [class~="dxc-system"] {
   --shadow-xl: 0 16px 40px rgba(28, 28, 28, 0.12);
   --shadow-2xl: 0 24px 64px rgba(28, 28, 28, 0.14);
 }
+
+/* Runtime theme tokens. The earlier --dark/--light markers are only component flags;
+ * these variables are the actual semantic colors used by Tailwind utilities.
+ */
+:root,
+html[data-theme="light"] {
+  --primary-color: #f7f4ed;
+  --primary-color-1: #fcfbf8;
+  --primary-color-2: #f7f4ed;
+  --primary-color-3: rgba(28, 28, 28, 0.03);
+  --primary-color-4: rgba(28, 28, 28, 0.04);
+  --primary-color-5: #eceae4;
+  --primary-color-6: rgba(28, 28, 28, 0.08);
+  --primary-color-7: rgba(28, 28, 28, 0.4);
+
+  --secondary-color: #1c1c1c;
+  --secondary-color-1: #1c1c1c;
+  --secondary-color-2: #1c1c1c;
+  --secondary-color-3: rgba(28, 28, 28, 0.83);
+  --secondary-color-4: rgba(28, 28, 28, 0.82);
+  --secondary-color-5: #5f5f5d;
+  --secondary-color-6: rgba(28, 28, 28, 0.4);
+
+  --background: var(--primary-color);
+  --foreground: var(--secondary-color);
+  --card: var(--primary-color-1);
+  --card-foreground: var(--secondary-color);
+  --popover: var(--primary-color-2);
+  --popover-foreground: var(--secondary-color);
+  --primary: var(--secondary-color-2);
+  --primary-foreground: var(--primary-color-2);
+  --secondary: var(--primary-color-3);
+  --secondary-foreground: var(--secondary-color);
+  --muted: var(--primary-color-3);
+  --muted-foreground: var(--secondary-color-5);
+  --accent: var(--primary-color-4);
+  --accent-foreground: var(--secondary-color-1);
+  --border: var(--primary-color-5);
+  --input: var(--primary-color-6);
+
+  --sidebar: #f7f4ed;
+  --sidebar-foreground: #1c1c1c;
+  --sidebar-primary: #1c1c1c;
+  --sidebar-primary-foreground: #fcfbf8;
+  --sidebar-accent: rgba(28, 28, 28, 0.04);
+  --sidebar-accent-foreground: #1c1c1c;
+  --sidebar-border: #eceae4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --primary-color: #171511;
+    --primary-color-1: #201d18;
+    --primary-color-2: #171511;
+    --primary-color-3: rgba(247, 244, 237, 0.06);
+    --primary-color-4: rgba(247, 244, 237, 0.09);
+    --primary-color-5: rgba(247, 244, 237, 0.14);
+    --primary-color-6: rgba(247, 244, 237, 0.16);
+    --primary-color-7: rgba(247, 244, 237, 0.42);
+
+    --secondary-color: #f7f4ed;
+    --secondary-color-1: #fcfbf8;
+    --secondary-color-2: #f7f4ed;
+    --secondary-color-3: rgba(247, 244, 237, 0.84);
+    --secondary-color-4: rgba(247, 244, 237, 0.78);
+    --secondary-color-5: rgba(247, 244, 237, 0.58);
+    --secondary-color-6: rgba(247, 244, 237, 0.42);
+
+    --background: var(--primary-color);
+    --foreground: var(--secondary-color);
+    --card: var(--primary-color-1);
+    --card-foreground: var(--secondary-color);
+    --popover: #201d18;
+    --popover-foreground: var(--secondary-color);
+    --primary: var(--secondary-color-2);
+    --primary-foreground: var(--primary-color-2);
+    --secondary: var(--primary-color-3);
+    --secondary-foreground: var(--secondary-color);
+    --muted: var(--primary-color-3);
+    --muted-foreground: var(--secondary-color-5);
+    --accent: var(--primary-color-4);
+    --accent-foreground: var(--secondary-color-1);
+    --border: var(--primary-color-5);
+    --input: var(--primary-color-6);
+
+    --sidebar: #14120f;
+    --sidebar-foreground: #f7f4ed;
+    --sidebar-primary: #f7f4ed;
+    --sidebar-primary-foreground: #171511;
+    --sidebar-accent: rgba(247, 244, 237, 0.08);
+    --sidebar-accent-foreground: #f7f4ed;
+    --sidebar-border: rgba(247, 244, 237, 0.12);
+  }
+}
+
+html[data-theme="dark"] {
+  --primary-color: #171511;
+  --primary-color-1: #201d18;
+  --primary-color-2: #171511;
+  --primary-color-3: rgba(247, 244, 237, 0.06);
+  --primary-color-4: rgba(247, 244, 237, 0.09);
+  --primary-color-5: rgba(247, 244, 237, 0.14);
+  --primary-color-6: rgba(247, 244, 237, 0.16);
+  --primary-color-7: rgba(247, 244, 237, 0.42);
+
+  --secondary-color: #f7f4ed;
+  --secondary-color-1: #fcfbf8;
+  --secondary-color-2: #f7f4ed;
+  --secondary-color-3: rgba(247, 244, 237, 0.84);
+  --secondary-color-4: rgba(247, 244, 237, 0.78);
+  --secondary-color-5: rgba(247, 244, 237, 0.58);
+  --secondary-color-6: rgba(247, 244, 237, 0.42);
+
+  --background: var(--primary-color);
+  --foreground: var(--secondary-color);
+  --card: var(--primary-color-1);
+  --card-foreground: var(--secondary-color);
+  --popover: #201d18;
+  --popover-foreground: var(--secondary-color);
+  --primary: var(--secondary-color-2);
+  --primary-foreground: var(--primary-color-2);
+  --secondary: var(--primary-color-3);
+  --secondary-foreground: var(--secondary-color);
+  --muted: var(--primary-color-3);
+  --muted-foreground: var(--secondary-color-5);
+  --accent: var(--primary-color-4);
+  --accent-foreground: var(--secondary-color-1);
+  --border: var(--primary-color-5);
+  --input: var(--primary-color-6);
+
+  --sidebar: #14120f;
+  --sidebar-foreground: #f7f4ed;
+  --sidebar-primary: #f7f4ed;
+  --sidebar-primary-foreground: #171511;
+  --sidebar-accent: rgba(247, 244, 237, 0.08);
+  --sidebar-accent-foreground: #f7f4ed;
+  --sidebar-border: rgba(247, 244, 237, 0.12);
+}

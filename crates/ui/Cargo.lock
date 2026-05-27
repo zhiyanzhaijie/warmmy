@@ -114,12 +114,14 @@ name = "api"
 version = "0.1.0"
 dependencies = [
  "app",
+ "async-stream",
  "chrono",
  "dioxus",
  "domain",
  "futures-util",
  "infra",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -127,6 +129,7 @@ name = "app"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "domain",
  "futures-core",
  "serde",
@@ -11443,6 +11446,7 @@ dependencies = [
  "dioxus-sdk-time",
  "futures-util",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

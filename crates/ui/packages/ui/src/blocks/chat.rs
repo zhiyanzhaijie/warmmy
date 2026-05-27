@@ -1,18 +1,20 @@
 use chrono::{Duration as ChronoDuration, NaiveDate};
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{CalendarDays, Send, Sparkles};
+use dioxus_icons::lucide::{CalendarDays, Check, Send, Sparkles};
 use dioxus_sdk_time::sleep;
 use std::collections::HashSet;
 use std::time::Duration;
 
+use crate::blocks::current_user_id;
 use crate::components::common::MarkdownContent;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::card::Card;
 use crate::components::ui::input::Input;
 use crate::components::ui::skeleton::Skeleton;
 use crate::today_session_id;
-use crate::views::FIRST_MSG;
 use api::conversation;
+use api::meal;
+use serde_json::Value;
 
 #[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ChatMessage {
@@ -21,6 +23,7 @@ pub struct ChatMessage {
     pub is_bot: bool,
     pub is_skeleton: bool,
     pub is_streaming: bool,
+    pub pending_meal: Option<meal::PendingMealLogDTO>,
 }
 
 pub static CHAT_MESSAGES: GlobalSignal<Vec<ChatMessage>> = Signal::global(Vec::new);
@@ -28,15 +31,36 @@ pub static ACTIVE_SESSION_ID: GlobalSignal<Option<String>> = Signal::global(|| N
 pub static CHAT_INPUT: GlobalSignal<String> = Signal::global(String::new);
 pub static CHAT_NEXT_ID: GlobalSignal<u64> = Signal::global(|| 1_u64);
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct PendingConversationMessage {
+    pub session_id: String,
+    pub content: String,
+    pub started: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct ConversationTransitionContext {
+    pub pending: Signal<Option<PendingConversationMessage>>,
+}
+
 #[component]
 pub fn ChatBlock(session_id: Option<String>) -> Element {
-    let session_id_send = session_id.clone();
+    let transition = try_consume_context::<ConversationTransitionContext>();
+    let user_id = current_user_id();
     let current_session_id = session_id.clone().unwrap_or_else(today_session_id);
     let send_session_id = current_session_id.clone();
     let header_session_id = current_session_id.clone();
+    let should_route_after_stream = session_id.is_none();
+    let has_pending_transition = transition
+        .map(|ctx| (ctx.pending)().is_some())
+        .unwrap_or(false);
 
+    let execute_user_id = user_id.clone();
     let execute_send = std::rc::Rc::new(move |content: String| {
         let sid = send_session_id.clone();
+        let request_user_id = execute_user_id.clone();
+        let route_after_stream = should_route_after_stream;
+        let transition = transition;
         let active_sid = ACTIVE_SESSION_ID.read().clone();
         if active_sid.as_ref() != Some(&sid) {
             *ACTIVE_SESSION_ID.write() = Some(sid.clone());
@@ -44,80 +68,52 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
             *CHAT_NEXT_ID.write() = 1;
         }
 
-        let user_id = CHAT_NEXT_ID();
-        *CHAT_NEXT_ID.write() = user_id + 1;
-        CHAT_MESSAGES.write().push(ChatMessage {
-            id: user_id,
-            text: content.clone(),
-            is_bot: false,
-            is_skeleton: false,
-            is_streaming: false,
-        });
-
-        let bot_id = CHAT_NEXT_ID();
-        *CHAT_NEXT_ID.write() = bot_id + 1;
-        CHAT_MESSAGES.write().push(ChatMessage {
-            id: bot_id,
-            text: String::new(),
-            is_bot: true,
-            is_skeleton: true,
-            is_streaming: true,
-        });
-
+        let bot_id = append_outgoing_message_pair(content.clone());
         let content_for_server = content;
 
         *ACTIVE_SESSION_ID.write() = Some(sid.clone());
 
-        if session_id_send.is_none() {
-            navigator().replace(format!("/{}", sid));
-        }
-
         spawn(async move {
-            match conversation::echo_stream(content_for_server.clone(), sid.clone()).await {
-                Ok(mut stream) => {
-                    let mut first = true;
-                    while let Some(chunk) = stream.next().await {
-                        match chunk {
-                            Ok(text) => {
-                                if text.is_empty() {
-                                    continue;
-                                }
-                                let mut all = CHAT_MESSAGES.write();
-                                if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
-                                    if first {
-                                        bot_msg.is_skeleton = false;
-                                        first = false;
-                                    }
-                                    bot_msg.text.push_str(&text);
-                                }
-                            }
-                            Err(err) => {
-                                let mut all = CHAT_MESSAGES.write();
-                                if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
-                                    bot_msg.is_skeleton = false;
-                                    bot_msg.is_streaming = false;
-                                    bot_msg.text.push_str(&format!("\n[stream error] {err}"));
-                                }
-                                return;
-                            }
-                        }
+            match conversation::echo_stream(
+                request_user_id.clone(),
+                content_for_server.clone(),
+                sid.clone(),
+            )
+            .await
+            {
+                Ok(stream) => {
+                    append_agent_stream(stream, bot_id, sid.clone()).await;
+                    if route_after_stream && is_active_session(&sid) {
+                        navigator().replace(format!("/{}", sid));
                     }
-                    let mut all = CHAT_MESSAGES.write();
-                    if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
-                        bot_msg.is_skeleton = false;
-                        bot_msg.is_streaming = false;
+                    if let Some(mut transition) = transition {
+                        transition.pending.set(None);
                     }
                 }
                 Err(stream_err) => {
-                    let fallback = match conversation::echo(content_for_server, sid).await {
-                        Ok(resp) => resp.reply,
-                        Err(err) => format!("Server error: {stream_err}; fallback failed: {err}"),
-                    };
+                    let fallback =
+                        match conversation::echo(request_user_id, content_for_server, sid.clone())
+                            .await
+                        {
+                            Ok(resp) => resp.reply,
+                            Err(err) => {
+                                format!("Server error: {stream_err}; fallback failed: {err}")
+                            }
+                        };
                     let mut all = CHAT_MESSAGES.write();
-                    if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
-                        bot_msg.is_skeleton = false;
-                        bot_msg.is_streaming = false;
-                        bot_msg.text = fallback;
+                    if is_active_session(&sid) {
+                        if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
+                            bot_msg.is_skeleton = false;
+                            bot_msg.is_streaming = false;
+                            bot_msg.text = fallback;
+                        }
+                    }
+                    drop(all);
+                    if route_after_stream && is_active_session(&sid) {
+                        navigator().replace(format!("/{}", sid));
+                    }
+                    if let Some(mut transition) = transition {
+                        transition.pending.set(None);
                     }
                 }
             }
@@ -125,37 +121,53 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
     });
 
     let history_session_id = current_session_id.clone();
+    let history_user_id = user_id.clone();
     let history_is_detail_route = session_id.is_some();
     let execute_send_after_history = execute_send.clone();
+    let transition_for_history = transition;
     let _history_loader = use_resource(use_reactive(
-        (&history_session_id, &history_is_detail_route),
-        move |(sid, is_detail_route)| {
+        (
+            &history_user_id,
+            &history_session_id,
+            &history_is_detail_route,
+        ),
+        move |(request_user_id, sid, is_detail_route)| {
             let execute_send_after_history = execute_send_after_history.clone();
+            let transition = transition_for_history;
             async move {
                 if sid.is_empty() {
                     return;
                 }
 
                 *ACTIVE_SESSION_ID.write() = Some(sid.clone());
-                let pending_first_msg = FIRST_MSG.peek().clone();
+                let pending_message = transition
+                    .and_then(|ctx| ctx.pending.peek().clone())
+                    .filter(|pending| pending.session_id == sid);
+                let has_pending = pending_message.is_some();
 
-                match conversation::get_session_history(sid.clone()).await {
+                let pending_meals = meal::list_pending_meals(request_user_id.clone(), sid.clone())
+                    .await
+                    .unwrap_or_default();
+
+                match conversation::get_session_history(request_user_id.clone(), sid.clone()).await
+                {
                     Ok(history) => {
                         if history.is_empty() {
-                            if is_detail_route && pending_first_msg.is_none() {
+                            if is_detail_route && !has_pending {
                                 *CHAT_MESSAGES.write() = vec![ChatMessage {
                                     id: 0,
                                     text: "嗨！我是 warmmy，你的对话饮食助理。今天有什么想记录的，或者关于饮食健康的疑问吗？🍎".to_string(),
                                     is_bot: true,
                                     is_skeleton: false,
                                     is_streaming: false,
+                                    pending_meal: None,
                                 }];
                             } else {
-                                *CHAT_MESSAGES.write() = Vec::new();
+                                append_pending_meal_messages(pending_meals, 1);
                             }
-                            *CHAT_NEXT_ID.write() = 1;
+                            *CHAT_NEXT_ID.write() = next_chat_id();
                         } else {
-                            if !is_detail_route {
+                            if !is_detail_route && !has_pending {
                                 navigator().replace(format!("/{}", sid));
                             }
                             let mut loaded_msgs = Vec::new();
@@ -167,6 +179,18 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
                                     is_bot: msg.role != "user",
                                     is_skeleton: false,
                                     is_streaming: false,
+                                    pending_meal: None,
+                                });
+                                current_next_id += 1;
+                            }
+                            for pending_meal in pending_meals {
+                                loaded_msgs.push(ChatMessage {
+                                    id: current_next_id,
+                                    text: String::new(),
+                                    is_bot: true,
+                                    is_skeleton: false,
+                                    is_streaming: false,
+                                    pending_meal: Some(pending_meal),
                                 });
                                 current_next_id += 1;
                             }
@@ -174,24 +198,54 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
                             *CHAT_NEXT_ID.write() = current_next_id;
                         }
 
-                        if let Some(content) = pending_first_msg {
-                            *FIRST_MSG.write() = None;
-                            execute_send_after_history(content);
+                        if let Some(pending) = pending_message {
+                            if !pending.started {
+                                if let Some(mut transition) = transition {
+                                    transition.pending.with_mut(|current| {
+                                        if let Some(current) = current {
+                                            if current.session_id == pending.session_id
+                                                && current.content == pending.content
+                                            {
+                                                current.started = true;
+                                            }
+                                        }
+                                    });
+                                }
+                                execute_send_after_history(pending.content);
+                            }
                         }
                     }
                     Err(_) => {
-                        if pending_first_msg.is_none() {
+                        if !has_pending {
                             *CHAT_MESSAGES.write() = vec![ChatMessage {
                                 id: 0,
                                 text: "嗨！今天想吃点什么呢？".to_string(),
                                 is_bot: true,
                                 is_skeleton: false,
                                 is_streaming: false,
+                                pending_meal: None,
                             }];
-                            *CHAT_NEXT_ID.write() = 1;
-                        } else if let Some(content) = pending_first_msg {
-                            *FIRST_MSG.write() = None;
-                            execute_send_after_history(content);
+                            append_pending_meal_messages(pending_meals, 1);
+                            *CHAT_NEXT_ID.write() = next_chat_id();
+                        } else {
+                            append_pending_meal_messages(pending_meals, 1);
+                            *CHAT_NEXT_ID.write() = next_chat_id();
+                            if let Some(pending) = pending_message {
+                                if !pending.started {
+                                    if let Some(mut transition) = transition {
+                                        transition.pending.with_mut(|current| {
+                                            if let Some(current) = current {
+                                                if current.session_id == pending.session_id
+                                                    && current.content == pending.content
+                                                {
+                                                    current.started = true;
+                                                }
+                                            }
+                                        });
+                                    }
+                                    execute_send_after_history(pending.content);
+                                }
+                            }
                         }
                     }
                 }
@@ -201,6 +255,13 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
 
     let execute_send_input = execute_send.clone();
     let send_message = std::rc::Rc::new(move || {
+        if CHAT_MESSAGES
+            .read()
+            .iter()
+            .any(|msg| msg.is_streaming || msg.is_skeleton)
+        {
+            return;
+        }
         let content = CHAT_INPUT().trim().to_string();
         if content.is_empty() {
             return;
@@ -211,6 +272,38 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
 
     let send_message_keydown = send_message.clone();
     let send_message_click = send_message.clone();
+    let is_streaming = use_memo(move || {
+        CHAT_MESSAGES
+            .read()
+            .iter()
+            .any(|msg| msg.is_streaming || msg.is_skeleton)
+    });
+    let mut finalizing_day = use_signal(|| false);
+    let finalize_user_id = user_id.clone();
+    let finalize_session_id = current_session_id.clone();
+    let finalize_today = move |_| {
+        if finalizing_day() || is_streaming() {
+            return;
+        }
+
+        let request_user_id = finalize_user_id.clone();
+        let request_session_id = finalize_session_id.clone();
+        spawn(async move {
+            finalizing_day.set(true);
+            let bot_id = append_streaming_bot_slot();
+            match meal::finalize_and_summarize_meal_day(request_user_id, request_session_id.clone())
+                .await
+            {
+                Ok(stream) => {
+                    append_agent_stream(stream, bot_id, request_session_id).await;
+                }
+                Err(err) => {
+                    append_bot_text(format!("生成今日总结失败：{err}"));
+                }
+            }
+            finalizing_day.set(false);
+        });
+    };
 
     let scroll_signature = use_memo(move || {
         let messages = CHAT_MESSAGES.read();
@@ -256,23 +349,41 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
                                 "Diet Buddy"
                             }
                         }
-                        span {
-                            class: "hidden rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted-foreground md:inline-flex",
-                            "{header_session_id}"
+                        div { class: "flex items-center gap-2",
+                            Button {
+                                variant: ButtonVariant::Ghost,
+                                size: ButtonSize::Sm,
+                                class: "rounded-full border border-border bg-background px-3 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground",
+                                disabled: is_streaming() || finalizing_day(),
+                                onclick: finalize_today,
+                                Check { size: 14 }
+                                if finalizing_day() { "总结中" } else { "敲定今日" }
+                            }
+                            span {
+                                class: "hidden rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted-foreground md:inline-flex",
+                                "{header_session_id}"
+                            }
                         }
                     }
                     if session_id.is_some() {
-                        SessionStrip { active_session_id: header_session_id.clone() }
+                        SessionStrip {
+                            user_id: user_id.clone(),
+                            active_session_id: header_session_id.clone(),
+                        }
                     }
                 }
 
                 div {
                     id: "chat-message-viewport",
                     class: "flex-1 min-h-0 overflow-y-auto space-y-5 px-4 py-5 md:px-6 md:py-6",
-                    for msg in CHAT_MESSAGES().iter() {
-                        ChatMessageBubble {
-                            key: "{msg.id}",
-                            message: msg.clone(),
+                    if CHAT_MESSAGES().is_empty() && has_pending_transition {
+                        PendingChatPlaceholder {}
+                    } else {
+                        for msg in CHAT_MESSAGES().iter() {
+                            ChatMessageBubble {
+                                key: "{msg.id}",
+                                message: msg.clone(),
+                            }
                         }
                     }
                     div { id: "chat-message-bottom", class: "h-px w-full" }
@@ -289,9 +400,10 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
                                 r#type: "text",
                                 placeholder: "记录餐食，或询问下一顿吃什么...",
                                 value: CHAT_INPUT(),
+                                disabled: is_streaming(),
                                 oninput: move |e: FormEvent| *CHAT_INPUT.write() = e.value(),
                                 onkeydown: move |e: KeyboardEvent| {
-                                    if e.key() == Key::Enter {
+                                    if e.key() == Key::Enter && !is_streaming() {
                                         send_message_keydown();
                                     }
                                 }
@@ -300,6 +412,7 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
                                 variant: ButtonVariant::Ghost,
                                 size: ButtonSize::Icon,
                                 class: "rounded-full bg-foreground p-3 text-background shadow-sm hover:opacity-90",
+                                disabled: is_streaming(),
                                 onclick: move |_| send_message_click(),
                                 Send { size: 20, class: "ml-0.5" }
                             }
@@ -312,7 +425,85 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
 }
 
 #[component]
+fn PendingChatPlaceholder() -> Element {
+    rsx! {
+        div {
+            class: "rounded-[1.5rem] border border-dashed border-border bg-background p-4 text-sm leading-relaxed text-muted-foreground",
+            "正在加载今天的上下文，然后会把你的新消息接在历史记录之后。"
+        }
+    }
+}
+
+fn append_pending_meal_messages(pending_meals: Vec<meal::PendingMealLogDTO>, start_id: u64) {
+    if pending_meals.is_empty() {
+        return;
+    }
+
+    let mut messages = CHAT_MESSAGES.write();
+    let mut next_id = start_id.max(next_chat_id());
+    for pending_meal in pending_meals {
+        if messages.iter().any(|message| {
+            message.pending_meal.as_ref().map(|meal| &meal.id) == Some(&pending_meal.id)
+        }) {
+            continue;
+        }
+        messages.push(ChatMessage {
+            id: next_id,
+            text: String::new(),
+            is_bot: true,
+            is_skeleton: false,
+            is_streaming: false,
+            pending_meal: Some(pending_meal),
+        });
+        next_id += 1;
+    }
+    *CHAT_NEXT_ID.write() = next_id;
+}
+
+fn next_chat_id() -> u64 {
+    CHAT_MESSAGES
+        .read()
+        .iter()
+        .map(|message| message.id)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1)
+}
+
+fn append_outgoing_message_pair(content: String) -> u64 {
+    let mut messages = CHAT_MESSAGES.write();
+    let user_id = CHAT_NEXT_ID();
+    let bot_id = user_id.saturating_add(1);
+    *CHAT_NEXT_ID.write() = bot_id.saturating_add(1);
+    messages.push(ChatMessage {
+        id: user_id,
+        text: content,
+        is_bot: false,
+        is_skeleton: false,
+        is_streaming: false,
+        pending_meal: None,
+    });
+    messages.push(ChatMessage {
+        id: bot_id,
+        text: String::new(),
+        is_bot: true,
+        is_skeleton: true,
+        is_streaming: true,
+        pending_meal: None,
+    });
+    bot_id
+}
+
+#[component]
 fn ChatMessageBubble(message: ChatMessage) -> Element {
+    if let Some(pending_meal) = message.pending_meal {
+        return rsx! {
+            div { class: "max-w-[92%] md:max-w-[78%]",
+                PendingMealCard { pending_meal }
+            }
+        };
+    }
+
     if message.is_bot {
         rsx! {
             div {
@@ -408,11 +599,14 @@ fn StreamMessage(text: String, is_skeleton: bool, is_streaming: bool) -> Element
 }
 
 #[component]
-fn SessionStrip(active_session_id: String) -> Element {
-    let sessions = use_resource(move || async move {
-        api::conversation::list_user_sessions()
-            .await
-            .unwrap_or_default()
+fn SessionStrip(user_id: String, active_session_id: String) -> Element {
+    let sessions = use_resource(move || {
+        let request_user_id = user_id.clone();
+        async move {
+            api::conversation::list_user_sessions(request_user_id)
+                .await
+                .unwrap_or_default()
+        }
     });
 
     let session_list = sessions.read().clone().unwrap_or_default();
@@ -509,5 +703,364 @@ fn session_label(session_id: &str) -> String {
                     .unwrap_or_else(|| session_id.to_string())
             })
             .unwrap_or_else(|| session_id.to_string())
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "type")]
+enum ChatStreamWireEvent {
+    #[serde(rename = "text_delta")]
+    TextDelta { text: String },
+    #[serde(rename = "interaction_requested")]
+    InteractionRequested { interaction: AgentInteractionDTO },
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+struct AgentInteractionDTO {
+    id: String,
+    kind: String,
+    payload: Value,
+}
+
+enum ChatStreamEvent {
+    TextDelta(String),
+    InteractionRequested(AgentInteractionDTO),
+}
+
+#[derive(Default)]
+struct ChatStreamParser {
+    buffer: String,
+}
+
+impl ChatStreamParser {
+    fn parse(&mut self, chunk: &str) -> Vec<ChatStreamEvent> {
+        self.buffer.push_str(chunk);
+        let mut events = Vec::new();
+
+        while let Some(index) = self.buffer.find('\n') {
+            let line = self.buffer[..index].trim().to_string();
+            self.buffer.drain(..=index);
+            if line.is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<ChatStreamWireEvent>(&line) {
+                Ok(ChatStreamWireEvent::TextDelta { text }) => {
+                    events.push(ChatStreamEvent::TextDelta(text));
+                }
+                Ok(ChatStreamWireEvent::InteractionRequested { interaction }) => {
+                    events.push(ChatStreamEvent::InteractionRequested(interaction));
+                }
+                Err(_) => events.push(ChatStreamEvent::TextDelta(line)),
+            }
+        }
+
+        events
+    }
+}
+
+fn is_active_session(session_id: &str) -> bool {
+    ACTIVE_SESSION_ID
+        .read()
+        .as_ref()
+        .map(|active| active == session_id)
+        .unwrap_or(false)
+}
+
+fn handle_interaction_requested(interaction: AgentInteractionDTO) {
+    if interaction.kind == "meal_log_confirmation" {
+        match serde_json::from_value::<meal::PendingMealLogDTO>(interaction.payload) {
+            Ok(meal) => push_pending_meal_message(meal),
+            Err(err) => append_bot_text(format!("无法渲染待确认操作：{err}")),
+        }
+    } else {
+        append_bot_text(format!(
+            "收到暂不支持的操作请求：{} ({})",
+            interaction.kind, interaction.id
+        ));
+    }
+}
+
+fn push_pending_meal_message(pending_meal: meal::PendingMealLogDTO) {
+    let mut messages = CHAT_MESSAGES.write();
+    if messages
+        .iter()
+        .any(|message| message.pending_meal.as_ref().map(|meal| &meal.id) == Some(&pending_meal.id))
+    {
+        return;
+    }
+    let id = CHAT_NEXT_ID();
+    *CHAT_NEXT_ID.write() = id.saturating_add(1);
+    messages.push(ChatMessage {
+        id,
+        text: String::new(),
+        is_bot: true,
+        is_skeleton: false,
+        is_streaming: false,
+        pending_meal: Some(pending_meal),
+    });
+}
+
+fn append_bot_text(text: String) {
+    let id = CHAT_NEXT_ID();
+    *CHAT_NEXT_ID.write() = id.saturating_add(1);
+    CHAT_MESSAGES.write().push(ChatMessage {
+        id,
+        text,
+        is_bot: true,
+        is_skeleton: false,
+        is_streaming: false,
+        pending_meal: None,
+    });
+}
+
+fn append_streaming_bot_slot() -> u64 {
+    let id = CHAT_NEXT_ID();
+    *CHAT_NEXT_ID.write() = id.saturating_add(1);
+    CHAT_MESSAGES.write().push(ChatMessage {
+        id,
+        text: String::new(),
+        is_bot: true,
+        is_skeleton: true,
+        is_streaming: true,
+        pending_meal: None,
+    });
+    id
+}
+
+async fn append_agent_stream(
+    mut stream: dioxus::fullstack::payloads::TextStream,
+    bot_id: u64,
+    session_id: String,
+) {
+    let mut first = true;
+    let mut parser = ChatStreamParser::default();
+    while let Some(chunk) = stream.next().await {
+        if !is_active_session(&session_id) {
+            return;
+        }
+        match chunk {
+            Ok(text) => {
+                if text.is_empty() {
+                    continue;
+                }
+                for event in parser.parse(&text) {
+                    match event {
+                        ChatStreamEvent::TextDelta(delta) => {
+                            let mut all = CHAT_MESSAGES.write();
+                            if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
+                                if first {
+                                    bot_msg.is_skeleton = false;
+                                    first = false;
+                                }
+                                bot_msg.text.push_str(&delta);
+                            }
+                        }
+                        ChatStreamEvent::InteractionRequested(interaction) => {
+                            handle_interaction_requested(interaction);
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                if !is_active_session(&session_id) {
+                    return;
+                }
+                let mut all = CHAT_MESSAGES.write();
+                if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
+                    bot_msg.is_skeleton = false;
+                    bot_msg.is_streaming = false;
+                    bot_msg.text.push_str(&format!("\n[stream error] {err}"));
+                }
+                return;
+            }
+        }
+    }
+
+    if !is_active_session(&session_id) {
+        return;
+    }
+    let mut all = CHAT_MESSAGES.write();
+    if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
+        bot_msg.is_skeleton = false;
+        bot_msg.is_streaming = false;
+    }
+}
+
+#[component]
+fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element {
+    let user_id = current_user_id();
+    let session_id = ACTIVE_SESSION_ID().unwrap_or_else(today_session_id);
+    let confirm_session_id = session_id.clone();
+    let reject_session_id = session_id.clone();
+    let mut saving = use_signal(|| false);
+    let mut rejected = use_signal(|| pending_meal.status == "rejected");
+    let mut confirmed = use_signal(|| pending_meal.status == "confirmed");
+    let day_cycle = use_signal(|| pending_meal.day_cycle.clone());
+    let mut foods = use_signal(|| pending_meal.foods.clone());
+    let mut nutrition = use_signal(|| pending_meal.nutrition.clone());
+    let mut previewing = use_signal(|| false);
+
+    let update_preview = {
+        let user_id = user_id.clone();
+        let pending_id = pending_meal.id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            let input = meal::ConfirmPendingMealInput {
+                pending_id: pending_id.clone(),
+                day_cycle: day_cycle(),
+                foods: foods(),
+            };
+            spawn(async move {
+                previewing.set(true);
+                match meal::preview_pending_meal(request_user_id, input).await {
+                    Ok(updated) => {
+                        nutrition.set(updated.nutrition);
+                    }
+                    Err(err) => append_bot_text(format!("更新营养估算失败：{err}")),
+                }
+                previewing.set(false);
+            });
+        }
+    };
+
+    let confirm_meal = {
+        let pending_id = pending_meal.id.clone();
+        let user_id = user_id.clone();
+        move |_| {
+            let request_user_id = user_id.clone();
+            let request_session_id = confirm_session_id.clone();
+            let input = meal::ConfirmPendingMealInput {
+                pending_id: pending_id.clone(),
+                day_cycle: day_cycle(),
+                foods: foods(),
+            };
+            spawn(async move {
+                saving.set(true);
+                let bot_id = append_streaming_bot_slot();
+                match meal::confirm_pending_meal(request_user_id, request_session_id.clone(), input)
+                    .await
+                {
+                    Ok(stream) => {
+                        confirmed.set(true);
+                        append_agent_stream(stream, bot_id, request_session_id).await;
+                    }
+                    Err(err) => append_bot_text(format!("确认用餐记录失败：{err}")),
+                }
+                saving.set(false);
+            });
+        }
+    };
+
+    let reject_meal = {
+        let pending_id = pending_meal.id.clone();
+        let user_id = user_id.clone();
+        move |_| {
+            let request_user_id = user_id.clone();
+            let request_session_id = reject_session_id.clone();
+            let request_pending_id = pending_id.clone();
+            spawn(async move {
+                saving.set(true);
+                let bot_id = append_streaming_bot_slot();
+                match meal::reject_pending_meal(
+                    request_user_id,
+                    request_session_id.clone(),
+                    request_pending_id,
+                )
+                .await
+                {
+                    Ok(stream) => {
+                        rejected.set(true);
+                        append_agent_stream(stream, bot_id, request_session_id).await;
+                    }
+                    Err(err) => append_bot_text(format!("取消用餐记录失败：{err}")),
+                }
+                saving.set(false);
+            });
+        }
+    };
+
+    rsx! {
+        div { class: "rounded-[1.5rem] border border-border bg-background p-4 text-sm shadow-none",
+            div { class: "flex items-start justify-between gap-3",
+                div {
+                    div { class: "text-base font-semibold text-foreground", "请确认这次用餐记录" }
+                    p { class: "mt-1 text-xs leading-relaxed text-muted-foreground", "agent 只创建了待确认记录，确认后才会写入 meal log。" }
+                }
+                span { class: "rounded-full border border-border px-3 py-1 text-xs text-muted-foreground", "{day_cycle}" }
+            }
+            div { class: "mt-4 space-y-2",
+                for (index, food) in foods().into_iter().enumerate() {
+                    div { key: "{pending_meal.id}:{index}", class: "grid grid-cols-[1fr_80px_80px] gap-2",
+                        Input {
+                            class: "rounded-xl border border-border bg-card px-3 py-2 text-sm",
+                            value: food.name.clone(),
+                            oninput: {
+                                let update_preview = update_preview.clone();
+                                move |e: FormEvent| {
+                                    foods.with_mut(|items| {
+                                        if let Some(item) = items.get_mut(index) {
+                                            item.name = e.value();
+                                        }
+                                    });
+                                    update_preview();
+                                }
+                            },
+                        }
+                        Input {
+                            class: "rounded-xl border border-border bg-card px-3 py-2 text-sm",
+                            value: food.quantity.to_string(),
+                            oninput: {
+                                let update_preview = update_preview.clone();
+                                move |e: FormEvent| {
+                                    foods.with_mut(|items| {
+                                        if let Some(item) = items.get_mut(index) {
+                                            item.quantity = e.value().parse::<f32>().unwrap_or(item.quantity);
+                                        }
+                                    });
+                                    update_preview();
+                                }
+                            },
+                        }
+                        Input {
+                            class: "rounded-xl border border-border bg-card px-3 py-2 text-sm",
+                            value: food.unit.clone(),
+                            oninput: {
+                                let update_preview = update_preview.clone();
+                                move |e: FormEvent| {
+                                    foods.with_mut(|items| {
+                                        if let Some(item) = items.get_mut(index) {
+                                            item.unit = e.value();
+                                        }
+                                    });
+                                    update_preview();
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+            div { class: "mt-4 rounded-xl border border-border bg-card px-3 py-2 text-xs leading-relaxed text-muted-foreground",
+                if previewing() {
+                    "正在更新估算..."
+                } else {
+                    "估算：{nutrition().calories:.0} kcal · 蛋白质 {nutrition().protein_g:.1}g · 碳水 {nutrition().carbs_g:.1}g · 脂肪 {nutrition().fat_g:.1}g"
+                }
+            }
+            div { class: "mt-4 flex flex-wrap gap-2",
+                Button {
+                    class: "rounded-xl bg-foreground text-background",
+                    disabled: saving() || confirmed() || rejected(),
+                    onclick: confirm_meal,
+                    if confirmed() { "已确认" } else { "确认记录" }
+                }
+                Button {
+                    variant: ButtonVariant::Ghost,
+                    class: "rounded-xl border border-border",
+                    disabled: saving() || confirmed() || rejected(),
+                    onclick: reject_meal,
+                    if rejected() { "已取消" } else { "取消" }
+                }
+            }
+        }
     }
 }

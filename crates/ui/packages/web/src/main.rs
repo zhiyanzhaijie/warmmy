@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use ui::blocks::{provide_current_user_context, ConversationTransitionContext};
 use ui::views::{ChatDetailView, HomeView, MeView};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -45,6 +46,10 @@ fn App() -> Element {
 
 #[component]
 fn WebLayout() -> Element {
+    let pending = use_signal(|| None);
+    use_context_provider(|| ConversationTransitionContext { pending });
+    provide_current_user_context();
+
     rsx! {
             nav {
                 Link {

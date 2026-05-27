@@ -11,9 +11,13 @@ pub struct EchoResponse {
 }
 
 #[post("/api/echo", state: State)]
-pub async fn echo(input: String, session_id: String) -> Result<EchoResponse, ServerFnError> {
+pub async fn echo(
+    user_id: String,
+    input: String,
+    session_id: String,
+) -> Result<EchoResponse, ServerFnError> {
     let command = app::conversation::SendUserMessageCommand {
-        user_id: domain::UserId::new_unchecked("demo-user"),
+        user_id: parse_user_id(&user_id)?,
         session_id,
         content: input,
     };
@@ -32,9 +36,13 @@ pub async fn echo(input: String, session_id: String) -> Result<EchoResponse, Ser
 }
 
 #[post("/api/echo_stream", state: State)]
-pub async fn echo_stream(input: String, session_id: String) -> Result<TextStream, ServerFnError> {
+pub async fn echo_stream(
+    user_id: String,
+    input: String,
+    session_id: String,
+) -> Result<TextStream, ServerFnError> {
     let command = app::conversation::SendUserMessageCommand {
-        user_id: domain::UserId::new_unchecked("demo-user"),
+        user_id: parse_user_id(&user_id)?,
         session_id,
         content: input,
     };
@@ -54,9 +62,10 @@ pub async fn echo_stream(input: String, session_id: String) -> Result<TextStream
 
 #[post("/api/get_session_history", state: State)]
 pub async fn get_session_history(
+    user_id: String,
     session_id: String,
 ) -> Result<Vec<app::conversation::ChatMessage>, ServerFnError> {
-    let user_id = domain::UserId::new_unchecked("demo-user");
+    let user_id = parse_user_id(&user_id)?;
     let result = state
         .0
         .conversation
@@ -68,8 +77,8 @@ pub async fn get_session_history(
 }
 
 #[post("/api/list_user_sessions", state: State)]
-pub async fn list_user_sessions() -> Result<Vec<String>, ServerFnError> {
-    let user_id = domain::UserId::new_unchecked("demo-user");
+pub async fn list_user_sessions(user_id: String) -> Result<Vec<String>, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
     let result = state
         .0
         .conversation
@@ -78,4 +87,9 @@ pub async fn list_user_sessions() -> Result<Vec<String>, ServerFnError> {
         .await
         .map_err(api_error)?;
     Ok(result)
+}
+
+fn parse_user_id(value: &str) -> Result<domain::UserId, ServerFnError> {
+    domain::UserId::parse(value)
+        .map_err(|err| ServerFnError::new(format!("invalid user_id `{}`: {}", value.trim(), err)))
 }

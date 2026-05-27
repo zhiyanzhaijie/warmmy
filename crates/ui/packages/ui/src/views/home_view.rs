@@ -1,15 +1,18 @@
-use crate::blocks::{ACTIVE_SESSION_ID, CHAT_INPUT, CHAT_MESSAGES, CHAT_NEXT_ID};
+use crate::blocks::{
+    ChatBlock, ConversationTransitionContext, PendingConversationMessage, ACTIVE_SESSION_ID,
+    CHAT_INPUT, CHAT_MESSAGES, CHAT_NEXT_ID,
+};
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::card::Card;
 use crate::components::ui::input::Input;
 use crate::today_session_id;
-use crate::views::FIRST_MSG;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{Cloud, Send, Sparkles};
 
 #[component]
 pub fn HomeView() -> Element {
     let mut input = use_signal(String::new);
+    let mut transition = use_context::<ConversationTransitionContext>();
 
     let mut start_chat_with_msg = move || {
         let content = input().trim().to_string();
@@ -20,18 +23,26 @@ pub fn HomeView() -> Element {
         input.set(String::new());
         let session_id = today_session_id();
 
-        // Clear stale detail state before route transition; ChatBlock will render the optimistic send.
         *ACTIVE_SESSION_ID.write() = Some(session_id.clone());
         CHAT_MESSAGES.write().clear();
         CHAT_INPUT.write().clear();
         *CHAT_NEXT_ID.write() = 1;
 
-        // Set FIRST_MSG to let ChatBlock initiate the stream.
-        *FIRST_MSG.write() = Some(content);
-
-        // Transition to detail URL of today's date; ChatBlock consumes FIRST_MSG there.
-        navigator().push(format!("/{session_id}"));
+        transition.pending.set(Some(PendingConversationMessage {
+            session_id,
+            content,
+            started: false,
+        }));
     };
+
+    if (transition.pending)().is_some() {
+        return rsx! {
+            main {
+                class: "h-full min-h-0 overflow-hidden",
+                ChatBlock { session_id: None }
+            }
+        };
+    }
 
     rsx! {
         div {

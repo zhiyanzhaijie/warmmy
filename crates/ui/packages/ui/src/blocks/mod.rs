@@ -1,7 +1,13 @@
 mod chat;
 mod me;
+mod user_context;
 
 pub use chat::{
-    ChatBlock, ChatMessage, ACTIVE_SESSION_ID, CHAT_INPUT, CHAT_MESSAGES, CHAT_NEXT_ID,
+    ChatBlock, ChatMessage, ConversationTransitionContext, PendingConversationMessage,
+    ACTIVE_SESSION_ID, CHAT_INPUT, CHAT_MESSAGES, CHAT_NEXT_ID,
 };
 pub use me::MeBlock;
+pub use user_context::{
+    current_user_id, provide_current_user_context, set_current_user_id, CurrentUserContext,
+    DEFAULT_USER_ID,
+};

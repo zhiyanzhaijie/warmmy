@@ -2,10 +2,19 @@ use crate::impls::error::api_error;
 use crate::impls::state::State;
 use dioxus::prelude::*;
 
-const DEMO_USER_ID: &str = "demo-user";
+const DEFAULT_DISPLAY_NAME: &str = "屋主";
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct HealthExpectationDto {
+pub struct UserProfileDTO {
+    pub id: String,
+    pub display_name: String,
+    pub introduction: String,
+    pub gender: Option<String>,
+    pub age: Option<u8>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct HealthExpectationDTO {
     pub id: String,
     pub title: String,
     pub summary: String,
@@ -18,11 +27,31 @@ pub struct HealthExpectationDto {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
-pub struct UserPreferencesDto {
+pub struct UserPreferencesDTO {
     pub theme: Option<String>,
     pub language: Option<String>,
     pub preferred_cuisines: Vec<String>,
     pub avoided_cuisines: Vec<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DiningCompanionDTO {
+    pub id: String,
+    pub display_name: String,
+    pub relationship: Option<String>,
+    pub introduction: String,
+    pub preferred_cuisines: Vec<String>,
+    pub avoided_cuisines: Vec<String>,
+    pub health_notes: Vec<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct SaveUserProfileInput {
+    pub id: String,
+    pub display_name: String,
+    pub introduction: String,
+    pub gender: Option<String>,
+    pub age: Option<u8>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -43,9 +72,111 @@ pub struct UpdatePreferencesInput {
     pub avoided_cuisines: Vec<String>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct SaveDiningCompanionInput {
+    pub id: Option<String>,
+    pub display_name: String,
+    pub relationship: Option<String>,
+    pub introduction: String,
+    pub preferred_cuisines: Vec<String>,
+    pub avoided_cuisines: Vec<String>,
+    pub health_notes: Vec<String>,
+}
+
+#[post("/api/user/profile/get", state: State)]
+pub async fn get_user_profile(user_id: String) -> Result<UserProfileDTO, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    let profile = state
+        .0
+        .user
+        .query
+        .get_profile(&user_id)
+        .await
+        .map_err(api_error)?
+        .ok_or_else(|| ServerFnError::ServerError {
+            message: format!("user profile not found for {}", user_id.as_str()),
+            code: 404,
+            details: None,
+        })?;
+
+    Ok(profile_to_dto(profile))
+}
+
+#[post("/api/user/profiles/list", state: State)]
+pub async fn list_user_profiles() -> Result<Vec<UserProfileDTO>, ServerFnError> {
+    let mut profiles = state
+        .0
+        .user
+        .query
+        .list_profiles()
+        .await
+        .map_err(api_error)?
+        .into_iter()
+        .map(profile_to_dto)
+        .collect::<Vec<_>>();
+
+    profiles.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(profiles)
+}
+
+#[post("/api/user/profiles/create", state: State)]
+pub async fn create_user_profile() -> Result<UserProfileDTO, ServerFnError> {
+    let profiles = state
+        .0
+        .user
+        .query
+        .list_profiles()
+        .await
+        .map_err(api_error)?;
+    let next_index = profiles
+        .iter()
+        .filter_map(|profile| profile.id.as_str().parse::<u32>().ok())
+        .max()
+        .unwrap_or(0)
+        + 1;
+    let user_id = domain::UserId::new_unchecked(next_index.to_string());
+    let profile = state
+        .0
+        .user
+        .command
+        .save_profile(app::user::SaveUserProfileCommand {
+            user_id,
+            display_name: DEFAULT_DISPLAY_NAME.to_string(),
+            introduction: String::new(),
+            gender: None,
+            age: None,
+        })
+        .await
+        .map_err(api_error)?;
+
+    Ok(profile_to_dto(profile))
+}
+
+#[post("/api/user/profiles/save", state: State)]
+pub async fn save_user_profile(
+    input: SaveUserProfileInput,
+) -> Result<UserProfileDTO, ServerFnError> {
+    let user_id = parse_user_id(&input.id)?;
+    let profile = state
+        .0
+        .user
+        .command
+        .save_profile(app::user::SaveUserProfileCommand {
+            user_id,
+            display_name: input.display_name,
+            introduction: input.introduction,
+            gender: input.gender,
+            age: input.age,
+        })
+        .await
+        .map_err(api_error)?;
+
+    Ok(profile_to_dto(profile))
+}
+
 #[post("/api/user/preferences/get", state: State)]
-pub async fn get_user_preferences() -> Result<UserPreferencesDto, ServerFnError> {
-    let user_id = domain::UserId::new_unchecked(DEMO_USER_ID);
+pub async fn get_user_preferences(user_id: String) -> Result<UserPreferencesDTO, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
     let preferences = state
         .0
         .user
@@ -55,7 +186,7 @@ pub async fn get_user_preferences() -> Result<UserPreferencesDto, ServerFnError>
         .map_err(api_error)?
         .unwrap_or_else(|| domain::UserPreferences::new(user_id.clone()));
 
-    Ok(UserPreferencesDto {
+    Ok(UserPreferencesDTO {
         theme: preferences.app.theme.map(theme_to_string),
         language: preferences.app.language,
         preferred_cuisines: preferences
@@ -75,14 +206,18 @@ pub async fn get_user_preferences() -> Result<UserPreferencesDto, ServerFnError>
 
 #[post("/api/user/preferences/update", state: State)]
 pub async fn update_user_preferences(
+    user_id: String,
     input: UpdatePreferencesInput,
-) -> Result<UserPreferencesDto, ServerFnError> {
-    let user_id = domain::UserId::new_unchecked(DEMO_USER_ID);
+) -> Result<UserPreferencesDTO, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
     let command = app::user::UpdateUserPreferencesCommand {
         user_id: user_id.clone(),
         app: domain::AppPreferences {
             theme: input.theme.as_deref().and_then(parse_theme),
-            language: input.language.clone().filter(|value| !value.trim().is_empty()),
+            language: input
+                .language
+                .clone()
+                .filter(|value| !value.trim().is_empty()),
         },
         diet: domain::DietaryPreferences {
             preferred_cuisines: input
@@ -108,12 +243,14 @@ pub async fn update_user_preferences(
         .await
         .map_err(api_error)?;
 
-    get_user_preferences().await
+    get_user_preferences(user_id.to_string()).await
 }
 
 #[post("/api/user/expectations/list", state: State)]
-pub async fn list_health_expectations() -> Result<Vec<HealthExpectationDto>, ServerFnError> {
-    let user_id = domain::UserId::new_unchecked(DEMO_USER_ID);
+pub async fn list_health_expectations(
+    user_id: String,
+) -> Result<Vec<HealthExpectationDTO>, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
     let expectations = state
         .0
         .user
@@ -127,9 +264,10 @@ pub async fn list_health_expectations() -> Result<Vec<HealthExpectationDto>, Ser
 
 #[post("/api/user/expectations/upsert", state: State)]
 pub async fn upsert_health_expectation(
+    user_id: String,
     input: UpsertHealthExpectationInput,
-) -> Result<Vec<HealthExpectationDto>, ServerFnError> {
-    let user_id = domain::UserId::new_unchecked(DEMO_USER_ID);
+) -> Result<Vec<HealthExpectationDTO>, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
     let now = chrono::Utc::now().to_rfc3339();
     let id = input.id.unwrap_or_else(|| {
         format!(
@@ -159,49 +297,150 @@ pub async fn upsert_health_expectation(
         .await
         .map_err(api_error)?;
 
-    list_health_expectations().await
+    list_health_expectations(user_id.to_string()).await
 }
 
 #[post("/api/user/expectations/confirm", state: State)]
 pub async fn confirm_health_expectation(
+    user_id: String,
     expectation_id: String,
-) -> Result<Vec<HealthExpectationDto>, ServerFnError> {
-    let user_id = domain::UserId::new_unchecked(DEMO_USER_ID);
+) -> Result<Vec<HealthExpectationDTO>, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
     state
         .0
         .user
         .expectation_command
         .confirm(app::user::ConfirmHealthExpectationCommand {
-            user_id,
+            user_id: user_id.clone(),
             expectation_id: domain::HealthExpectationId::new_unchecked(expectation_id),
         })
         .await
         .map_err(api_error)?;
 
-    list_health_expectations().await
+    list_health_expectations(user_id.to_string()).await
 }
 
 #[post("/api/user/expectations/delete", state: State)]
 pub async fn delete_health_expectation(
+    user_id: String,
     expectation_id: String,
-) -> Result<Vec<HealthExpectationDto>, ServerFnError> {
-    let user_id = domain::UserId::new_unchecked(DEMO_USER_ID);
+) -> Result<Vec<HealthExpectationDTO>, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
     state
         .0
         .user
         .expectation_command
         .delete(app::user::DeleteHealthExpectationCommand {
-            user_id,
+            user_id: user_id.clone(),
             expectation_id: domain::HealthExpectationId::new_unchecked(expectation_id),
         })
         .await
         .map_err(api_error)?;
 
-    list_health_expectations().await
+    list_health_expectations(user_id.to_string()).await
 }
 
-fn expectation_to_dto(item: domain::UserHealthExpectation) -> HealthExpectationDto {
-    HealthExpectationDto {
+#[post("/api/user/companions/list", state: State)]
+pub async fn list_dining_companions(
+    user_id: String,
+) -> Result<Vec<DiningCompanionDTO>, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    let companions = state
+        .0
+        .user
+        .companion_query
+        .list_companions(&user_id)
+        .await
+        .map_err(api_error)?;
+
+    Ok(companions.into_iter().map(companion_to_dto).collect())
+}
+
+#[post("/api/user/companions/save", state: State)]
+pub async fn save_dining_companion(
+    user_id: String,
+    input: SaveDiningCompanionInput,
+) -> Result<Vec<DiningCompanionDTO>, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    let id = input.id.unwrap_or_else(|| {
+        format!(
+            "dc-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        )
+    });
+
+    state
+        .0
+        .user
+        .companion_command
+        .save(app::user::SaveDiningCompanionCommand {
+            id: domain::DiningCompanionId::new_unchecked(id),
+            owner_user_id: user_id.clone(),
+            display_name: input.display_name,
+            relationship: input.relationship,
+            introduction: input.introduction,
+            diet: domain::DietaryPreferences {
+                preferred_cuisines: input
+                    .preferred_cuisines
+                    .into_iter()
+                    .filter(|item| !item.trim().is_empty())
+                    .map(app::user::explicit_cuisine)
+                    .collect(),
+                avoided_cuisines: input
+                    .avoided_cuisines
+                    .into_iter()
+                    .filter(|item| !item.trim().is_empty())
+                    .map(app::user::explicit_cuisine)
+                    .collect(),
+            },
+            health_notes: input.health_notes,
+        })
+        .await
+        .map_err(api_error)?;
+
+    list_dining_companions(user_id.to_string()).await
+}
+
+#[post("/api/user/companions/delete", state: State)]
+pub async fn delete_dining_companion(
+    user_id: String,
+    companion_id: String,
+) -> Result<Vec<DiningCompanionDTO>, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    state
+        .0
+        .user
+        .companion_command
+        .delete(app::user::DeleteDiningCompanionCommand {
+            owner_user_id: user_id.clone(),
+            companion_id: domain::DiningCompanionId::new_unchecked(companion_id),
+        })
+        .await
+        .map_err(api_error)?;
+
+    list_dining_companions(user_id.to_string()).await
+}
+
+fn profile_to_dto(profile: domain::UserProfile) -> UserProfileDTO {
+    UserProfileDTO {
+        id: profile.id.to_string(),
+        display_name: profile.display_name,
+        introduction: profile.introduction,
+        gender: profile.gender,
+        age: profile.age,
+    }
+}
+
+fn parse_user_id(value: &str) -> Result<domain::UserId, ServerFnError> {
+    domain::UserId::parse(value).map_err(|err| ServerFnError::ServerError {
+        message: err.to_string(),
+        code: 400,
+        details: None,
+    })
+}
+
+fn expectation_to_dto(item: domain::UserHealthExpectation) -> HealthExpectationDTO {
+    HealthExpectationDTO {
         id: item.id.to_string(),
         title: item.title,
         summary: item.summary,
@@ -216,6 +455,28 @@ fn expectation_to_dto(item: domain::UserHealthExpectation) -> HealthExpectationD
         },
         created_at: item.created_at,
         updated_at: item.updated_at,
+    }
+}
+
+fn companion_to_dto(companion: domain::DiningCompanion) -> DiningCompanionDTO {
+    DiningCompanionDTO {
+        id: companion.id.to_string(),
+        display_name: companion.display_name,
+        relationship: companion.relationship,
+        introduction: companion.introduction,
+        preferred_cuisines: companion
+            .diet
+            .preferred_cuisines
+            .into_iter()
+            .map(|item| item.cuisine)
+            .collect(),
+        avoided_cuisines: companion
+            .diet
+            .avoided_cuisines
+            .into_iter()
+            .map(|item| item.cuisine)
+            .collect(),
+        health_notes: companion.health_notes,
     }
 }
 
