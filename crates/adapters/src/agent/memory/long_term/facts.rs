@@ -21,7 +21,6 @@ impl LongTermFactsMemory {
                 .to_string();
         };
 
-        let allergies = join_or_none(&context.profile.allergies);
         let preferred_cuisines = join_or_none(
             &context
                 .dietary_preferences()
@@ -45,10 +44,51 @@ impl LongTermFactsMemory {
                 .map(|item| item.title.clone())
                 .collect::<Vec<_>>(),
         );
+        let companions = if context.companions.is_empty() {
+            "无".to_string()
+        } else {
+            context
+                .companions
+                .iter()
+                .map(|companion| {
+                    let preferred = join_or_none(
+                        &companion
+                            .diet
+                            .preferred_cuisines
+                            .iter()
+                            .map(|item| item.cuisine.clone())
+                            .collect::<Vec<_>>(),
+                    );
+                    let avoided = join_or_none(
+                        &companion
+                            .diet
+                            .avoided_cuisines
+                            .iter()
+                            .map(|item| item.cuisine.clone())
+                            .collect::<Vec<_>>(),
+                    );
+                    let notes = join_or_none(&companion.health_notes);
+                    format!(
+                        "{}（{}）：偏好 {}；忌口 {}；健康备注 {}",
+                        companion.display_name,
+                        companion.relationship.as_deref().unwrap_or("关系人"),
+                        preferred,
+                        avoided,
+                        notes
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n  - ")
+        };
 
         format!(
-            "当前权威用户画像快照：\n- 过敏原：{}\n- 饮食偏好：{}\n- 饮食忌口：{}\n- 当前健康期望：{}",
-            allergies, preferred_cuisines, avoided_cuisines, expectations
+            "当前权威用户画像快照：\n- 用户：{}（{}）\n- 饮食偏好：{}\n- 饮食忌口：{}\n- 当前健康期望：{}\n- 常一起用餐的人：{}",
+            context.profile.display_name,
+            context.profile.id,
+            preferred_cuisines,
+            avoided_cuisines,
+            expectations,
+            companions
         )
     }
 }

@@ -4,16 +4,17 @@ use async_trait::async_trait;
 use tokio::sync::Mutex;
 
 use app::user::{
-    UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort, UserProfileRepositoryPort,
+    DiningCompanionRepositoryPort, UserHealthExpectationRepositoryPort,
+    UserPreferencesRepositoryPort, UserProfileRepositoryPort,
 };
 use domain::{
-    AppPreferences, DietaryPreferences, ExpectationSource, HealthExpectationId,
-    HealthExpectationKind, HealthExpectationStatus, UserHealthExpectation, UserId, UserPreferences,
-    UserProfile,
+    AppPreferences, DietaryPreferences, DiningCompanion, DiningCompanionId, ExpectationSource,
+    HealthExpectationId, HealthExpectationKind, HealthExpectationStatus, UserHealthExpectation,
+    UserId, UserPreferences, UserProfile,
 };
 
 use crate::persistence::sqlite::models::{
-    UserHealthExpectationRow, UserPreferencesRow, UserProfileRow,
+    DiningCompanionRow, UserHealthExpectationRow, UserPreferencesRow, UserProfileRow,
 };
 
 #[derive(Clone)]
@@ -35,9 +36,9 @@ impl SqliteUserRepo {
                     .update()
                     .display_name(profile.display_name.clone())
                     .introduction(profile.introduction.clone())
-                    .allergies_json(
-                        serde_json::to_string(&profile.allergies).map_err(|err| err.to_string())?,
-                    )
+                    .allergies_json("[]".to_string())
+                    .gender(profile.gender.clone())
+                    .age(profile.age.map(i32::from))
                     .exec(&mut *db)
                     .await
                     .map_err(|err| err.to_string())?;
@@ -48,8 +49,9 @@ impl SqliteUserRepo {
                     id: id,
                     display_name: profile.display_name.clone(),
                     introduction: profile.introduction.clone(),
-                    allergies_json: serde_json::to_string(&profile.allergies)
-                        .map_err(|serialize_err| serialize_err.to_string())?,
+                    allergies_json: "[]".to_string(),
+                    gender: profile.gender.clone(),
+                    age: profile.age.map(i32::from),
                 })
                 .exec(&mut *db)
                 .await
@@ -149,14 +151,58 @@ impl SqliteUserRepo {
         }
     }
 
+    pub async fn upsert_companion(&self, companion: &DiningCompanion) -> Result<(), String> {
+        let id = companion.id.as_str().to_string();
+        let dietary_preferences_json =
+            serde_json::to_string(&companion.diet).map_err(|err| err.to_string())?;
+        let health_notes_json =
+            serde_json::to_string(&companion.health_notes).map_err(|err| err.to_string())?;
+        let updated_at = chrono::Utc::now().to_rfc3339();
+        let mut db = self.db.lock().await;
+
+        match DiningCompanionRow::get_by_id(&mut *db, &id).await {
+            Ok(mut current) => {
+                current
+                    .update()
+                    .owner_user_id(companion.owner_user_id.as_str().to_string())
+                    .display_name(companion.display_name.clone())
+                    .relationship(companion.relationship.clone())
+                    .introduction(companion.introduction.clone())
+                    .dietary_preferences_json(dietary_preferences_json)
+                    .health_notes_json(health_notes_json)
+                    .updated_at(updated_at)
+                    .exec(&mut *db)
+                    .await
+                    .map_err(|err| err.to_string())?;
+                Ok(())
+            }
+            Err(err) if err.is_record_not_found() => {
+                toasty::create!(DiningCompanionRow {
+                    id: id,
+                    owner_user_id: companion.owner_user_id.as_str().to_string(),
+                    display_name: companion.display_name.clone(),
+                    relationship: companion.relationship.clone(),
+                    introduction: companion.introduction.clone(),
+                    dietary_preferences_json: dietary_preferences_json,
+                    health_notes_json: health_notes_json,
+                    updated_at: updated_at,
+                })
+                .exec(&mut *db)
+                .await
+                .map_err(|create_err| create_err.to_string())?;
+                Ok(())
+            }
+            Err(err) => Err(err.to_string()),
+        }
+    }
+
     fn row_to_profile(row: UserProfileRow) -> Result<UserProfile, String> {
-        let allergies = serde_json::from_str::<Vec<String>>(&row.allergies_json)
-            .map_err(|err| err.to_string())?;
         Ok(UserProfile {
             id: UserId::parse(&row.id).map_err(|err| err.to_string())?,
             display_name: row.display_name,
             introduction: row.introduction,
-            allergies,
+            gender: row.gender,
+            age: row.age.map(|value| u8::try_from(value).unwrap_or_default()),
         })
     }
 
@@ -182,6 +228,20 @@ impl SqliteUserRepo {
             app: serde_json::from_str::<AppPreferences>(&row.app_preferences_json)
                 .map_err(|err| err.to_string())?,
             diet: serde_json::from_str::<DietaryPreferences>(&row.dietary_preferences_json)
+                .map_err(|err| err.to_string())?,
+        })
+    }
+
+    fn row_to_companion(row: DiningCompanionRow) -> Result<DiningCompanion, String> {
+        Ok(DiningCompanion {
+            id: DiningCompanionId::parse(&row.id).map_err(|err| err.to_string())?,
+            owner_user_id: UserId::parse(&row.owner_user_id).map_err(|err| err.to_string())?,
+            display_name: row.display_name,
+            relationship: row.relationship,
+            introduction: row.introduction,
+            diet: serde_json::from_str::<DietaryPreferences>(&row.dietary_preferences_json)
+                .map_err(|err| err.to_string())?,
+            health_notes: serde_json::from_str::<Vec<String>>(&row.health_notes_json)
                 .map_err(|err| err.to_string())?,
         })
     }
@@ -224,6 +284,21 @@ impl UserProfileRepositoryPort for SqliteUserRepo {
             Err(err) if err.is_record_not_found() => Ok(None),
             Err(err) => Err(err.to_string()),
         }
+    }
+
+    async fn list_profiles(&self) -> Result<Vec<UserProfile>, String> {
+        let mut db = self.db.lock().await;
+        let rows = UserProfileRow::filter(UserProfileRow::fields().id().ne(""))
+            .exec(&mut *db)
+            .await
+            .map_err(|err| err.to_string())?;
+
+        let mut profiles = rows
+            .into_iter()
+            .map(Self::row_to_profile)
+            .collect::<Result<Vec<_>, _>>()?;
+        profiles.sort_by(|a, b| a.id.as_str().cmp(b.id.as_str()));
+        Ok(profiles)
     }
 
     async fn save_profile(&self, profile: &UserProfile) -> Result<(), String> {
@@ -303,5 +378,54 @@ impl UserPreferencesRepositoryPort for SqliteUserRepo {
 
     async fn save_preferences(&self, preferences: &UserPreferences) -> Result<(), String> {
         self.upsert_preferences(preferences).await
+    }
+}
+
+#[async_trait]
+impl DiningCompanionRepositoryPort for SqliteUserRepo {
+    async fn list_companions(
+        &self,
+        owner_user_id: &UserId,
+    ) -> Result<Vec<DiningCompanion>, String> {
+        let mut db = self.db.lock().await;
+        let rows = DiningCompanionRow::filter(
+            DiningCompanionRow::fields()
+                .owner_user_id()
+                .eq(owner_user_id.as_str()),
+        )
+        .exec(&mut *db)
+        .await
+        .map_err(|err| err.to_string())?;
+
+        let mut companions = rows
+            .into_iter()
+            .map(Self::row_to_companion)
+            .collect::<Result<Vec<_>, _>>()?;
+        companions.sort_by(|a, b| a.display_name.cmp(&b.display_name));
+        Ok(companions)
+    }
+
+    async fn save_companion(&self, companion: &DiningCompanion) -> Result<(), String> {
+        self.upsert_companion(companion).await
+    }
+
+    async fn delete_companion(
+        &self,
+        owner_user_id: &UserId,
+        companion_id: &DiningCompanionId,
+    ) -> Result<(), String> {
+        let mut db = self.db.lock().await;
+        let row = DiningCompanionRow::get_by_id(&mut *db, companion_id.as_str())
+            .await
+            .map_err(|err| err.to_string())?;
+
+        if row.owner_user_id != owner_user_id.as_str() {
+            return Err("dining companion does not belong to owner user".to_string());
+        }
+
+        row.delete()
+            .exec(&mut *db)
+            .await
+            .map_err(|err| err.to_string())
     }
 }

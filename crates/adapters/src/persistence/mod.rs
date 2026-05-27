@@ -5,10 +5,13 @@ use std::sync::Arc;
 
 use app::{
     app_error::{AppError, AppResult},
-    meal::{FoodNutritionReferenceRepositoryPort, MealRecordRepositoryPort},
+    meal::{
+        FoodNutritionReferenceRepositoryPort, MealDayFinalizationRepositoryPort,
+        MealDaySummaryRepositoryPort, MealRecordRepositoryPort, PendingMealLogRepositoryPort,
+    },
     user::{
-        UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort,
-        UserProfileRepositoryPort,
+        DiningCompanionRepositoryPort, UserHealthExpectationRepositoryPort,
+        UserPreferencesRepositoryPort, UserProfileRepositoryPort,
     },
 };
 
@@ -21,8 +24,12 @@ pub struct DbRepos {
     pub user_repo: Arc<dyn UserProfileRepositoryPort>,
     pub user_expectation_repo: Arc<dyn UserHealthExpectationRepositoryPort>,
     pub user_preferences_repo: Arc<dyn UserPreferencesRepositoryPort>,
+    pub dining_companion_repo: Arc<dyn DiningCompanionRepositoryPort>,
     pub chat_repo: Arc<dyn ChatMessageRepositoryPort>,
     pub meal_repo: Arc<dyn MealRecordRepositoryPort>,
+    pub pending_meal_repo: Arc<dyn PendingMealLogRepositoryPort>,
+    pub meal_day_finalization_repo: Arc<dyn MealDayFinalizationRepositoryPort>,
+    pub meal_day_summary_repo: Arc<dyn MealDaySummaryRepositoryPort>,
     pub food_nutrition_reference_repo: Arc<dyn FoodNutritionReferenceRepositoryPort>,
 }
 

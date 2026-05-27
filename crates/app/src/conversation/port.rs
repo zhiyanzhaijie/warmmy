@@ -3,7 +3,8 @@ use domain::UserId;
 
 use crate::app_error::AppResult;
 use crate::conversation::{
-    ChatMessage, ConversationReplyStream, SendUserMessageCommand, SendUserMessageResult,
+    ChatMessage, ContinueInteractionCommand, ConversationReplyStream, SendUserMessageCommand,
+    SendUserMessageResult,
 };
 
 #[async_trait]
@@ -16,6 +17,11 @@ pub trait ConversationAgentPort: Send + Sync {
     async fn stream_user_message(
         &self,
         command: SendUserMessageCommand,
+    ) -> AppResult<ConversationReplyStream>;
+
+    async fn continue_interaction(
+        &self,
+        command: ContinueInteractionCommand,
     ) -> AppResult<ConversationReplyStream>;
 }
 
@@ -31,6 +37,17 @@ pub trait ChatMessageRepositoryPort: Send + Sync {
         user_id: &UserId,
         session_id: &str,
         role: &str,
+        content: &str,
+    ) -> Result<(), String>;
+    async fn find_memory_messages(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+    ) -> Result<Vec<String>, String>;
+    async fn save_memory_message(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
         content: &str,
     ) -> Result<(), String>;
     async fn find_sessions(&self, user_id: &UserId) -> Result<Vec<String>, String>;

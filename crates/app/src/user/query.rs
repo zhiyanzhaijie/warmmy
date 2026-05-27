@@ -1,10 +1,14 @@
 use std::sync::Arc;
 
-use domain::{DietaryPreferences, UserHealthExpectation, UserId, UserPreferences, UserProfile};
+use domain::{
+    DietaryPreferences, DiningCompanion, UserHealthExpectation, UserId, UserPreferences,
+    UserProfile,
+};
 
 use crate::app_error::{AppError, AppResult};
 use crate::user::{
-    UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort, UserProfileRepositoryPort,
+    DiningCompanionRepositoryPort, UserHealthExpectationRepositoryPort,
+    UserPreferencesRepositoryPort, UserProfileRepositoryPort,
 };
 
 #[derive(Clone)]
@@ -23,6 +27,13 @@ impl UserProfileQueryHandler {
             .await
             .map_err(AppError::upstream)
     }
+
+    pub async fn list_profiles(&self) -> AppResult<Vec<UserProfile>> {
+        self.user_profiles
+            .list_profiles()
+            .await
+            .map_err(AppError::upstream)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +41,7 @@ pub struct UserDietaryContext {
     pub profile: UserProfile,
     pub active_expectations: Vec<UserHealthExpectation>,
     pub preferences: UserPreferences,
+    pub companions: Vec<DiningCompanion>,
 }
 
 impl UserDietaryContext {
@@ -43,6 +55,7 @@ pub struct UserDietaryContextQueryHandler {
     user_profiles: Arc<dyn UserProfileRepositoryPort>,
     expectations: Arc<dyn UserHealthExpectationRepositoryPort>,
     preferences: Arc<dyn UserPreferencesRepositoryPort>,
+    companions: Arc<dyn DiningCompanionRepositoryPort>,
 }
 
 impl UserDietaryContextQueryHandler {
@@ -50,11 +63,13 @@ impl UserDietaryContextQueryHandler {
         user_profiles: Arc<dyn UserProfileRepositoryPort>,
         expectations: Arc<dyn UserHealthExpectationRepositoryPort>,
         preferences: Arc<dyn UserPreferencesRepositoryPort>,
+        companions: Arc<dyn DiningCompanionRepositoryPort>,
     ) -> Self {
         Self {
             user_profiles,
             expectations,
             preferences,
+            companions,
         }
     }
 
@@ -82,11 +97,36 @@ impl UserDietaryContextQueryHandler {
             .map_err(AppError::upstream)?
             .unwrap_or_else(|| UserPreferences::new(user_id.clone()));
 
+        let companions = self
+            .companions
+            .list_companions(user_id)
+            .await
+            .map_err(AppError::upstream)?;
+
         Ok(Some(UserDietaryContext {
             profile,
             active_expectations,
             preferences,
+            companions,
         }))
+    }
+}
+
+#[derive(Clone)]
+pub struct DiningCompanionQueryHandler {
+    repo: Arc<dyn DiningCompanionRepositoryPort>,
+}
+
+impl DiningCompanionQueryHandler {
+    pub fn new(repo: Arc<dyn DiningCompanionRepositoryPort>) -> Self {
+        Self { repo }
+    }
+
+    pub async fn list_companions(&self, owner_user_id: &UserId) -> AppResult<Vec<DiningCompanion>> {
+        self.repo
+            .list_companions(owner_user_id)
+            .await
+            .map_err(AppError::upstream)
     }
 }
 

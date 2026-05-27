@@ -49,6 +49,43 @@ impl std::error::Error for DayCycleInvalidError {}
 
 impl crate::error::DomainError for DayCycleInvalidError {}
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct PendingMealLogId(String);
+
+impl PendingMealLogId {
+    pub fn new_unchecked(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn parse(value: &str) -> Result<Self, DayCycleInvalidError> {
+        let value = value.trim();
+        if value.is_empty() {
+            return Err(DayCycleInvalidError {
+                value: value.to_string(),
+            });
+        }
+        Ok(Self(value.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for PendingMealLogId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PendingMealLogStatus {
+    Proposed,
+    Confirmed,
+    Rejected,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Nutrition {
     #[serde(default)]

@@ -60,6 +60,36 @@ impl std::fmt::Display for HealthExpectationId {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DiningCompanionId(String);
+
+impl DiningCompanionId {
+    pub fn new_unchecked(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
+
+    pub fn parse(value: &str) -> Result<Self, UserIdInvalidError> {
+        let value = value.trim();
+        if value.is_empty() {
+            return Err(UserIdInvalidError {
+                value: value.to_string(),
+            });
+        }
+        Ok(Self(value.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for DiningCompanionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HealthExpectationKind {
     WeightLoss,

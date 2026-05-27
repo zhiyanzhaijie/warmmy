@@ -1,20 +1,30 @@
 use std::sync::Arc;
 
 use domain::{
-    AppPreferences, DietaryPreferences, HealthExpectationId, HealthExpectationKind,
-    HealthExpectationStatus, PreferenceConfidence, UserHealthExpectation, UserId, UserPreferences,
-    UserProfile,
+    AppPreferences, DietaryPreferences, DiningCompanion, DiningCompanionId, HealthExpectationId,
+    HealthExpectationKind, HealthExpectationStatus, PreferenceConfidence, UserHealthExpectation,
+    UserId, UserPreferences, UserProfile,
 };
 
 use crate::app_error::{AppError, AppResult};
 use crate::user::{
-    UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort, UserProfileRepositoryPort,
+    DiningCompanionRepositoryPort, UserHealthExpectationRepositoryPort,
+    UserPreferencesRepositoryPort, UserProfileRepositoryPort,
 };
 
 #[derive(Debug, Clone)]
 pub struct EnsureUserProfileCommand {
     pub user_id: UserId,
     pub display_name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SaveUserProfileCommand {
+    pub user_id: UserId,
+    pub display_name: String,
+    pub introduction: String,
+    pub gender: Option<String>,
+    pub age: Option<u8>,
 }
 
 #[derive(Clone)]
@@ -38,6 +48,30 @@ impl UserProfileCommandHandler {
         }
 
         let profile = UserProfile::new(input.user_id.as_str(), input.display_name);
+
+        self.repo
+            .save_profile(&profile)
+            .await
+            .map_err(AppError::upstream)?;
+
+        Ok(profile)
+    }
+
+    pub async fn save_profile(&self, input: SaveUserProfileCommand) -> AppResult<UserProfile> {
+        let profile = UserProfile {
+            id: input.user_id,
+            display_name: input.display_name.trim().to_string(),
+            introduction: input.introduction.trim().to_string(),
+            gender: input.gender.and_then(|value| {
+                let value = value.trim().to_string();
+                (!value.is_empty()).then_some(value)
+            }),
+            age: input.age,
+        };
+
+        if profile.display_name.is_empty() {
+            return Err(AppError::validation("display name is empty"));
+        }
 
         self.repo
             .save_profile(&profile)
@@ -70,6 +104,90 @@ pub struct UpdateUserPreferencesCommand {
     pub user_id: UserId,
     pub app: AppPreferences,
     pub diet: DietaryPreferences,
+}
+
+#[derive(Debug, Clone)]
+pub struct SaveDiningCompanionCommand {
+    pub id: DiningCompanionId,
+    pub owner_user_id: UserId,
+    pub display_name: String,
+    pub relationship: Option<String>,
+    pub introduction: String,
+    pub diet: DietaryPreferences,
+    pub health_notes: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteDiningCompanionCommand {
+    pub owner_user_id: UserId,
+    pub companion_id: DiningCompanionId,
+}
+
+#[derive(Clone)]
+pub struct DiningCompanionCommandHandler {
+    repo: Arc<dyn DiningCompanionRepositoryPort>,
+    profiles: Arc<dyn UserProfileRepositoryPort>,
+}
+
+impl DiningCompanionCommandHandler {
+    pub fn new(
+        repo: Arc<dyn DiningCompanionRepositoryPort>,
+        profiles: Arc<dyn UserProfileRepositoryPort>,
+    ) -> Self {
+        Self { repo, profiles }
+    }
+
+    pub async fn save(&self, input: SaveDiningCompanionCommand) -> AppResult<DiningCompanion> {
+        let profile = self
+            .profiles
+            .find_profile(&input.owner_user_id)
+            .await
+            .map_err(AppError::upstream)?;
+
+        if profile.is_none() {
+            return Err(AppError::NotFound(format!(
+                "owner profile not found for {}",
+                input.owner_user_id.as_str()
+            )));
+        }
+
+        let display_name = input.display_name.trim().to_string();
+        if display_name.is_empty() {
+            return Err(AppError::validation("companion display name is empty"));
+        }
+
+        let companion = DiningCompanion {
+            id: input.id,
+            owner_user_id: input.owner_user_id,
+            display_name,
+            relationship: input.relationship.and_then(|value| {
+                let value = value.trim().to_string();
+                (!value.is_empty()).then_some(value)
+            }),
+            introduction: input.introduction.trim().to_string(),
+            diet: input.diet,
+            health_notes: input
+                .health_notes
+                .into_iter()
+                .map(|item| item.trim().to_string())
+                .filter(|item| !item.is_empty())
+                .collect(),
+        };
+
+        self.repo
+            .save_companion(&companion)
+            .await
+            .map_err(AppError::upstream)?;
+
+        Ok(companion)
+    }
+
+    pub async fn delete(&self, input: DeleteDiningCompanionCommand) -> AppResult<()> {
+        self.repo
+            .delete_companion(&input.owner_user_id, &input.companion_id)
+            .await
+            .map_err(AppError::upstream)
+    }
 }
 
 #[derive(Clone)]

@@ -3,10 +3,13 @@ use std::sync::Arc;
 use app::{
     app_error::AppResult,
     conversation::ChatMessageRepositoryPort,
-    meal::{FoodNutritionReferenceRepositoryPort, MealRecordRepositoryPort},
+    meal::{
+        FoodNutritionReferenceRepositoryPort, MealDayFinalizationRepositoryPort,
+        MealDaySummaryRepositoryPort, MealRecordRepositoryPort, PendingMealLogRepositoryPort,
+    },
     user::{
-        UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort,
-        UserProfileRepositoryPort,
+        DiningCompanionRepositoryPort, UserHealthExpectationRepositoryPort,
+        UserPreferencesRepositoryPort, UserProfileRepositoryPort,
     },
 };
 use tokio::sync::Mutex;
@@ -41,9 +44,14 @@ impl PersistenceBackend for SqliteBackend {
         let user_repo: Arc<dyn UserProfileRepositoryPort> = user_repo_impl.clone();
         let user_expectation_repo: Arc<dyn UserHealthExpectationRepositoryPort> =
             user_repo_impl.clone();
-        let user_preferences_repo: Arc<dyn UserPreferencesRepositoryPort> = user_repo_impl;
+        let user_preferences_repo: Arc<dyn UserPreferencesRepositoryPort> = user_repo_impl.clone();
+        let dining_companion_repo: Arc<dyn DiningCompanionRepositoryPort> = user_repo_impl.clone();
         let chat_repo: Arc<dyn ChatMessageRepositoryPort> = chat_repo_impl;
         let meal_repo: Arc<dyn MealRecordRepositoryPort> = meal_repo_impl.clone();
+        let pending_meal_repo: Arc<dyn PendingMealLogRepositoryPort> = meal_repo_impl.clone();
+        let meal_day_finalization_repo: Arc<dyn MealDayFinalizationRepositoryPort> =
+            meal_repo_impl.clone();
+        let meal_day_summary_repo: Arc<dyn MealDaySummaryRepositoryPort> = meal_repo_impl.clone();
         let food_nutrition_reference_repo: Arc<dyn FoodNutritionReferenceRepositoryPort> =
             meal_repo_impl;
 
@@ -52,8 +60,12 @@ impl PersistenceBackend for SqliteBackend {
             user_repo,
             user_expectation_repo,
             user_preferences_repo,
+            dining_companion_repo,
             chat_repo,
             meal_repo,
+            pending_meal_repo,
+            meal_day_finalization_repo,
+            meal_day_summary_repo,
             food_nutrition_reference_repo,
         })
     }

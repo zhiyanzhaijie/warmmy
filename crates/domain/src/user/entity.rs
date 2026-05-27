@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    AppTheme, ExpectationSource, HealthExpectationId, HealthExpectationKind,
+    AppTheme, DiningCompanionId, ExpectationSource, HealthExpectationId, HealthExpectationKind,
     HealthExpectationStatus, PreferenceConfidence, UserId,
 };
 
@@ -10,7 +10,8 @@ pub struct UserProfile {
     pub id: UserId,
     pub display_name: String,
     pub introduction: String,
-    pub allergies: Vec<String>,
+    pub gender: Option<String>,
+    pub age: Option<u8>,
 }
 
 impl UserProfile {
@@ -19,7 +20,8 @@ impl UserProfile {
             id: UserId::new_unchecked(id),
             display_name: display_name.into(),
             introduction: String::new(),
-            allergies: Vec::new(),
+            gender: None,
+            age: None,
         }
     }
 }
@@ -43,6 +45,17 @@ pub struct UserPreferences {
     pub user_id: UserId,
     pub app: AppPreferences,
     pub diet: DietaryPreferences,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DiningCompanion {
+    pub id: DiningCompanionId,
+    pub owner_user_id: UserId,
+    pub display_name: String,
+    pub relationship: Option<String>,
+    pub introduction: String,
+    pub diet: DietaryPreferences,
+    pub health_notes: Vec<String>,
 }
 
 impl UserPreferences {

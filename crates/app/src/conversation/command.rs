@@ -20,6 +20,27 @@ pub struct SendUserMessageResult {
     pub session_id: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct ContinueInteractionCommand {
+    pub user_id: UserId,
+    pub session_id: String,
+    pub interaction: AgentInteractionContinuation,
+}
+
+#[derive(Debug, Clone)]
+pub enum AgentInteractionContinuation {
+    ConfirmMealLog {
+        pending_id: String,
+    },
+    RejectMealLog {
+        pending_id: String,
+    },
+    SummarizeMealDay {
+        finalized_at: String,
+        meals_json: String,
+    },
+}
+
 pub type ConversationReplyStream = Pin<Box<dyn Stream<Item = Result<String, AppError>> + Send>>;
 
 #[derive(Clone)]
@@ -44,5 +65,12 @@ impl ConversationCommandHandler {
         command: SendUserMessageCommand,
     ) -> AppResult<ConversationReplyStream> {
         self.agent.stream_user_message(command).await
+    }
+
+    pub async fn continue_interaction(
+        &self,
+        command: ContinueInteractionCommand,
+    ) -> AppResult<ConversationReplyStream> {
+        self.agent.continue_interaction(command).await
     }
 }

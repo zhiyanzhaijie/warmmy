@@ -8,6 +8,8 @@ use domain::UserId;
 
 use crate::persistence::sqlite::models::ChatMessageRow;
 
+const RIG_MEMORY_ROLE: &str = "rig_memory";
+
 #[derive(Clone)]
 pub struct SqliteChatMessageRepo {
     db: Arc<Mutex<toasty::Db>>,
@@ -45,6 +47,8 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
 
         Ok(messages
             .into_iter()
+            .filter(|row| row.2 != RIG_MEMORY_ROLE)
+            .filter(|row| !is_internal_conversation_message(&row.2, &row.3))
             .map(|row| ChatMessage {
                 role: row.2,
                 content: row.3,
@@ -59,12 +63,64 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
         role: &str,
         content: &str,
     ) -> Result<(), String> {
+        if is_internal_conversation_message(role, content) {
+            return Ok(());
+        }
+
         let mut db = self.db.lock().await;
         let created_at = Utc::now().to_rfc3339();
         let _ = toasty::create!(ChatMessageRow {
             user_id: user_id.as_str().to_string(),
             session_id: session_id.to_string(),
             role: role.to_string(),
+            content: content.to_string(),
+            created_at,
+        })
+        .exec(&mut *db)
+        .await
+        .map_err(|err| err.to_string())?;
+
+        Ok(())
+    }
+
+    async fn find_memory_messages(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+    ) -> Result<Vec<String>, String> {
+        let mut db = self.db.lock().await;
+        let rows = ChatMessageRow::filter(
+            ChatMessageRow::fields()
+                .user_id()
+                .eq(user_id.as_str())
+                .and(ChatMessageRow::fields().session_id().eq(session_id))
+                .and(ChatMessageRow::fields().role().eq(RIG_MEMORY_ROLE)),
+        )
+        .exec(&mut *db)
+        .await
+        .map_err(|err| err.to_string())?;
+
+        let mut messages: Vec<_> = rows
+            .into_iter()
+            .map(|row| (row.created_at, row.id, row.content))
+            .collect();
+        messages.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
+        Ok(messages.into_iter().map(|row| row.2).collect())
+    }
+
+    async fn save_memory_message(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        content: &str,
+    ) -> Result<(), String> {
+        let mut db = self.db.lock().await;
+        let created_at = Utc::now().to_rfc3339();
+        let _ = toasty::create!(ChatMessageRow {
+            user_id: user_id.as_str().to_string(),
+            session_id: session_id.to_string(),
+            role: RIG_MEMORY_ROLE.to_string(),
             content: content.to_string(),
             created_at,
         })
@@ -85,6 +141,7 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
 
         let mut sessions: Vec<(String, String)> = rows
             .into_iter()
+            .filter(|row| row.role != RIG_MEMORY_ROLE)
             .map(|row| (row.session_id, row.created_at))
             .collect();
 
@@ -100,4 +157,13 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
 
         Ok(unique_sessions)
     }
+}
+
+fn is_internal_conversation_message(role: &str, content: &str) -> bool {
+    role == "user"
+        && (content
+            .trim_start()
+            .starts_with("[warmmy:internal-continuation]")
+            || content.starts_with("用户已在界面确认一条待确认用餐记录。")
+            || content.starts_with("用户已在界面取消一条待确认用餐记录。"))
 }

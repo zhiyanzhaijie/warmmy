@@ -7,7 +7,8 @@ use app::conversation::{ConversationCommandHandler, ConversationQueryHandler};
 use app::meal::FoodNutritionReferenceRepositoryPort;
 use app::meal::{MealCommandHandler, MealEventHandler, MealQueryHandler};
 use app::user::{
-    EnsureUserProfileCommand, UserDietaryContextQueryHandler, UserHealthExpectationCommandHandler,
+    DiningCompanionCommandHandler, DiningCompanionQueryHandler, EnsureUserProfileCommand,
+    UserDietaryContextQueryHandler, UserHealthExpectationCommandHandler,
     UserHealthExpectationQueryHandler, UserPreferencesCommandHandler, UserPreferencesQueryHandler,
     UserProfileCommandHandler, UserProfileQueryHandler,
 };
@@ -21,6 +22,8 @@ const COMMON_NUTRITION_SEED: &str = include_str!("seeds/nutrition/common_foods.j
 pub struct UserState {
     pub query: UserProfileQueryHandler,
     pub command: UserProfileCommandHandler,
+    pub companion_query: DiningCompanionQueryHandler,
+    pub companion_command: DiningCompanionCommandHandler,
     pub dietary_context: UserDietaryContextQueryHandler,
     pub expectation_query: UserHealthExpectationQueryHandler,
     pub expectation_command: UserHealthExpectationCommandHandler,
@@ -80,11 +83,17 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
         repos.user_repo.clone(),
         repos.user_expectation_repo.clone(),
         repos.user_preferences_repo.clone(),
+        repos.dining_companion_repo.clone(),
     );
 
     let user = UserState {
         query: UserProfileQueryHandler::new(repos.user_repo.clone()),
         command: UserProfileCommandHandler::new(repos.user_repo.clone()),
+        companion_query: DiningCompanionQueryHandler::new(repos.dining_companion_repo.clone()),
+        companion_command: DiningCompanionCommandHandler::new(
+            repos.dining_companion_repo.clone(),
+            repos.user_repo.clone(),
+        ),
         dietary_context: user_dietary_context.clone(),
         expectation_query: UserHealthExpectationQueryHandler::new(
             repos.user_expectation_repo.clone(),
@@ -102,17 +111,23 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
 
     user.command
         .ensure_profile(EnsureUserProfileCommand {
-            user_id: UserId::new_unchecked("demo-user"),
-            display_name: "Demo User".to_string(),
+            user_id: UserId::new_unchecked("default"),
+            display_name: "屋主".to_string(),
         })
         .await?;
 
     seed_food_nutrition_references(repos.food_nutrition_reference_repo.as_ref()).await?;
 
     let meal_command = Arc::new(
-        MealCommandHandler::new(user_dietary_context, repos.meal_repo.clone())
-            .with_food_nutrition_references(repos.food_nutrition_reference_repo.clone())
-            .with_event_handler(MealEventHandler::new()),
+        MealCommandHandler::new(
+            user_dietary_context,
+            repos.meal_repo.clone(),
+            repos.pending_meal_repo.clone(),
+            repos.meal_day_finalization_repo.clone(),
+            repos.meal_day_summary_repo.clone(),
+        )
+        .with_food_nutrition_references(repos.food_nutrition_reference_repo.clone())
+        .with_event_handler(MealEventHandler::new()),
     );
 
     let meal = MealState {
