@@ -1,5 +1,8 @@
 use dioxus::prelude::*;
-use ui::views::{ChatDetailView, HomeView, MeView, TravelDetailView, TravelView, WarmmyView};
+use ui::views::{
+    ChatDetailView, HomeView, MeCompanionsView, MeDietPreferenceView, MeHealthExpectationView,
+    MeProfileEditView, MeView, TravelDetailView, TravelView, WarmmyView,
+};
 
 mod layouts;
 mod platform;
@@ -21,6 +24,14 @@ enum Route {
     TravelDetailView { summary_id: String },
     #[route("/me")]
     MeView {},
+    #[route("/me/profile")]
+    MeProfileEditView {},
+    #[route("/me/companions")]
+    MeCompanionsView {},
+    #[route("/me/preferences")]
+    MeDietPreferenceView {},
+    #[route("/me/expectations")]
+    MeHealthExpectationView {},
     #[route("/warmmy")]
     WarmmyView {},
 }

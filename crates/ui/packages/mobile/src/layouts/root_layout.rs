@@ -11,10 +11,11 @@ pub fn RootLayout() -> Element {
 
     rsx! {
         div {
-            class: "flex w-full h-[100dvh] bg-background text-foreground overflow-hidden font-sans",
+            class: "flex h-[100dvh] w-full overflow-hidden bg-background text-foreground font-sans",
+            style: "--warmmy-bottom-nav-height: calc(88px + env(safe-area-inset-bottom));",
             SideNav {}
             div {
-                class: "flex-1 h-[calc(100dvh-88px)] md:h-full min-h-0 overflow-hidden relative",
+                class: "relative h-[calc(100dvh-var(--warmmy-bottom-nav-height))] min-h-0 flex-1 overflow-hidden md:h-full",
                 div {
                     class: "h-full min-h-0",
                     Outlet::<Route> {}
@@ -35,7 +36,14 @@ fn BottomNav() -> Element {
         &route,
         Route::TravelView { .. } | Route::TravelDetailView { .. }
     );
-    let is_me = matches!(&route, Route::MeView { .. });
+    let is_me = matches!(
+        &route,
+        Route::MeView { .. }
+            | Route::MeProfileEditView { .. }
+            | Route::MeCompanionsView { .. }
+            | Route::MeDietPreferenceView { .. }
+            | Route::MeHealthExpectationView { .. }
+    );
 
     let open_chat = move |_| {
         nav.push(format!("/{}", ui::today_session_id()));
@@ -43,9 +51,9 @@ fn BottomNav() -> Element {
 
     rsx! {
         div {
-            class: "md:hidden fixed bottom-0 w-full rounded-t-[2rem] bg-background border-t border-border z-50 overflow-hidden",
+            class: "fixed bottom-0 z-50 w-full overflow-hidden rounded-t-[2rem] border-t border-border bg-background md:hidden",
             div {
-                class: "flex justify-around items-end px-4 py-3 pb-safe relative",
+                class: "relative flex min-h-[88px] items-start justify-around px-4 pb-safe pt-3",
                 Link {
                     to: Route::HomeView {},
                     class: format!(
@@ -98,7 +106,14 @@ fn SideNav() -> Element {
         &route,
         Route::TravelView { .. } | Route::TravelDetailView { .. }
     );
-    let is_me = matches!(&route, Route::MeView { .. });
+    let is_me = matches!(
+        &route,
+        Route::MeView { .. }
+            | Route::MeProfileEditView { .. }
+            | Route::MeCompanionsView { .. }
+            | Route::MeDietPreferenceView { .. }
+            | Route::MeHealthExpectationView { .. }
+    );
 
     let open_chat = move |_| {
         nav.push(format!("/{}", ui::today_session_id()));

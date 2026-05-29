@@ -1,7 +1,8 @@
 use api::user;
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{Check, Flame, Plus, RefreshCw, X};
+use dioxus_icons::lucide::{ArrowLeft, Check, Flame, Pencil, Plus, RefreshCw, X};
 
+use crate::blocks::CurrentUserContext;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
 use crate::components::ui::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
@@ -9,6 +10,124 @@ use crate::components::ui::dialog::{DialogContent, DialogDescription, DialogRoot
 use super::common::{
     BlockMessage, ChoiceOption, LabeledChoiceGroup, LabeledInput, LabeledTextarea,
 };
+
+#[component]
+pub fn HealthExpectationSummaryBlock(
+    user_id: String,
+    on_loaded: EventHandler<Vec<user::HealthExpectationDTO>>,
+) -> Element {
+    let mut loading = use_signal(|| false);
+    let mut expectations = use_signal(Vec::<user::HealthExpectationDTO>::new);
+    let mut message = use_signal(String::new);
+    let nav = navigator();
+
+    let load_user_id = user_id.clone();
+    use_effect(move || {
+        let request_user_id = load_user_id.clone();
+        spawn(async move {
+            loading.set(true);
+            message.set(String::new());
+            match user::list_health_expectations(request_user_id).await {
+                Ok(items) => {
+                    on_loaded.call(items.clone());
+                    expectations.set(items);
+                }
+                Err(err) => message.set(format!("加载健康期望失败: {err}")),
+            }
+            loading.set(false);
+        });
+    });
+
+    let expectation_items = expectations();
+    let active = expectation_items
+        .iter()
+        .filter(|item| item.status == "active")
+        .count();
+    let proposed = expectation_items
+        .iter()
+        .filter(|item| item.status == "proposed")
+        .count();
+    let preview = expectation_items
+        .iter()
+        .find(|item| item.status == "active")
+        .or_else(|| expectation_items.first())
+        .map(|item| item.title.clone())
+        .unwrap_or_else(|| "还没有健康期望".to_string());
+
+    rsx! {
+        Card { class: "min-h-[212px] rounded-[1.5rem] border border-border bg-card px-0 py-0 shadow-none",
+            CardContent { class: "flex h-full flex-col justify-between gap-5 px-5 py-5 md:px-6 md:py-6",
+                div {
+                    div { class: "mb-4 flex items-start justify-between gap-3",
+                        div { class: "flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background text-foreground",
+                            Flame { size: 19 }
+                        }
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            class: "rounded-full border border-border px-3",
+                            onclick: move |_| {
+                                nav.push("/me/expectations");
+                            },
+                            Pencil { size: 15 }
+                        }
+                    }
+                    p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Expectation" }
+                    h3 { class: "mt-2 text-xl font-semibold text-foreground", "健康期望" }
+                    p { class: "mt-2 line-clamp-2 text-sm leading-relaxed text-muted-foreground", "{preview}" }
+                }
+                BlockMessage { message: message() }
+                div { class: "grid grid-cols-2 gap-2 text-sm",
+                    button {
+                        r#type: "button",
+                        class: "rounded-2xl border border-border bg-background px-3 py-3 text-left transition hover:bg-muted/50",
+                        onclick: move |_| {
+                            nav.push("/me/expectations");
+                        },
+                        div { class: "font-doodle text-2xl font-semibold leading-none text-foreground", "{active}" }
+                        div { class: "mt-1 text-xs text-muted-foreground", if loading() { "loading" } else { "Active" } }
+                    }
+                    button {
+                        r#type: "button",
+                        class: "rounded-2xl border border-border bg-background px-3 py-3 text-left transition hover:bg-muted/50",
+                        onclick: move |_| {
+                            nav.push("/me/expectations");
+                        },
+                        div { class: "font-doodle text-2xl font-semibold leading-none text-foreground", "{proposed}" }
+                        div { class: "mt-1 text-xs text-muted-foreground", if loading() { "loading" } else { "Proposed" } }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn HealthExpectationEditBlock() -> Element {
+    let current_user = use_context::<CurrentUserContext>();
+    let current_user_id = (current_user.user_id)();
+    let mut items = use_signal(Vec::<user::HealthExpectationDTO>::new);
+    let nav = navigator();
+
+    rsx! {
+        div { class: "h-full min-h-0 overflow-y-auto px-4 py-5 pb-28 md:px-8 md:py-8 md:pb-12",
+            div { class: "mx-auto flex w-full max-w-4xl flex-col gap-5",
+                div { class: "flex items-center justify-between gap-3",
+                    Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3", onclick: move |_| {
+                        nav.push("/me");
+                    },
+                        ArrowLeft { size: 16 }
+                        "返回"
+                    }
+                    p { class: "text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Expectations" }
+                }
+                HealthExpectedBlock {
+                    user_id: current_user_id,
+                    on_loaded: move |value| items.set(value),
+                }
+            }
+        }
+    }
+}
 
 #[component]
 pub fn HealthExpectedBlock(
@@ -120,7 +239,8 @@ pub fn HealthExpectedBlock(
             CardHeader { class: "gap-3 px-5 pb-0 pt-5 md:px-6 md:pt-6",
                 div { class: "flex items-start justify-between gap-3",
                     div {
-                        CardTitle { class: "flex items-center gap-2 text-xl font-semibold tracking-[-0.3px]",
+                        p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Expectation stack" }
+                        CardTitle { class: "mt-2 flex items-center gap-2 text-2xl font-semibold",
                             Flame { size: 18 }
                             "健康期望"
                         }
@@ -150,7 +270,7 @@ pub fn HealthExpectedBlock(
                 } else if expectations().is_empty() {
                     EmptyExpectationCard { on_new: open_new }
                 } else {
-                    div { class: "grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-1",
+                    div { class: "grid grid-cols-1 gap-3",
                         for item in expectations() {
                             HealthExpectationMiniCard {
                                 key: "{item.id}",
@@ -310,9 +430,9 @@ fn HealthExpectationMiniCard(
     on_delete: EventHandler<String>,
 ) -> Element {
     let status_badge = match item.status.as_str() {
-        "active" => "bg-[#0f7a4d] text-white",
+        "active" => "bg-foreground text-background",
         "archived" => "bg-muted text-muted-foreground",
-        _ => "bg-[#b86b10] text-white",
+        _ => "bg-secondary text-secondary-foreground",
     };
     let is_active = item.status == "active";
     let expectation_id = item.id.clone();
@@ -320,7 +440,7 @@ fn HealthExpectationMiniCard(
     let item_for_edit = item.clone();
 
     rsx! {
-        div { class: "group rounded-[1.45rem] border border-border bg-background/80 p-4 transition hover:-translate-y-0.5 hover:bg-background",
+        div { class: "group rounded-[1.45rem] border border-border bg-background/80 p-4 transition hover:bg-background",
             button { r#type: "button", class: "w-full text-left", onclick: move |_| on_edit.call(item_for_edit.clone()),
                 div { class: "flex items-start justify-between gap-3",
                     div { class: "min-w-0",

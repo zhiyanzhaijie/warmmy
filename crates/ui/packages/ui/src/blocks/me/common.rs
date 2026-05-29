@@ -17,9 +17,27 @@ impl ChoiceOption {
 }
 
 #[component]
-pub fn StatPill(label: String, value: String) -> Element {
+pub fn StatPill(
+    label: String,
+    value: String,
+    #[props(default)] onclick: Option<EventHandler<MouseEvent>>,
+) -> Element {
+    let class = if onclick.is_some() {
+        "rounded-[1.1rem] border border-border bg-card px-3 py-3 transition hover:bg-muted/50"
+    } else {
+        "rounded-[1.1rem] border border-border bg-card px-3 py-3"
+    };
+
     rsx! {
-        div { class: "rounded-[1.1rem] border border-border bg-card px-3 py-3",
+        button {
+            r#type: "button",
+            class,
+            disabled: onclick.is_none(),
+            onclick: move |event| {
+                if let Some(action) = onclick {
+                    action.call(event);
+                }
+            },
             div { class: "font-doodle text-2xl font-semibold leading-none tracking-[-0.6px] text-foreground", "{value}" }
             div { class: "mt-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground", "{label}" }
         }
@@ -31,6 +49,15 @@ pub fn BlockMessage(message: String) -> Element {
     rsx! {
         if !message.is_empty() {
             div { class: "rounded-2xl border border-border bg-background/70 px-4 py-3 text-sm text-foreground", "{message}" }
+        }
+    }
+}
+
+#[component]
+pub fn MiniTag(label: String) -> Element {
+    rsx! {
+        span { class: "inline-flex max-w-full items-center truncate rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground",
+            "{label}"
         }
     }
 }

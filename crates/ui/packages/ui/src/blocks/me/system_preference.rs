@@ -1,9 +1,9 @@
 use api::user;
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{Globe, Palette};
+use dioxus_icons::lucide::{Globe, Palette, Pencil, X};
 
-use crate::components::ui::button::Button;
-use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
+use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+use crate::components::ui::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
 
 use super::common::{
     apply_document_theme, normalize_theme, BlockMessage, ChoiceOption, LabeledChoiceGroup,
@@ -17,6 +17,7 @@ pub fn SystemPreferenceBlock(
 ) -> Element {
     let mut loading = use_signal(|| false);
     let mut saving = use_signal(|| false);
+    let mut dialog_open = use_signal(|| false);
     let mut theme = use_signal(|| "system".to_string());
     let mut language = use_signal(|| "zh-CN".to_string());
     let mut message = use_signal(String::new);
@@ -102,16 +103,74 @@ pub fn SystemPreferenceBlock(
         });
     };
 
+    let language_label = if language().trim().is_empty() {
+        "未设置".to_string()
+    } else {
+        language()
+    };
+    let theme_label = match theme().as_str() {
+        "light" => "Light",
+        "dark" => "Dark",
+        _ => "System",
+    };
+
     rsx! {
-        Card { class: "rounded-[2rem] border border-border bg-card px-0 py-0 shadow-none",
-            CardHeader { class: "gap-2 px-5 pb-0 pt-5 md:px-6 md:pt-6",
-                CardTitle { class: "flex items-center gap-2 text-xl font-semibold tracking-[-0.3px]",
-                    Palette { size: 18 }
-                    "系统偏好"
+        section { class: "flex min-h-0 border-t border-border bg-background/45 lg:h-full lg:border-l lg:border-t-0",
+            div { class: "flex min-h-0 flex-1 flex-col justify-between gap-4 px-5 py-5 md:px-6 lg:py-8",
+                div { class: "space-y-4",
+                    div { class: "flex items-start justify-between gap-3",
+                        div { class: "min-w-0",
+                            p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "System" }
+                            h3 { class: "mt-2 text-lg font-semibold text-foreground", "系统偏好" }
+                        }
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            size: ButtonSize::IconSm,
+                            class: "rounded-full border border-border",
+                            onclick: move |_| dialog_open.set(true),
+                            Pencil { size: 15 }
+                        }
+                    }
+                    BlockMessage { message: message() }
                 }
-                p { class: "text-sm leading-relaxed text-muted-foreground", "只保留会影响产品体验的设置，不和饮食画像混在一起。" }
+                div { class: "grid grid-cols-2 gap-2 text-sm lg:grid-cols-1",
+                    div { class: "rounded-[1.25rem] border border-border bg-card/80 px-3 py-3",
+                        div { class: "flex items-center gap-2 text-[11px] text-muted-foreground",
+                            Palette { size: 14 }
+                            "Theme"
+                        }
+                        div { class: "mt-1 text-base font-semibold text-foreground", "{theme_label}" }
+                    }
+                    div { class: "rounded-[1.25rem] border border-border bg-card/80 px-3 py-3",
+                        div { class: "flex items-center gap-2 text-[11px] text-muted-foreground",
+                            Globe { size: 14 }
+                            "Language"
+                        }
+                        div { class: "mt-1 text-base font-semibold text-foreground", "{language_label}" }
+                    }
+                }
             }
-            CardContent { class: "space-y-5 px-5 pb-5 pt-5 md:px-6 md:pb-6",
+        }
+
+        DialogRoot {
+            open: dialog_open(),
+            on_open_change: move |open| dialog_open.set(open),
+            DialogContent { class: "max-h-[min(86dvh,680px)] w-[calc(100vw-1rem)] max-w-[560px] overflow-hidden rounded-[1.5rem] border border-border bg-card p-0 text-left shadow-2xl sm:w-[calc(100vw-2rem)] sm:rounded-[2rem]",
+                div { class: "flex min-h-0 max-h-[min(86dvh,680px)] flex-col",
+                    div { class: "flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-4 md:px-6",
+                        div {
+                            DialogTitle { "编辑系统偏好" }
+                            DialogDescription { "影响界面主题与默认语言。" }
+                        }
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            size: ButtonSize::IconSm,
+                            class: "rounded-full border border-border",
+                            onclick: move |_| dialog_open.set(false),
+                            X { size: 16 }
+                        }
+                    }
+                    div { class: "min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-5 md:px-6",
                 BlockMessage { message: message() }
                 LabeledChoiceGroup {
                     label: "Theme",
@@ -134,11 +193,21 @@ pub fn SystemPreferenceBlock(
                     value: language,
                     placeholder: "zh-CN",
                 }
+                    }
+                    div { class: "flex shrink-0 flex-col gap-2 border-t border-border px-4 py-4 sm:flex-row sm:justify-end md:px-6",
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            class: "rounded-xl border border-border px-4",
+                            onclick: move |_| dialog_open.set(false),
+                            "取消"
+                        }
                 Button {
-                    class: "w-full rounded-xl bg-foreground text-background shadow-sm hover:opacity-90 sm:w-auto",
+                            class: "rounded-xl bg-foreground px-5 text-background shadow-sm hover:opacity-90",
                     disabled: saving() || loading(),
                     onclick: save,
                     if saving() { "保存中..." } else { "保存系统偏好" }
+                }
+                    }
                 }
             }
         }

@@ -1,11 +1,122 @@
 use api::user;
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{Check, Flame, Trash2};
+use dioxus_icons::lucide::{ArrowLeft, Check, Flame, Pencil, Trash2};
 
-use crate::components::ui::button::Button;
+use crate::blocks::CurrentUserContext;
+use crate::components::ui::button::{Button, ButtonVariant};
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
 
 use super::common::{merge_tags, BlockMessage, TagListInput};
+
+#[component]
+pub fn DietPreferenceSummaryBlock(
+    user_id: String,
+    on_loaded: EventHandler<user::UserPreferencesDTO>,
+) -> Element {
+    let mut loading = use_signal(|| false);
+    let mut preferred_cuisines = use_signal(Vec::<String>::new);
+    let mut avoided_cuisines = use_signal(Vec::<String>::new);
+    let mut message = use_signal(String::new);
+    let nav = navigator();
+
+    let load_user_id = user_id.clone();
+    use_effect(move || {
+        let request_user_id = load_user_id.clone();
+        spawn(async move {
+            loading.set(true);
+            message.set(String::new());
+            match user::get_user_preferences(request_user_id).await {
+                Ok(preferences) => {
+                    preferred_cuisines.set(preferences.preferred_cuisines.clone());
+                    avoided_cuisines.set(preferences.avoided_cuisines.clone());
+                    on_loaded.call(preferences);
+                }
+                Err(err) => message.set(format!("加载饮食偏好失败: {err}")),
+            }
+            loading.set(false);
+        });
+    });
+
+    let total = preferred_cuisines().len() + avoided_cuisines().len();
+    let preview = if total == 0 {
+        "还没有设置偏好".to_string()
+    } else {
+        preferred_cuisines()
+            .into_iter()
+            .chain(avoided_cuisines())
+            .take(3)
+            .collect::<Vec<_>>()
+            .join("、")
+    };
+
+    rsx! {
+        Card { class: "min-h-[212px] rounded-[1.5rem] border border-border bg-card px-0 py-0 shadow-none",
+            CardContent { class: "flex h-full flex-col justify-between gap-5 px-5 py-5 md:px-6 md:py-6",
+                div {
+                    div { class: "mb-4 flex items-start justify-between gap-3",
+                        div { class: "flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background text-foreground",
+                            Flame { size: 19 }
+                        }
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            class: "rounded-full border border-border px-3",
+                            onclick: move |_| {
+                                nav.push("/me/preferences");
+                            },
+                            Pencil { size: 15 }
+                        }
+                    }
+                    p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Preference" }
+                    h3 { class: "mt-2 text-xl font-semibold text-foreground", "饮食偏好" }
+                    p { class: "mt-2 line-clamp-2 text-sm leading-relaxed text-muted-foreground", "{preview}" }
+                }
+                BlockMessage { message: message() }
+                div { class: "flex items-end justify-between gap-3",
+                    div {
+                        div { class: "font-doodle text-3xl font-semibold leading-none text-foreground", "{total}" }
+                        div { class: "mt-1 text-xs text-muted-foreground", if loading() { "loading" } else { "偏好与忌口" } }
+                    }
+                    Button {
+                        variant: ButtonVariant::Ghost,
+                        class: "rounded-xl border border-border px-3",
+                        onclick: move |_| {
+                            nav.push("/me/preferences");
+                        },
+                        "编辑"
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[component]
+pub fn DietPreferenceEditBlock() -> Element {
+    let current_user = use_context::<CurrentUserContext>();
+    let current_user_id = (current_user.user_id)();
+    let mut preferences = use_signal(|| None::<user::UserPreferencesDTO>);
+    let nav = navigator();
+
+    rsx! {
+        div { class: "h-full min-h-0 overflow-y-auto px-4 py-5 pb-28 md:px-8 md:py-8 md:pb-12",
+            div { class: "mx-auto flex w-full max-w-3xl flex-col gap-5",
+                div { class: "flex items-center justify-between gap-3",
+                    Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3", onclick: move |_| {
+                        nav.push("/me");
+                    },
+                        ArrowLeft { size: 16 }
+                        "返回"
+                    }
+                    p { class: "text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Preferences" }
+                }
+                DietPreferenceBlock {
+                    user_id: current_user_id,
+                    on_saved: move |value| preferences.set(Some(value)),
+                }
+            }
+        }
+    }
+}
 
 #[component]
 pub fn DietPreferenceBlock(
@@ -88,13 +199,18 @@ pub fn DietPreferenceBlock(
     };
 
     rsx! {
-        Card { class: "rounded-[2rem] border border-border bg-card px-0 py-0 shadow-none",
+        Card { class: "rounded-[1.5rem] border border-border bg-card px-0 py-0 shadow-none",
             CardHeader { class: "gap-2 px-5 pb-0 pt-5 md:px-6 md:pt-6",
-                CardTitle { class: "flex items-center gap-2 text-xl font-semibold tracking-[-0.3px]",
-                    Flame { size: 18 }
-                    "饮食偏好"
+                div { class: "flex items-center justify-between gap-3",
+                    CardTitle { class: "flex items-center gap-2 text-xl font-semibold",
+                        Flame { size: 18 }
+                        "饮食偏好"
+                    }
+                    span { class: "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground",
+                        "{preferred_cuisines().len() + avoided_cuisines().len()} tags"
+                    }
                 }
-                p { class: "text-sm leading-relaxed text-muted-foreground", "这些是 agent 做餐食建议时必须读取的长期事实。一次输入多个条目会自动拆成 badge。" }
+                p { class: "text-sm leading-relaxed text-muted-foreground", "保留在首页直接编辑，因为它是餐食建议最常被修正的长期事实。" }
             }
             CardContent { class: "space-y-4 px-5 pb-5 pt-5 md:px-6 md:pb-6",
                 BlockMessage { message: message() }
