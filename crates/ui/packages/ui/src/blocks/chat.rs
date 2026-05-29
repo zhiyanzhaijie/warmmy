@@ -1,9 +1,10 @@
 use chrono::{Duration as ChronoDuration, NaiveDate};
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{CalendarDays, Check, Send, Sparkles};
+use dioxus_icons::lucide::{CalendarDays, Check, ImagePlus, Send, Sparkles, X};
 use dioxus_sdk_time::sleep;
 use std::collections::HashSet;
 use std::time::Duration;
+use base64::Engine;
 
 use crate::blocks::current_user_id;
 use crate::components::common::MarkdownContent;
@@ -30,6 +31,22 @@ pub static CHAT_MESSAGES: GlobalSignal<Vec<ChatMessage>> = Signal::global(Vec::n
 pub static ACTIVE_SESSION_ID: GlobalSignal<Option<String>> = Signal::global(|| None);
 pub static CHAT_INPUT: GlobalSignal<String> = Signal::global(String::new);
 pub static CHAT_NEXT_ID: GlobalSignal<u64> = Signal::global(|| 1_u64);
+pub static CHAT_COMPOSER_ATTACHMENTS: GlobalSignal<Vec<ComposerImageAttachment>> =
+    Signal::global(Vec::new);
+pub static CHAT_ATTACHMENT_NEXT_ID: GlobalSignal<u64> = Signal::global(|| 1_u64);
+
+const MAX_COMPOSER_IMAGE_COUNT: usize = 4;
+const MAX_COMPOSER_IMAGE_SIZE_BYTES: usize = 10 * 1024 * 1024;
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct ComposerImageAttachment {
+    pub id: u64,
+    pub name: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+    pub bytes: Vec<u8>,
+    pub preview_data_url: String,
+}
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct PendingConversationMessage {
@@ -56,7 +73,8 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
         .unwrap_or(false);
 
     let execute_user_id = user_id.clone();
-    let execute_send = std::rc::Rc::new(move |content: String| {
+    let execute_send =
+        std::rc::Rc::new(move |content: String, attachments: Vec<ComposerImageAttachment>| {
         let sid = send_session_id.clone();
         let request_user_id = execute_user_id.clone();
         let route_after_stream = should_route_after_stream;
@@ -70,13 +88,51 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
 
         let bot_id = append_outgoing_message_pair(content.clone());
         let content_for_server = content;
+        let attachments_for_server = attachments;
 
         *ACTIVE_SESSION_ID.write() = Some(sid.clone());
 
         spawn(async move {
+            let mut uploaded_attachments = Vec::new();
+            for attachment in attachments_for_server {
+                let uploaded = conversation::store_ephemeral_image(
+                    request_user_id.clone(),
+                    sid.clone(),
+                    attachment.mime_type.clone(),
+                    attachment.bytes,
+                    None,
+                    None,
+                )
+                .await;
+                match uploaded {
+                    Ok(image) => {
+                        uploaded_attachments.push(conversation::ChatImageAttachmentInput {
+                            asset_id: image.asset_id,
+                            mime_type: image.mime_type,
+                            size_bytes: image.size_bytes,
+                            width: image.width,
+                            height: image.height,
+                        });
+                    }
+                    Err(err) => {
+                        let mut all = CHAT_MESSAGES.write();
+                        if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
+                            bot_msg.is_skeleton = false;
+                            bot_msg.is_streaming = false;
+                            bot_msg.text = format!("图片上传失败：{err}");
+                        }
+                        return;
+                    }
+                }
+            }
+
+            let send_input = conversation::ChatSendInput {
+                text: content_for_server.clone(),
+                attachments: uploaded_attachments,
+            };
             match conversation::echo_stream(
                 request_user_id.clone(),
-                content_for_server.clone(),
+                send_input.clone(),
                 sid.clone(),
             )
             .await
@@ -92,7 +148,7 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
                 }
                 Err(stream_err) => {
                     let fallback =
-                        match conversation::echo(request_user_id, content_for_server, sid.clone())
+                        match conversation::echo(request_user_id, send_input, sid.clone())
                             .await
                         {
                             Ok(resp) => resp.reply,
@@ -211,7 +267,7 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
                                         }
                                     });
                                 }
-                                execute_send_after_history(pending.content);
+                                execute_send_after_history(pending.content, Vec::new());
                             }
                         }
                     }
@@ -243,7 +299,7 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
                                             }
                                         });
                                     }
-                                    execute_send_after_history(pending.content);
+                                    execute_send_after_history(pending.content, Vec::new());
                                 }
                             }
                         }
@@ -263,11 +319,13 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
             return;
         }
         let content = CHAT_INPUT().trim().to_string();
-        if content.is_empty() {
+        let attachments = CHAT_COMPOSER_ATTACHMENTS.read().clone();
+        if content.is_empty() && attachments.is_empty() {
             return;
         }
         *CHAT_INPUT.write() = String::new();
-        execute_send_input(content);
+        CHAT_COMPOSER_ATTACHMENTS.write().clear();
+        execute_send_input(content, attachments);
     });
 
     let send_message_keydown = send_message.clone();
@@ -278,6 +336,69 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
             .iter()
             .any(|msg| msg.is_streaming || msg.is_skeleton)
     });
+    let pick_images = move |event: FormEvent| {
+        if is_streaming() {
+            return;
+        }
+        let files = event.files();
+        if files.is_empty() {
+            return;
+        }
+        spawn(async move {
+            let mut appended = Vec::new();
+            let existing_count = CHAT_COMPOSER_ATTACHMENTS.read().len();
+            for file in files {
+                if existing_count + appended.len() >= MAX_COMPOSER_IMAGE_COUNT {
+                    break;
+                }
+                let mime_type = file
+                    .content_type()
+                    .unwrap_or_else(|| "application/octet-stream".to_string());
+                if !mime_type.starts_with("image/") {
+                    continue;
+                }
+                if file.size() as usize > MAX_COMPOSER_IMAGE_SIZE_BYTES {
+                    append_bot_text(format!(
+                        "图片 {} 超过大小限制（最多 10MB）",
+                        file.name()
+                    ));
+                    continue;
+                }
+                match file.read_bytes().await {
+                    Ok(bytes) => {
+                        let id = CHAT_ATTACHMENT_NEXT_ID();
+                        *CHAT_ATTACHMENT_NEXT_ID.write() = id.saturating_add(1);
+                        let bytes_vec = bytes.to_vec();
+                        let preview_data_url = format!(
+                            "data:{};base64,{}",
+                            mime_type,
+                            base64::engine::general_purpose::STANDARD.encode(&bytes_vec)
+                        );
+                        appended.push(ComposerImageAttachment {
+                            id,
+                            name: file.name(),
+                            mime_type,
+                            size_bytes: bytes_vec.len() as u64,
+                            bytes: bytes_vec,
+                            preview_data_url,
+                        });
+                    }
+                    Err(err) => {
+                        append_bot_text(format!("读取图片失败：{err}"));
+                    }
+                }
+            }
+
+            if !appended.is_empty() {
+                CHAT_COMPOSER_ATTACHMENTS.write().extend(appended);
+            }
+        });
+    };
+    let remove_attachment = move |id: u64| {
+        CHAT_COMPOSER_ATTACHMENTS
+            .write()
+            .retain(|attachment| attachment.id != id);
+    };
     let mut finalizing_day = use_signal(|| false);
     let finalize_user_id = user_id.clone();
     let finalize_session_id = current_session_id.clone();
@@ -393,8 +514,44 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
                     class: "border-t border-border bg-card/95 px-4 pb-5 pt-3 backdrop-blur md:px-6 md:pb-6",
                     div {
                         class: "rounded-[1.75rem] border border-border bg-background p-2 focus-within:shadow-md",
+                        if !CHAT_COMPOSER_ATTACHMENTS().is_empty() {
+                            div { class: "mb-2 flex flex-wrap gap-2 px-2 pt-1",
+                                for attachment in CHAT_COMPOSER_ATTACHMENTS().iter() {
+                                    div {
+                                        key: "{attachment.id}",
+                                        class: "group relative h-14 w-14 overflow-hidden rounded-xl border border-border bg-card",
+                                        img {
+                                            class: "h-full w-full object-cover",
+                                            src: attachment.preview_data_url.clone(),
+                                            alt: attachment.name.clone(),
+                                        }
+                                        button {
+                                            r#type: "button",
+                                            class: "absolute right-1 top-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition group-hover:opacity-100",
+                                            onclick: {
+                                                let remove_attachment = remove_attachment.clone();
+                                                let id = attachment.id;
+                                                move |_| remove_attachment(id)
+                                            },
+                                            X { size: 12 }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         div {
                             class: "flex items-center gap-2",
+                            div { class: "inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-1 text-xs text-muted-foreground",
+                                ImagePlus { size: 16 }
+                                input {
+                                    r#type: "file",
+                                    class: "max-w-[8.5rem] text-xs file:mr-2 file:rounded file:border file:border-border file:bg-background file:px-2 file:py-1 file:text-xs",
+                                    accept: "image/*",
+                                    multiple: true,
+                                    disabled: is_streaming(),
+                                    onchange: pick_images,
+                                }
+                            }
                             Input {
                                 class: "flex-1 border-none bg-transparent px-4 py-3 font-medium text-foreground shadow-none outline-none placeholder:text-muted-foreground",
                                 r#type: "text",

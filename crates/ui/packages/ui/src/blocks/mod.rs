@@ -1,6 +1,7 @@
 mod chat;
 mod me;
 mod user_context;
+mod warmmy;
 
 pub use chat::{
     ChatBlock, ChatMessage, ConversationTransitionContext, PendingConversationMessage,
@@ -11,3 +12,4 @@ pub use user_context::{
     current_user_id, provide_current_user_context, set_current_user_id, CurrentUserContext,
     DEFAULT_USER_ID,
 };
+pub use warmmy::WarmmyBlock;

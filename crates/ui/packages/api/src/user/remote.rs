@@ -45,6 +45,65 @@ pub struct DiningCompanionDTO {
     pub health_notes: Vec<String>,
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct UserAIProviderDTO {
+    pub id: String,
+    pub kind: String,
+    pub name: String,
+    pub base_url: String,
+    pub has_api_key: bool,
+    pub enabled: bool,
+    pub updated_at: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct UserAIRouteDTO {
+    pub id: String,
+    pub capability: String,
+    pub provider_id: String,
+    pub model: String,
+    pub embedding_ndims: Option<usize>,
+    pub enabled: bool,
+    pub updated_at: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct UserAICapabilityStatusDTO {
+    pub capability: String,
+    pub enabled: bool,
+    pub configured: bool,
+    pub reason: Option<String>,
+    pub provider_id: Option<String>,
+    pub model: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct UserAIConfigDTO {
+    pub providers: Vec<UserAIProviderDTO>,
+    pub routes: Vec<UserAIRouteDTO>,
+    pub statuses: Vec<UserAICapabilityStatusDTO>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct SaveUserAIProviderInput {
+    pub id: Option<String>,
+    pub kind: String,
+    pub name: String,
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub enabled: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct SaveUserAIRouteInput {
+    pub id: Option<String>,
+    pub capability: String,
+    pub provider_id: String,
+    pub model: String,
+    pub embedding_ndims: Option<usize>,
+    pub enabled: bool,
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct SaveUserProfileInput {
     pub id: String,
@@ -419,6 +478,159 @@ pub async fn delete_dining_companion(
         .map_err(api_error)?;
 
     list_dining_companions(user_id.to_string()).await
+}
+
+#[post("/api/user/ai/config", state: State)]
+pub async fn get_user_ai_config(user_id: String) -> Result<UserAIConfigDTO, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    let snapshot = state
+        .0
+        .user
+        .ai_config_query
+        .get_snapshot(&user_id)
+        .await
+        .map_err(api_error)?;
+    let statuses = state
+        .0
+        .user
+        .ai_config_query
+        .list_statuses(&user_id)
+        .await
+        .map_err(api_error)?;
+
+    Ok(UserAIConfigDTO {
+        providers: snapshot
+            .providers
+            .into_iter()
+            .map(ai_provider_to_dto)
+            .collect(),
+        routes: snapshot.routes.into_iter().map(ai_route_to_dto).collect(),
+        statuses: statuses.into_iter().map(ai_status_to_dto).collect(),
+    })
+}
+
+#[post("/api/user/ai/providers/save", state: State)]
+pub async fn save_user_ai_provider(
+    user_id: String,
+    input: SaveUserAIProviderInput,
+) -> Result<UserAIConfigDTO, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    let kind = parse_ai_provider_kind(&input.kind)?;
+    state
+        .0
+        .user
+        .ai_config_command
+        .save_provider(app::user::SaveUserAIProviderCommand {
+            user_id: user_id.clone(),
+            provider_id: input.id,
+            kind,
+            name: input.name,
+            base_url: input.base_url,
+            api_key: input.api_key,
+            enabled: input.enabled,
+        })
+        .await
+        .map_err(api_error)?;
+
+    get_user_ai_config(user_id.to_string()).await
+}
+
+#[post("/api/user/ai/providers/delete", state: State)]
+pub async fn delete_user_ai_provider(
+    user_id: String,
+    provider_id: String,
+) -> Result<UserAIConfigDTO, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    state
+        .0
+        .user
+        .ai_config_command
+        .delete_provider(app::user::DeleteUserAIProviderCommand {
+            user_id: user_id.clone(),
+            provider_id,
+        })
+        .await
+        .map_err(api_error)?;
+
+    get_user_ai_config(user_id.to_string()).await
+}
+
+#[post("/api/user/ai/routes/save", state: State)]
+pub async fn save_user_ai_route(
+    user_id: String,
+    input: SaveUserAIRouteInput,
+) -> Result<UserAIConfigDTO, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    let capability = parse_ai_capability(&input.capability)?;
+    state
+        .0
+        .user
+        .ai_config_command
+        .save_route(app::user::SaveUserAIRouteCommand {
+            user_id: user_id.clone(),
+            route_id: input.id,
+            capability,
+            provider_id: input.provider_id,
+            model: input.model,
+            embedding_ndims: input.embedding_ndims,
+            enabled: input.enabled,
+        })
+        .await
+        .map_err(api_error)?;
+
+    get_user_ai_config(user_id.to_string()).await
+}
+
+fn ai_provider_to_dto(provider: domain::UserAIProvider) -> UserAIProviderDTO {
+    let has_api_key = provider.has_secret();
+    UserAIProviderDTO {
+        id: provider.id,
+        kind: provider.kind.as_str().to_string(),
+        name: provider.name,
+        base_url: provider.base_url,
+        has_api_key,
+        enabled: provider.enabled,
+        updated_at: provider.updated_at,
+    }
+}
+
+fn ai_route_to_dto(route: domain::UserAIRoute) -> UserAIRouteDTO {
+    UserAIRouteDTO {
+        id: route.id,
+        capability: route.capability.as_str().to_string(),
+        provider_id: route.provider_id,
+        model: route.model,
+        embedding_ndims: route.embedding_ndims,
+        enabled: route.enabled,
+        updated_at: route.updated_at,
+    }
+}
+
+fn ai_status_to_dto(status: app::user::AICapabilityStatus) -> UserAICapabilityStatusDTO {
+    UserAICapabilityStatusDTO {
+        capability: status.capability.as_str().to_string(),
+        enabled: status.enabled,
+        configured: status.configured,
+        reason: status.reason,
+        provider_id: status.provider_id,
+        model: status.model,
+    }
+}
+
+fn parse_ai_provider_kind(value: &str) -> Result<domain::AIProviderKind, ServerFnError> {
+    domain::AIProviderKind::parse(value).ok_or_else(|| ServerFnError::ServerError {
+        message: format!("unknown ai provider kind: {value}"),
+        code: 400,
+        details: None,
+    })
+}
+
+fn parse_ai_capability(value: &str) -> Result<domain::AICapability, ServerFnError> {
+    domain::AICapability::parse(value).ok_or_else(|| ServerFnError::ServerError {
+        message: format!("unknown ai capability: {value}"),
+        code: 400,
+        details: None,
+    })
 }
 
 fn profile_to_dto(profile: domain::UserProfile) -> UserProfileDTO {

@@ -1,6 +1,6 @@
 use api::user;
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{Save, UserRound};
+use dioxus_icons::lucide::{Bot, Save, UserRound};
 
 use crate::components::ui::button::Button;
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
@@ -71,6 +71,7 @@ pub fn ProfileBlock(
     } else {
         introduction()
     };
+    let nav = navigator();
 
     rsx! {
         section { class: "relative overflow-hidden rounded-[2rem] border border-border bg-card shadow-none",
@@ -83,9 +84,19 @@ pub fn ProfileBlock(
                             "{avatar_initial}"
                         }
                         div { class: "min-w-0",
-                            div { class: "mb-3 inline-flex items-center gap-2 rounded-full border border-border bg-background/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground",
-                                UserRound { size: 14 }
-                                "Owner · #{user_id}"
+                            div { class: "mb-3 flex flex-wrap items-center gap-2",
+                                div { class: "inline-flex items-center gap-2 rounded-full border border-border bg-background/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground",
+                                    UserRound { size: 14 }
+                                    "Owner · #{user_id}"
+                                }
+                                Button {
+                                    class: "rounded-full bg-foreground px-3 py-1 text-xs text-background shadow-sm hover:opacity-90",
+                                    onclick: move |_| {
+                                        nav.push("/warmmy");
+                                    },
+                                    Bot { size: 14 }
+                                    "Warmmy"
+                                }
                             }
                             h2 { class: "font-doodle text-4xl font-semibold leading-tight tracking-[-0.9px] text-foreground md:text-5xl", "{display_name}" }
                             p { class: "mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground md:text-base", "{intro}" }

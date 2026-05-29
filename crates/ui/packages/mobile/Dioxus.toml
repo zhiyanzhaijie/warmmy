@@ -1,3 +1,8 @@
 [application]
+name = "warmmy"
 tailwind_input = "tailwind.css"
 tailwind_output = "assets/mobile.css"
+
+[bundle]
+identifier = "com.zhiyanzhaijie.warmmy"
+publisher = "zhiyanzhaijie"

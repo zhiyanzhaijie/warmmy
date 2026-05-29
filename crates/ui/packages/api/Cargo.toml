@@ -13,6 +13,8 @@ async-stream = "0.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+tokio = { version = "1", features = ["sync"], optional = true }
 
 [features]
 server = ["dioxus/server", "dep:infra"]
+local = ["dep:infra", "dep:tokio"]

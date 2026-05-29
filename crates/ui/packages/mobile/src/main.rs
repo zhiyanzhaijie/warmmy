@@ -1,7 +1,8 @@
 use dioxus::prelude::*;
-use ui::views::{ChatDetailView, HomeView, MeView};
+use ui::views::{ChatDetailView, HomeView, MeView, WarmmyView};
 
 mod layouts;
+mod platform;
 use layouts::RootLayout;
 const MOBILE_CSS: Asset = asset!("/assets/mobile.css");
 const CHAT_MARKDOWN_CSS: Asset = asset!("/assets/chat-markdown.css");
@@ -16,24 +17,12 @@ enum Route {
     ChatDetailView { session_id: String },
     #[route("/me")]
     MeView {},
+    #[route("/warmmy")]
+    WarmmyView {},
 }
 
 fn main() {
-    #[cfg(feature = "server")]
-    dioxus::serve(|| async move {
-        use dioxus::prelude::DioxusRouterExt;
-        use dioxus::server::axum;
-
-        let container = infra::setup::init_app_container()
-            .await
-            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        let app_state = std::sync::Arc::new(container);
-        let router = axum::Router::new()
-            .serve_dioxus_application(ServeConfig::default(), App)
-            .layer(axum::Extension(app_state));
-        Ok(router)
-    });
-    #[cfg(not(feature = "server"))]
+    platform::init();
     dioxus::launch(App);
 }
 

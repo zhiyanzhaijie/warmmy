@@ -1,4 +1,4 @@
-mod common;
+pub(super) mod common;
 mod companions;
 mod diet_preference;
 mod health_expected;
