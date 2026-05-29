@@ -2,8 +2,8 @@ use toasty::Db;
 
 use super::models::{
     ChatMessageRow, DiningCompanionRow, FoodNutritionReferenceRow, MealDayFinalizationRow,
-    MealDaySummaryRow, MealRecordRow, PendingMealLogRow, UserHealthExpectationRow,
-    UserPreferencesRow, UserProfileRow,
+    MealDaySummaryRow, MealRecordRow, PendingMealLogRow, UserAIProviderRow, UserAIRouteRow,
+    UserHealthExpectationRow, UserPreferencesRow, UserProfileRow, UserSecretRow,
 };
 
 pub async fn connect_sqlite(database_url: &str) -> toasty::Result<Db> {
@@ -13,6 +13,9 @@ pub async fn connect_sqlite(database_url: &str) -> toasty::Result<Db> {
             UserHealthExpectationRow,
             UserPreferencesRow,
             DiningCompanionRow,
+            UserAIProviderRow,
+            UserAIRouteRow,
+            UserSecretRow,
             MealRecordRow,
             MealDayFinalizationRow,
             MealDaySummaryRow,
@@ -73,6 +76,43 @@ fn ensure_user_extension_tables(database_url: &str) -> Result<(), rusqlite::Erro
             dietary_preferences_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+
+
+
+        CREATE TABLE IF NOT EXISTS user_ai_provider_rows (
+            id TEXT PRIMARY KEY NOT NULL,
+            user_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            base_url TEXT NOT NULL,
+            secret_ref TEXT,
+            enabled BOOLEAN NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_ai_provider_rows_user_id
+            ON user_ai_provider_rows (user_id);
+
+        CREATE TABLE IF NOT EXISTS user_ai_route_rows (
+            id TEXT PRIMARY KEY NOT NULL,
+            user_id TEXT NOT NULL,
+            capability TEXT NOT NULL,
+            provider_id TEXT NOT NULL,
+            model TEXT NOT NULL,
+            embedding_ndims INTEGER,
+            enabled BOOLEAN NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_ai_route_rows_user_id
+            ON user_ai_route_rows (user_id);
+
+        CREATE TABLE IF NOT EXISTS user_secret_rows (
+            id TEXT PRIMARY KEY NOT NULL,
+            scope TEXT NOT NULL,
+            secret_value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_secret_rows_scope
+            ON user_secret_rows (scope);
 
         CREATE TABLE IF NOT EXISTS dining_companion_rows (
             id TEXT PRIMARY KEY NOT NULL,

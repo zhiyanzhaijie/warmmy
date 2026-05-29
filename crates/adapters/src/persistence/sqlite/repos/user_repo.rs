@@ -4,27 +4,31 @@ use async_trait::async_trait;
 use tokio::sync::Mutex;
 
 use app::user::{
-    DiningCompanionRepositoryPort, UserHealthExpectationRepositoryPort,
-    UserPreferencesRepositoryPort, UserProfileRepositoryPort,
+    DiningCompanionRepositoryPort, SecretStorePort, UserAIConfigRepositoryPort,
+    UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort, UserProfileRepositoryPort,
 };
 use domain::{
-    AppPreferences, DietaryPreferences, DiningCompanion, DiningCompanionId, ExpectationSource,
-    HealthExpectationId, HealthExpectationKind, HealthExpectationStatus, UserHealthExpectation,
-    UserId, UserPreferences, UserProfile,
+    AICapability, AIProviderKind, AppPreferences, DietaryPreferences, DiningCompanion,
+    DiningCompanionId, ExpectationSource, HealthExpectationId, HealthExpectationKind,
+    HealthExpectationStatus, UserAIProvider, UserAIRoute, UserHealthExpectation, UserId,
+    UserPreferences, UserProfile,
 };
 
+use crate::crypto::SharedSecretCipher;
 use crate::persistence::sqlite::models::{
-    DiningCompanionRow, UserHealthExpectationRow, UserPreferencesRow, UserProfileRow,
+    DiningCompanionRow, UserAIProviderRow, UserAIRouteRow, UserHealthExpectationRow,
+    UserPreferencesRow, UserProfileRow, UserSecretRow,
 };
 
 #[derive(Clone)]
 pub struct SqliteUserRepo {
     db: Arc<Mutex<toasty::Db>>,
+    secret_cipher: SharedSecretCipher,
 }
 
 impl SqliteUserRepo {
-    pub fn new(db: Arc<Mutex<toasty::Db>>) -> Self {
-        Self { db }
+    pub fn new(db: Arc<Mutex<toasty::Db>>, secret_cipher: SharedSecretCipher) -> Self {
+        Self { db, secret_cipher }
     }
 
     pub async fn upsert_profile(&self, profile: &UserProfile) -> Result<(), String> {
@@ -194,6 +198,36 @@ impl SqliteUserRepo {
             }
             Err(err) => Err(err.to_string()),
         }
+    }
+
+    fn row_to_ai_provider(row: UserAIProviderRow) -> Result<UserAIProvider, String> {
+        Ok(UserAIProvider {
+            id: row.id,
+            user_id: UserId::parse(&row.user_id).map_err(|err| err.to_string())?,
+            kind: AIProviderKind::parse(&row.kind)
+                .ok_or_else(|| format!("unknown ai provider kind: {}", row.kind))?,
+            name: row.name,
+            base_url: row.base_url,
+            secret_ref: row.secret_ref,
+            enabled: row.enabled,
+            updated_at: row.updated_at,
+        })
+    }
+
+    fn row_to_ai_route(row: UserAIRouteRow) -> Result<UserAIRoute, String> {
+        Ok(UserAIRoute {
+            id: row.id,
+            user_id: UserId::parse(&row.user_id).map_err(|err| err.to_string())?,
+            capability: AICapability::parse(&row.capability)
+                .ok_or_else(|| format!("unknown ai capability: {}", row.capability))?,
+            provider_id: row.provider_id,
+            model: row.model,
+            embedding_ndims: row
+                .embedding_ndims
+                .map(|value| usize::try_from(value).unwrap_or_default()),
+            enabled: row.enabled,
+            updated_at: row.updated_at,
+        })
     }
 
     fn row_to_profile(row: UserProfileRow) -> Result<UserProfile, String> {
@@ -427,5 +461,196 @@ impl DiningCompanionRepositoryPort for SqliteUserRepo {
             .exec(&mut *db)
             .await
             .map_err(|err| err.to_string())
+    }
+}
+
+#[async_trait]
+impl UserAIConfigRepositoryPort for SqliteUserRepo {
+    async fn list_providers(&self, user_id: &UserId) -> Result<Vec<UserAIProvider>, String> {
+        let mut db = self.db.lock().await;
+        let rows =
+            UserAIProviderRow::filter(UserAIProviderRow::fields().user_id().eq(user_id.as_str()))
+                .exec(&mut *db)
+                .await
+                .map_err(|err| err.to_string())?;
+
+        let mut providers = rows
+            .into_iter()
+            .map(Self::row_to_ai_provider)
+            .collect::<Result<Vec<_>, _>>()?;
+        providers.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(providers)
+    }
+
+    async fn save_provider(&self, provider: &UserAIProvider) -> Result<(), String> {
+        let mut db = self.db.lock().await;
+        match UserAIProviderRow::get_by_id(&mut *db, &provider.id).await {
+            Ok(mut current) => {
+                current
+                    .update()
+                    .user_id(provider.user_id.as_str().to_string())
+                    .kind(provider.kind.as_str().to_string())
+                    .name(provider.name.clone())
+                    .base_url(provider.base_url.clone())
+                    .secret_ref(provider.secret_ref.clone())
+                    .enabled(provider.enabled)
+                    .updated_at(provider.updated_at.clone())
+                    .exec(&mut *db)
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+            Err(err) if err.is_record_not_found() => {
+                toasty::create!(UserAIProviderRow {
+                    id: provider.id.clone(),
+                    user_id: provider.user_id.as_str().to_string(),
+                    kind: provider.kind.as_str().to_string(),
+                    name: provider.name.clone(),
+                    base_url: provider.base_url.clone(),
+                    secret_ref: provider.secret_ref.clone(),
+                    enabled: provider.enabled,
+                    updated_at: provider.updated_at.clone(),
+                })
+                .exec(&mut *db)
+                .await
+                .map_err(|create_err| create_err.to_string())?;
+            }
+            Err(err) => return Err(err.to_string()),
+        }
+        Ok(())
+    }
+
+    async fn delete_provider(&self, user_id: &UserId, provider_id: &str) -> Result<(), String> {
+        let mut db = self.db.lock().await;
+        let row = UserAIProviderRow::get_by_id(&mut *db, provider_id)
+            .await
+            .map_err(|err| err.to_string())?;
+        if row.user_id != user_id.as_str() {
+            return Err("ai provider does not belong to user".to_string());
+        }
+        row.delete()
+            .exec(&mut *db)
+            .await
+            .map_err(|err| err.to_string())
+    }
+
+    async fn list_routes(&self, user_id: &UserId) -> Result<Vec<UserAIRoute>, String> {
+        let mut db = self.db.lock().await;
+        let rows = UserAIRouteRow::filter(UserAIRouteRow::fields().user_id().eq(user_id.as_str()))
+            .exec(&mut *db)
+            .await
+            .map_err(|err| err.to_string())?;
+
+        rows.into_iter()
+            .map(Self::row_to_ai_route)
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    async fn find_route(
+        &self,
+        user_id: &UserId,
+        capability: AICapability,
+    ) -> Result<Option<UserAIRoute>, String> {
+        let routes = self.list_routes(user_id).await?;
+        Ok(routes
+            .into_iter()
+            .filter(|route| route.capability == capability && route.enabled)
+            .max_by(|left, right| left.updated_at.cmp(&right.updated_at)))
+    }
+
+    async fn save_route(&self, route: &UserAIRoute) -> Result<(), String> {
+        let embedding_ndims = route
+            .embedding_ndims
+            .map(|value| i32::try_from(value).unwrap_or_default());
+        let mut db = self.db.lock().await;
+        match UserAIRouteRow::get_by_id(&mut *db, &route.id).await {
+            Ok(mut current) => {
+                current
+                    .update()
+                    .user_id(route.user_id.as_str().to_string())
+                    .capability(route.capability.as_str().to_string())
+                    .provider_id(route.provider_id.clone())
+                    .model(route.model.clone())
+                    .embedding_ndims(embedding_ndims)
+                    .enabled(route.enabled)
+                    .updated_at(route.updated_at.clone())
+                    .exec(&mut *db)
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+            Err(err) if err.is_record_not_found() => {
+                toasty::create!(UserAIRouteRow {
+                    id: route.id.clone(),
+                    user_id: route.user_id.as_str().to_string(),
+                    capability: route.capability.as_str().to_string(),
+                    provider_id: route.provider_id.clone(),
+                    model: route.model.clone(),
+                    embedding_ndims: embedding_ndims,
+                    enabled: route.enabled,
+                    updated_at: route.updated_at.clone(),
+                })
+                .exec(&mut *db)
+                .await
+                .map_err(|create_err| create_err.to_string())?;
+            }
+            Err(err) => return Err(err.to_string()),
+        }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl SecretStorePort for SqliteUserRepo {
+    async fn put_secret(&self, scope: &str, value: &str) -> Result<String, String> {
+        let id = format!("secret:{}", scope);
+        let updated_at = chrono::Utc::now().to_rfc3339();
+        let encrypted_value = self.secret_cipher.encrypt(value)?;
+        let mut db = self.db.lock().await;
+        match UserSecretRow::get_by_id(&mut *db, &id).await {
+            Ok(mut current) => {
+                current
+                    .update()
+                    .scope(scope.to_string())
+                    .secret_value(encrypted_value.clone())
+                    .updated_at(updated_at)
+                    .exec(&mut *db)
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+            Err(err) if err.is_record_not_found() => {
+                toasty::create!(UserSecretRow {
+                    id: id.clone(),
+                    scope: scope.to_string(),
+                    secret_value: encrypted_value,
+                    updated_at: updated_at,
+                })
+                .exec(&mut *db)
+                .await
+                .map_err(|create_err| create_err.to_string())?;
+            }
+            Err(err) => return Err(err.to_string()),
+        }
+        Ok(id)
+    }
+
+    async fn get_secret(&self, secret_ref: &str) -> Result<Option<String>, String> {
+        let mut db = self.db.lock().await;
+        match UserSecretRow::get_by_id(&mut *db, secret_ref).await {
+            Ok(row) => self.secret_cipher.decrypt(&row.secret_value).map(Some),
+            Err(err) if err.is_record_not_found() => Ok(None),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+
+    async fn delete_secret(&self, secret_ref: &str) -> Result<(), String> {
+        let mut db = self.db.lock().await;
+        match UserSecretRow::get_by_id(&mut *db, secret_ref).await {
+            Ok(row) => row
+                .delete()
+                .exec(&mut *db)
+                .await
+                .map_err(|err| err.to_string()),
+            Err(err) if err.is_record_not_found() => Ok(()),
+            Err(err) => Err(err.to_string()),
+        }
     }
 }

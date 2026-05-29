@@ -5,8 +5,8 @@ use rig::completion::Prompt;
 use rig::providers::{deepseek, openai};
 use serde::Deserialize;
 
-use crate::agent::config::AgentConfig;
-use crate::agent::memory::long_term::rag::{embed_rag_document, RagDocument};
+use crate::agent::config::AgentModelConfig;
+use crate::agent::memory::long_term::rag::{embed_rag_document, RagConfig, RagDocument};
 
 const MEMORY_EXTRACTOR_PREAMBLE: &str = r#"你是 warmmy 的长期语义记忆整理器。
 
@@ -40,12 +40,13 @@ const MEMORY_EXTRACTOR_PREAMBLE: &str = r#"你是 warmmy 的长期语义记忆�
 
 #[derive(Clone)]
 pub struct LongTermMemoryExtractor {
-    config: AgentConfig,
+    chat: AgentModelConfig,
+    rag: RagConfig,
 }
 
 impl LongTermMemoryExtractor {
-    pub fn new(config: AgentConfig) -> Self {
-        Self { config }
+    pub fn new(chat: AgentModelConfig, rag: RagConfig) -> Self {
+        Self { chat, rag }
     }
 
     pub async fn extract_and_embed(&self, user_id: &UserId, user_input: &str) -> AppResult<()> {
@@ -81,7 +82,7 @@ impl LongTermMemoryExtractor {
                 ),
             };
 
-            embed_rag_document(&self.config.rag, document).await?;
+            embed_rag_document(&self.rag, document).await?;
         }
 
         Ok(())
@@ -90,15 +91,15 @@ impl LongTermMemoryExtractor {
     async fn extract(&self, user_input: &str) -> AppResult<String> {
         let prompt = format!("用户本轮输入：\n{user_input}");
 
-        match self.config.provider.as_str() {
+        match self.chat.provider.as_str() {
             "openai" => {
                 let client = openai::Client::builder()
-                    .api_key(&self.config.api_key)
-                    .base_url(&self.config.base_url)
+                    .api_key(&self.chat.api_key)
+                    .base_url(&self.chat.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 client
-                    .agent(self.config.model.as_str())
+                    .agent(self.chat.model.as_str())
                     .preamble(MEMORY_EXTRACTOR_PREAMBLE)
                     .build()
                     .prompt(prompt)
@@ -107,12 +108,12 @@ impl LongTermMemoryExtractor {
             }
             "deepseek" => {
                 let client = deepseek::Client::builder()
-                    .api_key(&self.config.api_key)
-                    .base_url(&self.config.base_url)
+                    .api_key(&self.chat.api_key)
+                    .base_url(&self.chat.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 client
-                    .agent(self.config.model.as_str())
+                    .agent(self.chat.model.as_str())
                     .preamble(MEMORY_EXTRACTOR_PREAMBLE)
                     .build()
                     .prompt(prompt)

@@ -1,41 +1,8 @@
 [database]
-url = "sqlite://warmmy-example.db"
+url = "sqlite://data/warmmy.db"
 
-[llm]
-enable_image_parsing = false
-# 1) Provider 连接配置
-[llm.providers.deepseek]
-base_url = "https://api.deepseek.com/v1"
-api_key = "replace-with-deepseek-api-key"
-
-[llm.providers.openai]
-base_url = "https://api.openai.com/v1"
-api_key = "replace-with-openai-api-key"
-
-[llm.providers.siliconflow]
-base_url = "https://api.siliconflow.cn/v1"
-api_key = "replace-with-siliconflow-api-key"
-
-# 2) 模型别名定义（模型 -> provider + model id）
-[llm.models.reasoning_text]
-provider = "deepseek"
-model = "deepseek-chat"
-
-[llm.models.perception_vision]
-provider = "openai"
-model = "gpt-4o-mini"
-
-[llm.models.embedding_text]
-provider = "siliconflow"
-model = "BAAI/bge-m3"
-
-# 3) 运行时路由（能力 -> 模型别名）
-[llm.routing]
-reasoning = "reasoning_text"
-perception = "perception_vision"
-embedding = "embedding_text"
-
+# RAG only contains non-secret local storage settings.
+# Chat / embedding provider API keys and models are configured by the owner user in the app.
 [rag]
 lancedb_path = "data/lancedb-store"
 top_k = 3
-embedding_ndims = 1024

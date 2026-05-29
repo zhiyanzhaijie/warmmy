@@ -137,6 +137,64 @@ pub enum PreferenceConfidence {
     Inferred,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AIProviderKind {
+    OpenAI,
+    DeepSeek,
+    SiliconFlow,
+    OpenAICompatible,
+}
+
+impl AIProviderKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::OpenAI => "openai",
+            Self::DeepSeek => "deepseek",
+            Self::SiliconFlow => "siliconflow",
+            Self::OpenAICompatible => "openai_compatible",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim() {
+            "openai" => Some(Self::OpenAI),
+            "deepseek" => Some(Self::DeepSeek),
+            "siliconflow" => Some(Self::SiliconFlow),
+            "openai_compatible" => Some(Self::OpenAICompatible),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AICapability {
+    Chat,
+    Embedding,
+    Vision,
+    MemoryExtraction,
+}
+
+impl AICapability {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Chat => "chat",
+            Self::Embedding => "embedding",
+            Self::Vision => "vision",
+            Self::MemoryExtraction => "memory_extraction",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim() {
+            "chat" => Some(Self::Chat),
+            "embedding" => Some(Self::Embedding),
+            "vision" => Some(Self::Vision),
+            "memory_extraction" => Some(Self::MemoryExtraction),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserIdInvalidError {
     value: String,

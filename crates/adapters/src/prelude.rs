@@ -1,4 +1,3 @@
-pub use crate::agent::config::AgentConfig;
 pub use crate::agent::service::ConversationAgentService;
 pub use crate::persistence::sqlite::{
     connect_sqlite, SqliteBackend, SqliteMealRepo, SqliteUserRepo,

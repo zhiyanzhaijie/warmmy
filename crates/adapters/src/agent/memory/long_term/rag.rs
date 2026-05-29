@@ -2,12 +2,20 @@ use std::sync::Arc;
 
 use app::app_error::{AppError, AppResult};
 use arrow_array::types::Float64Type;
-use arrow_array::{ArrayRef, FixedSizeListArray, RecordBatch, RecordBatchIterator, StringArray};
+use arrow_array::{
+    ArrayRef, FixedSizeListArray, Float32Array, Float64Array, RecordBatch, RecordBatchIterator,
+    StringArray,
+};
 use lancedb::arrow::arrow_schema::{DataType, Field, Fields, Schema};
+use lancedb::query::{ExecutableQuery, QueryBase};
+use futures_util::TryStreamExt;
 use rig::client::EmbeddingsClient;
 use rig::embeddings::EmbeddingModel;
-use rig::lancedb::{LanceDbVectorIndex, SearchParams};
 use rig::providers::openai;
+use rig::vector_store::request::SearchFilter;
+use rig::vector_store::{VectorSearchRequest, VectorStoreError, VectorStoreIndex};
+use serde::Deserialize;
+use serde_json::{Value, json};
 
 const TABLE_NAME: &str = "agent_context";
 const ID_FIELD: &str = "id";
@@ -56,7 +64,52 @@ pub struct RagDocument {
     pub source: String,
 }
 
-pub type OpenAiCompatibleRagIndex = LanceDbVectorIndex<rig::providers::openai::EmbeddingModel>;
+pub type OpenAiCompatibleRagIndex = WarmmyLanceDbVectorIndex<rig::providers::openai::EmbeddingModel>;
+
+pub struct WarmmyLanceDbVectorIndex<M: EmbeddingModel> {
+    table: lancedb::Table,
+    model: M,
+}
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct LanceDbFilter(Result<String, String>);
+
+impl LanceDbFilter {
+    fn into_inner(self) -> Result<String, VectorStoreError> {
+        self.0
+            .map_err(|err| VectorStoreError::BuilderError(err.to_string()))
+    }
+}
+
+impl SearchFilter for LanceDbFilter {
+    type Value = Value;
+
+    fn eq(key: impl AsRef<str>, value: Self::Value) -> Self {
+        Self(sql_comparison(key.as_ref(), "=", value))
+    }
+
+    fn gt(key: impl AsRef<str>, value: Self::Value) -> Self {
+        Self(sql_comparison(key.as_ref(), ">", value))
+    }
+
+    fn lt(key: impl AsRef<str>, value: Self::Value) -> Self {
+        Self(sql_comparison(key.as_ref(), "<", value))
+    }
+
+    fn and(self, rhs: Self) -> Self {
+        Self(match (self.0, rhs.0) {
+            (Ok(left), Ok(right)) => Ok(format!("({left}) AND ({right})")),
+            (Err(err), _) | (_, Err(err)) => Err(err),
+        })
+    }
+
+    fn or(self, rhs: Self) -> Self {
+        Self(match (self.0, rhs.0) {
+            (Ok(left), Ok(right)) => Ok(format!("({left}) OR ({right})")),
+            (Err(err), _) | (_, Err(err)) => Err(err),
+        })
+    }
+}
 
 pub async fn build_rag_index(config: &RagConfig) -> AppResult<OpenAiCompatibleRagIndex> {
     config.validate()?;
@@ -64,13 +117,7 @@ pub async fn build_rag_index(config: &RagConfig) -> AppResult<OpenAiCompatibleRa
     let model = build_embedding_model(config)?;
     let table = open_or_create_table(config).await?;
 
-    let search_params = SearchParams::default()
-        .distance_type(lancedb::DistanceType::Cosine)
-        .column(EMBEDDING_FIELD);
-
-    LanceDbVectorIndex::new(table, model, ID_FIELD, search_params)
-        .await
-        .map_err(|e| AppError::database(e.to_string()))
+    Ok(WarmmyLanceDbVectorIndex { table, model })
 }
 
 pub async fn embed_rag_document(config: &RagConfig, projection: RagDocument) -> AppResult<()> {
@@ -131,10 +178,10 @@ pub async fn embed_rag_document(config: &RagConfig, projection: RagDocument) -> 
         embedding.vec,
     )
     .map_err(|e| AppError::database(e.to_string()))?;
-    let reader = RecordBatchIterator::new(
+    let reader: Box<dyn arrow_array::RecordBatchReader + Send> = Box::new(RecordBatchIterator::new(
         vec![Ok(batch)],
         Arc::new(rag_schema(config.embedding_ndims)),
-    );
+    ));
 
     table
         .add(reader)
@@ -228,4 +275,132 @@ fn rag_record_batch(
             Arc::new(embedding_array) as ArrayRef,
         ],
     )
+}
+
+impl<M> VectorStoreIndex for WarmmyLanceDbVectorIndex<M>
+where
+    M: EmbeddingModel + Send + Sync,
+{
+    type Filter = LanceDbFilter;
+
+    async fn top_n<T: for<'a> Deserialize<'a> + Send>(
+        &self,
+        req: VectorSearchRequest<Self::Filter>,
+    ) -> Result<Vec<(f64, String, T)>, VectorStoreError> {
+        let embedding = self.model.embed_text(req.query()).await?;
+        let mut query = self
+            .table
+            .vector_search(embedding.vec)
+            .map_err(lancedb_to_vector_store_error)?
+            .distance_type(lancedb::DistanceType::Cosine)
+            .column(EMBEDDING_FIELD)
+            .limit(req.samples() as usize);
+
+        if let Some(threshold) = req.threshold() {
+            query = query.distance_range(None, Some(threshold as f32));
+        }
+
+        if let Some(filter) = req.filter().clone() {
+            query = query.only_if(filter.into_inner()?);
+        }
+
+        let batches = query
+            .execute()
+            .await
+            .map_err(lancedb_to_vector_store_error)?
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(lancedb_to_vector_store_error)?;
+
+        let mut results = Vec::new();
+        for batch in batches {
+            for row in 0..batch.num_rows() {
+                let value = row_to_json(&batch, row);
+                let id = value
+                    .get(ID_FIELD)
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let distance = value
+                    .get("_distance")
+                    .and_then(Value::as_f64)
+                    .unwrap_or_default();
+                let document = serde_json::from_value(value)?;
+                results.push((distance, id, document));
+            }
+        }
+
+        Ok(results)
+    }
+
+    async fn top_n_ids(
+        &self,
+        req: VectorSearchRequest<Self::Filter>,
+    ) -> Result<Vec<(f64, String)>, VectorStoreError> {
+        Ok(self
+            .top_n::<Value>(req)
+            .await?
+            .into_iter()
+            .map(|(score, id, _)| (score, id))
+            .collect())
+    }
+}
+
+fn row_to_json(batch: &RecordBatch, row: usize) -> Value {
+    json!({
+        ID_FIELD: string_value(batch, ID_FIELD, row).unwrap_or_default(),
+        CONTENT_FIELD: string_value(batch, CONTENT_FIELD, row).unwrap_or_default(),
+        SOURCE_FIELD: string_value(batch, SOURCE_FIELD, row).unwrap_or_default(),
+        "_distance": float_value(batch, "_distance", row).unwrap_or_default(),
+    })
+}
+
+fn string_value(batch: &RecordBatch, field: &str, row: usize) -> Option<String> {
+    batch
+        .column_by_name(field)?
+        .as_any()
+        .downcast_ref::<StringArray>()
+        .map(|array| array.value(row).to_string())
+}
+
+fn float_value(batch: &RecordBatch, field: &str, row: usize) -> Option<f64> {
+    let column = batch.column_by_name(field)?;
+    if let Some(array) = column.as_any().downcast_ref::<Float32Array>() {
+        return Some(array.value(row) as f64);
+    }
+    column
+        .as_any()
+        .downcast_ref::<Float64Array>()
+        .map(|array| array.value(row))
+}
+
+fn lancedb_to_vector_store_error(err: lancedb::Error) -> VectorStoreError {
+    VectorStoreError::DatastoreError(Box::new(err))
+}
+
+fn sql_comparison(field: &str, operator: &str, value: Value) -> Result<String, String> {
+    let field = sql_identifier(field)?;
+    let value = sql_literal(value)?;
+    Ok(format!("{field} {operator} {value}"))
+}
+
+fn sql_identifier(value: &str) -> Result<String, String> {
+    if value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+    {
+        Ok(value.to_string())
+    } else {
+        Err(format!("unsupported lancedb filter field: {value}"))
+    }
+}
+
+fn sql_literal(value: Value) -> Result<String, String> {
+    match value {
+        Value::String(value) => Ok(format!("'{}'", value.replace('\'', "''"))),
+        Value::Number(value) => Ok(value.to_string()),
+        Value::Bool(value) => Ok(value.to_string()),
+        Value::Null => Ok("NULL".to_string()),
+        other => Err(format!("unsupported lancedb filter value: {other}")),
+    }
 }

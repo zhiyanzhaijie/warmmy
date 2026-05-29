@@ -47,3 +47,41 @@ pub struct DiningCompanionRow {
     pub health_notes_json: String,
     pub updated_at: String,
 }
+
+#[derive(Debug, Clone, toasty::Model)]
+pub struct UserAIProviderRow {
+    #[key]
+    pub id: String,
+    #[index]
+    pub user_id: String,
+    pub kind: String,
+    pub name: String,
+    pub base_url: String,
+    pub secret_ref: Option<String>,
+    pub enabled: bool,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, toasty::Model)]
+pub struct UserAIRouteRow {
+    #[key]
+    pub id: String,
+    #[index]
+    pub user_id: String,
+    pub capability: String,
+    pub provider_id: String,
+    pub model: String,
+    pub embedding_ndims: Option<i32>,
+    pub enabled: bool,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, toasty::Model)]
+pub struct UserSecretRow {
+    #[key]
+    pub id: String,
+    #[index]
+    pub scope: String,
+    pub secret_value: String,
+    pub updated_at: String,
+}

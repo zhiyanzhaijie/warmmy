@@ -342,3 +342,233 @@ pub fn inferred_health_expectation(
         updated_at: now_rfc3339,
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct SaveUserAIProviderCommand {
+    pub user_id: UserId,
+    pub provider_id: Option<String>,
+    pub kind: domain::AIProviderKind,
+    pub name: String,
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteUserAIProviderCommand {
+    pub user_id: UserId,
+    pub provider_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SaveUserAIRouteCommand {
+    pub user_id: UserId,
+    pub route_id: Option<String>,
+    pub capability: domain::AICapability,
+    pub provider_id: String,
+    pub model: String,
+    pub embedding_ndims: Option<usize>,
+    pub enabled: bool,
+}
+
+#[derive(Clone)]
+pub struct UserAIConfigCommandHandler {
+    repo: Arc<dyn crate::user::UserAIConfigRepositoryPort>,
+    secrets: Arc<dyn crate::user::SecretStorePort>,
+    profiles: Arc<dyn UserProfileRepositoryPort>,
+}
+
+impl UserAIConfigCommandHandler {
+    pub fn new(
+        repo: Arc<dyn crate::user::UserAIConfigRepositoryPort>,
+        secrets: Arc<dyn crate::user::SecretStorePort>,
+        profiles: Arc<dyn UserProfileRepositoryPort>,
+    ) -> Self {
+        Self {
+            repo,
+            secrets,
+            profiles,
+        }
+    }
+
+    pub async fn save_provider(
+        &self,
+        input: SaveUserAIProviderCommand,
+    ) -> AppResult<domain::UserAIProvider> {
+        self.ensure_profile_exists(&input.user_id).await?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let provider_id = input.provider_id.unwrap_or_else(|| {
+            format!(
+                "ai-provider-{}",
+                chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+            )
+        });
+        let name = input.name.trim().to_string();
+        let base_url = input.base_url.trim().to_string();
+
+        if name.is_empty() {
+            return Err(AppError::validation("provider name is empty"));
+        }
+        if base_url.is_empty() {
+            return Err(AppError::validation("provider base_url is empty"));
+        }
+
+        let existing = self
+            .repo
+            .list_providers(&input.user_id)
+            .await
+            .map_err(AppError::upstream)?
+            .into_iter()
+            .find(|item| item.id == provider_id);
+
+        let secret_ref = match input.api_key {
+            Some(api_key) if !api_key.trim().is_empty() => Some(
+                self.secrets
+                    .put_secret(
+                        &format!(
+                            "user:{}:ai_provider:{}",
+                            input.user_id.as_str(),
+                            provider_id
+                        ),
+                        api_key.trim(),
+                    )
+                    .await
+                    .map_err(AppError::upstream)?,
+            ),
+            _ => existing.and_then(|provider| provider.secret_ref),
+        };
+
+        let provider = domain::UserAIProvider {
+            id: provider_id,
+            user_id: input.user_id,
+            kind: input.kind,
+            name,
+            base_url,
+            secret_ref,
+            enabled: input.enabled,
+            updated_at: now,
+        };
+
+        self.repo
+            .save_provider(&provider)
+            .await
+            .map_err(AppError::upstream)?;
+
+        Ok(provider)
+    }
+
+    pub async fn delete_provider(&self, input: DeleteUserAIProviderCommand) -> AppResult<()> {
+        self.ensure_profile_exists(&input.user_id).await?;
+        let providers = self
+            .repo
+            .list_providers(&input.user_id)
+            .await
+            .map_err(AppError::upstream)?;
+        if let Some(provider) = providers
+            .into_iter()
+            .find(|item| item.id == input.provider_id)
+        {
+            if let Some(secret_ref) = provider.secret_ref {
+                self.secrets
+                    .delete_secret(&secret_ref)
+                    .await
+                    .map_err(AppError::upstream)?;
+            }
+        }
+        self.repo
+            .delete_provider(&input.user_id, &input.provider_id)
+            .await
+            .map_err(AppError::upstream)
+    }
+
+    pub async fn save_route(
+        &self,
+        input: SaveUserAIRouteCommand,
+    ) -> AppResult<domain::UserAIRoute> {
+        self.ensure_profile_exists(&input.user_id).await?;
+        let model = input.model.trim().to_string();
+        if model.is_empty() {
+            return Err(AppError::validation("model is empty"));
+        }
+
+        let provider_exists = self
+            .repo
+            .list_providers(&input.user_id)
+            .await
+            .map_err(AppError::upstream)?
+            .into_iter()
+            .any(|provider| provider.id == input.provider_id);
+
+        if !provider_exists {
+            return Err(AppError::NotFound(format!(
+                "ai provider not found: {}",
+                input.provider_id
+            )));
+        }
+        let route_id = input.route_id.unwrap_or_else(|| {
+            format!(
+                "ai-route-{}",
+                chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+            )
+        });
+        let updated_at = chrono::Utc::now().to_rfc3339();
+
+        if input.enabled {
+            let routes = self
+                .repo
+                .list_routes(&input.user_id)
+                .await
+                .map_err(AppError::upstream)?;
+            for existing in routes {
+                if existing.capability == input.capability
+                    && existing.id != route_id
+                    && existing.enabled
+                {
+                    let mut disabled = existing;
+                    disabled.enabled = false;
+                    disabled.updated_at = updated_at.clone();
+                    self.repo
+                        .save_route(&disabled)
+                        .await
+                        .map_err(AppError::upstream)?;
+                }
+            }
+        }
+
+        let route = domain::UserAIRoute {
+            id: route_id,
+            user_id: input.user_id,
+            capability: input.capability,
+            provider_id: input.provider_id,
+            model,
+            embedding_ndims: input.embedding_ndims,
+            enabled: input.enabled,
+            updated_at,
+        };
+
+        self.repo
+            .save_route(&route)
+            .await
+            .map_err(AppError::upstream)?;
+
+        Ok(route)
+    }
+
+    async fn ensure_profile_exists(&self, user_id: &UserId) -> AppResult<()> {
+        let profile = self
+            .profiles
+            .find_profile(user_id)
+            .await
+            .map_err(AppError::upstream)?;
+
+        if profile.is_none() {
+            return Err(AppError::NotFound(format!(
+                "user profile not found for {}",
+                user_id.as_str()
+            )));
+        }
+
+        Ok(())
+    }
+}

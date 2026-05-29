@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use domain::{
-    DiningCompanion, DiningCompanionId, UserHealthExpectation, UserId, UserPreferences, UserProfile,
+    AICapability, DiningCompanion, DiningCompanionId, UserAIProvider, UserAIRoute,
+    UserHealthExpectation, UserId, UserPreferences, UserProfile,
 };
 
 #[async_trait]
@@ -47,4 +48,32 @@ pub trait DiningCompanionRepositoryPort: Send + Sync {
         owner_user_id: &UserId,
         companion_id: &DiningCompanionId,
     ) -> Result<(), String>;
+}
+
+#[async_trait]
+pub trait UserAIConfigRepositoryPort: Send + Sync {
+    async fn list_providers(&self, user_id: &UserId) -> Result<Vec<UserAIProvider>, String>;
+
+    async fn save_provider(&self, provider: &UserAIProvider) -> Result<(), String>;
+
+    async fn delete_provider(&self, user_id: &UserId, provider_id: &str) -> Result<(), String>;
+
+    async fn list_routes(&self, user_id: &UserId) -> Result<Vec<UserAIRoute>, String>;
+
+    async fn find_route(
+        &self,
+        user_id: &UserId,
+        capability: AICapability,
+    ) -> Result<Option<UserAIRoute>, String>;
+
+    async fn save_route(&self, route: &UserAIRoute) -> Result<(), String>;
+}
+
+#[async_trait]
+pub trait SecretStorePort: Send + Sync {
+    async fn put_secret(&self, scope: &str, value: &str) -> Result<String, String>;
+
+    async fn get_secret(&self, secret_ref: &str) -> Result<Option<String>, String>;
+
+    async fn delete_secret(&self, secret_ref: &str) -> Result<(), String>;
 }

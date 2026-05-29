@@ -3,13 +3,13 @@ use std::sync::Arc;
 use app::app_error::AppResult;
 use app::conversation::{
     AgentInteractionContinuation, ChatMessageRepositoryPort, ContinueInteractionCommand,
-    ConversationAgentPort, ConversationReplyStream, SendUserMessageCommand, SendUserMessageResult,
+    ConversationAgentPort, ConversationReplyStream, ConversationUserInput, EphemeralImageStorePort,
+    SendUserMessageCommand, SendUserMessageResult,
 };
 use app::meal::MealCommandHandler;
-use app::user::UserDietaryContextQueryHandler;
+use app::user::{UserAIConfigQueryHandler, UserDietaryContextQueryHandler};
 use async_trait::async_trait;
 
-use crate::agent::config::AgentConfig;
 use crate::agent::runtime::rig::RigConversationRuntime;
 
 pub struct ConversationAgentService {
@@ -18,12 +18,23 @@ pub struct ConversationAgentService {
 
 impl ConversationAgentService {
     pub fn new(
-        config: AgentConfig,
         meal_command: Arc<MealCommandHandler>,
         repo: Arc<dyn ChatMessageRepositoryPort>,
+        image_store: Arc<dyn EphemeralImageStorePort>,
         user_contexts: UserDietaryContextQueryHandler,
+        ai_configs: UserAIConfigQueryHandler,
+        lancedb_path: String,
+        rag_top_k: usize,
     ) -> Self {
-        let runtime = RigConversationRuntime::new(config, meal_command, repo, user_contexts);
+        let runtime = RigConversationRuntime::new(
+            meal_command,
+            repo,
+            image_store,
+            user_contexts,
+            ai_configs,
+            lancedb_path,
+            rag_top_k,
+        );
         Self { runtime }
     }
 }
@@ -35,7 +46,7 @@ impl ConversationAgentPort for ConversationAgentService {
         command: SendUserMessageCommand,
     ) -> AppResult<SendUserMessageResult> {
         self.runtime
-            .complete(&command.user_id, &command.session_id, &command.content)
+            .complete(&command.user_id, &command.session_id, command.input)
             .await
     }
 
@@ -44,7 +55,7 @@ impl ConversationAgentPort for ConversationAgentService {
         command: SendUserMessageCommand,
     ) -> AppResult<ConversationReplyStream> {
         self.runtime
-            .stream(&command.user_id, &command.session_id, command.content)
+            .stream(&command.user_id, &command.session_id, command.input)
             .await
     }
 
@@ -56,7 +67,7 @@ impl ConversationAgentPort for ConversationAgentService {
             .stream(
                 &command.user_id,
                 &command.session_id,
-                interaction_continuation_prompt(command.interaction),
+                ConversationUserInput::text_only(interaction_continuation_prompt(command.interaction)),
             )
             .await
     }

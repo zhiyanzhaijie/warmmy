@@ -1,16 +1,15 @@
-use adapters::agent::config::AgentConfig;
-use adapters::agent::memory::long_term::rag::RagConfig;
 use adapters::agent::service::ConversationAgentService;
 use adapters::prelude::build_repos_by_url;
 use app::app_error::{AppError, AppResult};
-use app::conversation::{ConversationCommandHandler, ConversationQueryHandler};
+use app::conversation::{ConversationCommandHandler, ConversationQueryHandler, EphemeralImageStorePort};
 use app::meal::FoodNutritionReferenceRepositoryPort;
 use app::meal::{MealCommandHandler, MealEventHandler, MealQueryHandler};
 use app::user::{
     DiningCompanionCommandHandler, DiningCompanionQueryHandler, EnsureUserProfileCommand,
-    UserDietaryContextQueryHandler, UserHealthExpectationCommandHandler,
-    UserHealthExpectationQueryHandler, UserPreferencesCommandHandler, UserPreferencesQueryHandler,
-    UserProfileCommandHandler, UserProfileQueryHandler,
+    UserAIConfigCommandHandler, UserAIConfigQueryHandler, UserDietaryContextQueryHandler,
+    UserHealthExpectationCommandHandler, UserHealthExpectationQueryHandler,
+    UserPreferencesCommandHandler, UserPreferencesQueryHandler, UserProfileCommandHandler,
+    UserProfileQueryHandler,
 };
 use domain::UserId;
 use std::sync::Arc;
@@ -29,6 +28,8 @@ pub struct UserState {
     pub expectation_command: UserHealthExpectationCommandHandler,
     pub preferences_query: UserPreferencesQueryHandler,
     pub preferences_command: UserPreferencesCommandHandler,
+    pub ai_config_query: UserAIConfigQueryHandler,
+    pub ai_config_command: UserAIConfigCommandHandler,
 }
 
 pub struct MealState {
@@ -39,6 +40,7 @@ pub struct MealState {
 pub struct ConversationState {
     pub command: ConversationCommandHandler,
     pub query: ConversationQueryHandler,
+    pub image_store: Arc<dyn EphemeralImageStorePort>,
 }
 
 pub struct AppContainer {
@@ -53,31 +55,6 @@ pub type AppState = AppContainer;
 pub async fn init_app_container() -> AppResult<AppContainer> {
     let config = AppConfig::load().map_err(AppError::internal)?;
     let repos = build_repos_by_url(&config.database.url).await?;
-
-    let route = config
-        .llm
-        .resolve_route(&config.llm.routing.reasoning)
-        .map_err(AppError::internal)?;
-    let embedding_route = config
-        .llm
-        .resolve_route(&config.llm.routing.embedding)
-        .map_err(AppError::internal)?;
-
-    let agent_config = AgentConfig {
-        provider: route.provider,
-        base_url: route.base_url,
-        api_key: route.api_key,
-        model: route.model,
-        rag: RagConfig {
-            lancedb_path: config.rag.lancedb_path.clone(),
-            embedding_provider: embedding_route.provider,
-            embedding_base_url: embedding_route.base_url,
-            embedding_api_key: embedding_route.api_key,
-            embedding_model: embedding_route.model,
-            embedding_ndims: config.rag.embedding_ndims,
-            top_k: config.rag.top_k,
-        },
-    };
 
     let user_dietary_context = UserDietaryContextQueryHandler::new(
         repos.user_repo.clone(),
@@ -105,6 +82,15 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
         preferences_query: UserPreferencesQueryHandler::new(repos.user_preferences_repo.clone()),
         preferences_command: UserPreferencesCommandHandler::new(
             repos.user_preferences_repo.clone(),
+            repos.user_repo.clone(),
+        ),
+        ai_config_query: UserAIConfigQueryHandler::new(
+            repos.user_ai_config_repo.clone(),
+            repos.secret_store.clone(),
+        ),
+        ai_config_command: UserAIConfigCommandHandler::new(
+            repos.user_ai_config_repo.clone(),
+            repos.secret_store.clone(),
             repos.user_repo.clone(),
         ),
     };
@@ -137,12 +123,16 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
 
     let conversation = ConversationState {
         command: ConversationCommandHandler::new(Arc::new(ConversationAgentService::new(
-            agent_config,
             meal_command,
             repos.chat_repo.clone(),
+            repos.ephemeral_image_store.clone(),
             user.dietary_context.clone(),
+            user.ai_config_query.clone(),
+            config.rag.lancedb_path.clone(),
+            config.rag.top_k,
         ))),
         query: ConversationQueryHandler::new(repos.chat_repo.clone()),
+        image_store: repos.ephemeral_image_store.clone(),
     };
 
     Ok(AppContainer {

@@ -7,8 +7,8 @@ pub use meal::{
     MealDaySummary, MealRecord, Nutrition, PendingMealLog, PendingMealLogId, PendingMealLogStatus,
 };
 pub use user::{
-    AppPreferences, AppTheme, CuisinePreference, DietaryPreferences, DiningCompanion,
-    DiningCompanionId, ExpectationSource, HealthExpectationId, HealthExpectationKind,
-    HealthExpectationStatus, PreferenceConfidence, UserHealthExpectation, UserId,
-    UserIdInvalidError, UserPreferences, UserProfile,
+    AICapability, AIProviderKind, AppPreferences, AppTheme, CuisinePreference, DietaryPreferences,
+    DiningCompanion, DiningCompanionId, ExpectationSource, HealthExpectationId,
+    HealthExpectationKind, HealthExpectationStatus, PreferenceConfidence, UserAIProvider,
+    UserAIRoute, UserHealthExpectation, UserId, UserIdInvalidError, UserPreferences, UserProfile,
 };

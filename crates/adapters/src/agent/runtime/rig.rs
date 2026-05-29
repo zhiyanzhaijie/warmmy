@@ -2,33 +2,40 @@ use std::sync::Arc;
 
 use app::app_error::{AppError, AppResult};
 use app::conversation::{
-    ChatMessageRepositoryPort, ConversationReplyStream, SendUserMessageResult,
+    ChatMessageRepositoryPort, ConversationReplyStream, ConversationUserInput, EphemeralImageData,
+    EphemeralImageStorePort, SendUserMessageResult,
 };
 use app::meal::MealCommandHandler;
-use app::user::UserDietaryContextQueryHandler;
+use app::user::{ResolvedAIModelConfig, UserAIConfigQueryHandler, UserDietaryContextQueryHandler};
 use async_stream::stream;
+use base64::Engine;
 use futures_util::StreamExt;
 use rig::agent::MultiTurnStreamItem;
+use rig::agent::StreamingError;
 use rig::client::CompletionClient;
 use rig::completion::Prompt;
+use rig::completion::Message;
+use rig::message::{ImageDetail, ImageMediaType, MimeType, UserContent};
 use rig::message::ToolChoice;
 use rig::providers::{deepseek, openai};
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
+use rig::OneOrMany;
 use serde_json::json;
 
-use crate::agent::config::AgentConfig;
+use crate::agent::config::AgentModelConfig;
 use crate::agent::interaction::{AgentInteractionRequest, AgentInteractionSink};
 use crate::agent::memory::long_term::extractor::LongTermMemoryExtractor;
 use crate::agent::memory::long_term::facts::LongTermFactsMemory as FactsMemory;
-use crate::agent::memory::long_term::rag::build_rag_index;
+use crate::agent::memory::long_term::rag::{build_rag_index, RagConfig};
 use crate::agent::memory::LongTermFactsMemory;
 use crate::agent::memory::SessionConversationMemory;
 use crate::agent::runtime::hook::{GuardrailHook, WarmmyPromptHook};
 use crate::agent::tool;
-use domain::UserId;
+use domain::{AICapability, UserId};
 
 const DEFAULT_MAX_TURNS: usize = 4;
 const DEFAULT_HISTORY_WINDOW_MESSAGES: usize = 24;
+const DEFAULT_EMBEDDING_NDIMS: usize = 1024;
 const WARMMY_PREAMBLE: &str = r#"你是 warmmy，一个温暖、专业的对话型饮食助理。
 
 ## 核心行为
@@ -58,28 +65,34 @@ const WARMMY_PREAMBLE: &str = r#"你是 warmmy，一个温暖、专业的对话�
 - 始终使用中文回复"#;
 
 pub struct RigConversationRuntime {
-    config: AgentConfig,
     repo: Arc<dyn ChatMessageRepositoryPort>,
+    image_store: Arc<dyn EphemeralImageStorePort>,
     meal_command: Arc<MealCommandHandler>,
     long_term_facts: LongTermFactsMemory,
-    memory_extractor: LongTermMemoryExtractor,
+    ai_configs: UserAIConfigQueryHandler,
+    lancedb_path: String,
+    rag_top_k: usize,
     guardrail: Arc<GuardrailHook>,
 }
 
 impl RigConversationRuntime {
     pub fn new(
-        config: AgentConfig,
         meal_command: Arc<MealCommandHandler>,
         repo: Arc<dyn ChatMessageRepositoryPort>,
+        image_store: Arc<dyn EphemeralImageStorePort>,
         user_contexts: UserDietaryContextQueryHandler,
+        ai_configs: UserAIConfigQueryHandler,
+        lancedb_path: String,
+        rag_top_k: usize,
     ) -> Self {
-        let memory_extractor = LongTermMemoryExtractor::new(config.clone());
         Self {
-            config,
             repo,
+            image_store,
             meal_command,
             long_term_facts: LongTermFactsMemory::new(user_contexts),
-            memory_extractor,
+            ai_configs,
+            lancedb_path,
+            rag_top_k,
             guardrail: Arc::new(GuardrailHook),
         }
     }
@@ -96,83 +109,121 @@ impl RigConversationRuntime {
         &self,
         user_id: &UserId,
         session_id: &str,
-        prompt: &str,
+        input: ConversationUserInput,
     ) -> AppResult<SendUserMessageResult> {
+        let chat = self.ai_configs.resolve(user_id, AICapability::Chat).await?;
+        let rag = self.resolve_rag(user_id).await?;
         let facts = self.profile_facts(user_id).await;
-        let preamble = self.runtime_preamble(&facts);
-        let model = self.config.model.as_str();
+        let preamble = self.runtime_preamble(&facts, rag.is_some());
+        let model = chat.model.as_str();
         let interaction_sink = AgentInteractionSink::default();
-        let rag_top_k = self.config.rag.top_k;
+        let memory_input = input.visible_text();
+        let prompt = self.build_prompt_message(&input).await?;
 
-        let reply = match self.config.provider.as_str() {
-            "openai" => {
+        let reply = match chat.provider.as_str() {
+            "openai" | "openai_compatible" | "siliconflow" => {
                 let client = openai::Client::builder()
-                    .api_key(&self.config.api_key)
-                    .base_url(&self.config.base_url)
+                    .api_key(&chat.api_key)
+                    .base_url(&chat.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                let rag_index = build_rag_index(&self.config.rag).await?;
-                let agent = client
-                    .agent(model)
-                    .preamble(&preamble)
-                    .tool_choice(ToolChoice::Auto)
-                    .default_max_turns(DEFAULT_MAX_TURNS)
-                    .memory(self.build_memory(user_id))
-                    .dynamic_context(rag_top_k, rag_index);
-                agent
-                    .hook(hook)
-                    .tools(tool::tools(
-                        user_id,
-                        session_id,
-                        self.meal_command.clone(),
-                        interaction_sink.clone(),
-                    ))
-                    .build()
-                    .prompt(prompt)
-                    .conversation(session_id)
-                    .await
-                    .map_err(|e| AppError::upstream(e.to_string()))?
+                if let Some(rag) = rag.clone() {
+                    let rag_index = build_rag_index(&rag).await?;
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .dynamic_context(rag.top_k, rag_index)
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .prompt(prompt.clone())
+                        .conversation(session_id)
+                        .await
+                        .map_err(|e| AppError::upstream(e.to_string()))?
+                } else {
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .prompt(prompt)
+                        .conversation(session_id)
+                        .await
+                        .map_err(|e| AppError::upstream(e.to_string()))?
+                }
             }
             "deepseek" => {
                 let client = deepseek::Client::builder()
-                    .api_key(&self.config.api_key)
-                    .base_url(&self.config.base_url)
+                    .api_key(&chat.api_key)
+                    .base_url(&chat.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                let rag_index = build_rag_index(&self.config.rag).await?;
-                let agent = client
-                    .agent(model)
-                    .preamble(&preamble)
-                    .tool_choice(ToolChoice::Auto)
-                    .default_max_turns(DEFAULT_MAX_TURNS)
-                    .memory(self.build_memory(user_id))
-                    .dynamic_context(rag_top_k, rag_index);
-                agent
-                    .hook(hook)
-                    .tools(tool::tools(
-                        user_id,
-                        session_id,
-                        self.meal_command.clone(),
-                        interaction_sink.clone(),
-                    ))
-                    .build()
-                    .prompt(prompt)
-                    .conversation(session_id)
-                    .await
-                    .map_err(|e| AppError::upstream(e.to_string()))?
+                if let Some(rag) = rag.clone() {
+                    let rag_index = build_rag_index(&rag).await?;
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .dynamic_context(rag.top_k, rag_index)
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .prompt(prompt)
+                        .conversation(session_id)
+                        .await
+                        .map_err(|e| AppError::upstream(e.to_string()))?
+                } else {
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .prompt(prompt)
+                        .conversation(session_id)
+                        .await
+                        .map_err(|e| AppError::upstream(e.to_string()))?
+                }
             }
             p => return Err(AppError::internal(format!("unsupported provider: {p}"))),
         };
 
-        if let Err(err) = self
-            .memory_extractor
-            .extract_and_embed(user_id, prompt)
-            .await
-        {
-            tracing::warn!(error = %err, "failed to extract long-term semantic memory");
-        }
+        self.extract_memory_if_enabled(user_id, &memory_input, chat, rag)
+            .await;
 
         Ok(SendUserMessageResult {
             reply,
@@ -184,145 +235,267 @@ impl RigConversationRuntime {
         &self,
         user_id: &UserId,
         session_id: &str,
-        prompt: String,
+        input: ConversationUserInput,
     ) -> AppResult<ConversationReplyStream> {
+        let chat = self.ai_configs.resolve(user_id, AICapability::Chat).await?;
+        let rag = self.resolve_rag(user_id).await?;
         let facts = self.profile_facts(user_id).await;
-        let preamble = self.runtime_preamble(&facts);
-        let model = self.config.model.as_str();
+        let preamble = self.runtime_preamble(&facts, rag.is_some());
+        let model = chat.model.as_str();
         let interaction_sink = AgentInteractionSink::default();
-        let rag_top_k = self.config.rag.top_k;
-        let memory_extractor = self.memory_extractor.clone();
+        let user_input = input.visible_text();
+        let prompt = self.build_prompt_message(&input).await?;
         let user_id_for_memory = user_id.clone();
+        let chat_for_memory = chat.clone();
+        let rag_for_memory = rag.clone();
+        let ai_configs = self.ai_configs.clone();
 
-        match self.config.provider.as_str() {
-            "openai" => {
+        match chat.provider.as_str() {
+            "openai" | "openai_compatible" | "siliconflow" => {
                 let client = openai::Client::builder()
-                    .api_key(&self.config.api_key)
-                    .base_url(&self.config.base_url)
+                    .api_key(&chat.api_key)
+                    .base_url(&chat.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                let rag_index = build_rag_index(&self.config.rag).await?;
-                let agent = client
-                    .agent(model)
-                    .preamble(&preamble)
-                    .tool_choice(ToolChoice::Auto)
-                    .default_max_turns(DEFAULT_MAX_TURNS)
-                    .memory(self.build_memory(user_id))
-                    .dynamic_context(rag_top_k, rag_index);
-                let user_input = prompt.clone();
-                let mut raw = agent
-                    .hook(hook)
-                    .tools(tool::tools(
-                        user_id,
-                        session_id,
-                        self.meal_command.clone(),
-                        interaction_sink.clone(),
-                    ))
-                    .build()
-                    .stream_prompt(prompt)
-                    .conversation(session_id.to_string())
-                    .await;
-                let s = stream! {
-                    let mut has_text_delta = false;
-                    let mut output_len = 0usize;
-                    while let Some(item) = raw.next().await {
-                        match item {
-                            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
-                                if !text.text.is_empty() {
-                                    has_text_delta = true;
-                                    output_len += text.text.len();
-                                    yield Ok(chat_text_event(&text.text));
-                                }
-                            }
-                            Ok(MultiTurnStreamItem::FinalResponse(r)) => {
-                                if !has_text_delta && !r.response().is_empty() {
-                                    output_len += r.response().len();
-                                    yield Ok(chat_text_event(r.response()));
-                                }
-                                for interaction in interaction_sink.drain() {
-                                    yield Ok(interaction_event(interaction));
-                                }
-                                if let Err(err) = memory_extractor
-                                    .extract_and_embed(&user_id_for_memory, &user_input)
-                                    .await
-                                {
-                                    tracing::warn!(error = %err, "failed to extract long-term semantic memory");
-                                }
-                                tracing::info!(output.len = output_len, "agent stream finished");
-                            }
-                            Ok(_) => {}
-                            Err(e) => { yield Err(AppError::upstream(e.to_string())); break; }
-                        }
-                    }
+                let raw = if let Some(rag) = rag.clone() {
+                    let rag_index = build_rag_index(&rag).await?;
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .dynamic_context(rag.top_k, rag_index)
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .stream_prompt(prompt.clone())
+                        .conversation(session_id.to_string())
+                        .await
+                } else {
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .stream_prompt(prompt.clone())
+                        .conversation(session_id.to_string())
+                        .await
                 };
-                Ok(Box::pin(s))
+                Ok(Self::wrap_stream(
+                    raw,
+                    interaction_sink,
+                    user_id_for_memory,
+                    user_input,
+                    chat_for_memory,
+                    rag_for_memory,
+                    ai_configs,
+                ))
             }
             "deepseek" => {
                 let client = deepseek::Client::builder()
-                    .api_key(&self.config.api_key)
-                    .base_url(&self.config.base_url)
+                    .api_key(&chat.api_key)
+                    .base_url(&chat.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                let rag_index = build_rag_index(&self.config.rag).await?;
-                let agent = client
-                    .agent(model)
-                    .preamble(&preamble)
-                    .tool_choice(ToolChoice::Auto)
-                    .default_max_turns(DEFAULT_MAX_TURNS)
-                    .memory(self.build_memory(user_id))
-                    .dynamic_context(rag_top_k, rag_index);
-                let user_input = prompt.clone();
-                let mut raw = agent
-                    .hook(hook)
-                    .tools(tool::tools(
-                        user_id,
-                        session_id,
-                        self.meal_command.clone(),
-                        interaction_sink.clone(),
-                    ))
-                    .build()
-                    .stream_prompt(prompt)
-                    .conversation(session_id.to_string())
-                    .await;
-                let s = stream! {
-                    let mut has_text_delta = false;
-                    let mut output_len = 0usize;
-                    while let Some(item) = raw.next().await {
-                        match item {
-                            Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
-                                if !text.text.is_empty() {
-                                    has_text_delta = true;
-                                    output_len += text.text.len();
-                                    yield Ok(chat_text_event(&text.text));
-                                }
-                            }
-                            Ok(MultiTurnStreamItem::FinalResponse(r)) => {
-                                if !has_text_delta && !r.response().is_empty() {
-                                    output_len += r.response().len();
-                                    yield Ok(chat_text_event(r.response()));
-                                }
-                                for interaction in interaction_sink.drain() {
-                                    yield Ok(interaction_event(interaction));
-                                }
-                                if let Err(err) = memory_extractor
-                                    .extract_and_embed(&user_id_for_memory, &user_input)
-                                    .await
-                                {
-                                    tracing::warn!(error = %err, "failed to extract long-term semantic memory");
-                                }
-                                tracing::info!(output.len = output_len, "agent stream finished");
-                            }
-                            Ok(_) => {}
-                            Err(e) => { yield Err(AppError::upstream(e.to_string())); break; }
-                        }
-                    }
+                let raw = if let Some(rag) = rag.clone() {
+                    let rag_index = build_rag_index(&rag).await?;
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .dynamic_context(rag.top_k, rag_index)
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .stream_prompt(prompt)
+                        .conversation(session_id.to_string())
+                        .await
+                } else {
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .stream_prompt(prompt)
+                        .conversation(session_id.to_string())
+                        .await
                 };
-                Ok(Box::pin(s))
+                Ok(Self::wrap_stream(
+                    raw,
+                    interaction_sink,
+                    user_id_for_memory,
+                    user_input,
+                    chat_for_memory,
+                    rag_for_memory,
+                    ai_configs,
+                ))
             }
             p => Err(AppError::internal(format!("unsupported provider: {p}"))),
         }
+    }
+
+    async fn build_prompt_message(&self, input: &ConversationUserInput) -> AppResult<Message> {
+        let images = self.load_image_data(input).await?;
+        let mut content = Vec::new();
+        let text = input.text.trim();
+
+        if !text.is_empty() || images.is_empty() {
+            content.push(UserContent::text(text.to_string()));
+        }
+
+        for image in images {
+            let media_type = ImageMediaType::from_mime_type(&image.mime_type).ok_or_else(|| {
+                AppError::validation(format!(
+                    "unsupported image mime type: {}",
+                    image.mime_type
+                ))
+            })?;
+            let encoded = base64::engine::general_purpose::STANDARD.encode(image.bytes);
+            content.push(UserContent::image_base64(
+                encoded,
+                Some(media_type),
+                Some(ImageDetail::Auto),
+            ));
+        }
+
+        let content = OneOrMany::many(content)
+            .map_err(|_| AppError::validation("empty conversation input"))?;
+        Ok(Message::User { content })
+    }
+
+    async fn load_image_data(
+        &self,
+        input: &ConversationUserInput,
+    ) -> AppResult<Vec<EphemeralImageData>> {
+        let mut images = Vec::new();
+        for image in input.image_attachments() {
+            images.push(self.image_store.load_image(&image.asset_id).await?);
+        }
+        Ok(images)
+    }
+
+    fn wrap_stream<S, R>(
+        mut raw: S,
+        interaction_sink: AgentInteractionSink,
+        user_id_for_memory: UserId,
+        user_input: String,
+        chat_for_memory: ResolvedAIModelConfig,
+        rag_for_memory: Option<RagConfig>,
+        ai_configs: UserAIConfigQueryHandler,
+    ) -> ConversationReplyStream
+    where
+        S: futures_core::Stream<Item = Result<MultiTurnStreamItem<R>, StreamingError>>
+            + Send
+            + Unpin
+            + 'static,
+        R: Clone + Send + 'static,
+    {
+        let s = stream! {
+            let mut has_text_delta = false;
+            let mut output_len = 0usize;
+            while let Some(item) = raw.next().await {
+                match item {
+                    Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
+                        if !text.text.is_empty() {
+                            has_text_delta = true;
+                            output_len += text.text.len();
+                            yield Ok(chat_text_event(&text.text));
+                        }
+                    }
+                    Ok(MultiTurnStreamItem::FinalResponse(r)) => {
+                        if !has_text_delta && !r.response().is_empty() {
+                            output_len += r.response().len();
+                            yield Ok(chat_text_event(r.response()));
+                        }
+                        for interaction in interaction_sink.drain() {
+                            yield Ok(interaction_event(interaction));
+                        }
+                        extract_memory_if_enabled(
+                            &ai_configs,
+                            &user_id_for_memory,
+                            &user_input,
+                            chat_for_memory.clone(),
+                            rag_for_memory.clone(),
+                        )
+                        .await;
+                        tracing::info!(output.len = output_len, "agent stream finished");
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        yield Err(AppError::upstream(e.to_string()));
+                        break;
+                    }
+                }
+            }
+        };
+        Box::pin(s)
+    }
+
+    async fn resolve_rag(&self, user_id: &UserId) -> AppResult<Option<RagConfig>> {
+        let Some(embedding) = self
+            .ai_configs
+            .resolve_optional(user_id, AICapability::Embedding)
+            .await?
+        else {
+            tracing::info!(
+                user.id = user_id.as_str(),
+                "semantic memory disabled: embedding config missing"
+            );
+            return Ok(None);
+        };
+
+        Ok(Some(RagConfig {
+            lancedb_path: self.lancedb_path.clone(),
+            embedding_provider: embedding.provider.as_str().to_string(),
+            embedding_base_url: embedding.base_url,
+            embedding_api_key: embedding.api_key,
+            embedding_model: embedding.model,
+            embedding_ndims: embedding.embedding_ndims.unwrap_or(DEFAULT_EMBEDDING_NDIMS),
+            top_k: self.rag_top_k,
+        }))
+    }
+
+    async fn extract_memory_if_enabled(
+        &self,
+        user_id: &UserId,
+        user_input: &str,
+        chat: ResolvedAIModelConfig,
+        rag: Option<RagConfig>,
+    ) {
+        extract_memory_if_enabled(&self.ai_configs, user_id, user_input, chat, rag).await;
     }
 
     async fn profile_facts(&self, user_id: &UserId) -> String {
@@ -330,8 +503,37 @@ impl RigConversationRuntime {
         FactsMemory::build_profile_context(snapshot.as_ref())
     }
 
-    fn runtime_preamble(&self, facts: &str) -> String {
-        format!("{WARMMY_PREAMBLE}\n\n## Current Facts\n{facts}")
+    fn runtime_preamble(&self, facts: &str, semantic_memory_enabled: bool) -> String {
+        let semantic_status = if semantic_memory_enabled {
+            "长期语义记忆/RAG 已启用。"
+        } else {
+            "长期语义记忆/RAG 未启用：用户尚未配置 embedding 模型或 API key。只能使用当前会话记忆和 Current Facts。"
+        };
+        format!("{WARMMY_PREAMBLE}\n\n## Capability Status\n{semantic_status}\n\n## Current Facts\n{facts}")
+    }
+}
+
+async fn extract_memory_if_enabled(
+    ai_configs: &UserAIConfigQueryHandler,
+    user_id: &UserId,
+    user_input: &str,
+    chat: ResolvedAIModelConfig,
+    rag: Option<RagConfig>,
+) {
+    let Some(rag) = rag else {
+        return;
+    };
+
+    let extractor_model = ai_configs
+        .resolve_optional(user_id, AICapability::MemoryExtraction)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(chat);
+
+    let extractor = LongTermMemoryExtractor::new(AgentModelConfig::from(extractor_model), rag);
+    if let Err(err) = extractor.extract_and_embed(user_id, user_input).await {
+        tracing::warn!(error = %err, "failed to extract long-term semantic memory");
     }
 }
 

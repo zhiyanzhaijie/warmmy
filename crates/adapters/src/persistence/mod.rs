@@ -1,4 +1,5 @@
 mod app_error_impl;
+pub mod ephemeral_image_store;
 pub mod sqlite;
 
 use std::sync::Arc;
@@ -10,14 +11,15 @@ use app::{
         MealDaySummaryRepositoryPort, MealRecordRepositoryPort, PendingMealLogRepositoryPort,
     },
     user::{
-        DiningCompanionRepositoryPort, UserHealthExpectationRepositoryPort,
-        UserPreferencesRepositoryPort, UserProfileRepositoryPort,
+        DiningCompanionRepositoryPort, SecretStorePort, UserAIConfigRepositoryPort,
+        UserHealthExpectationRepositoryPort, UserPreferencesRepositoryPort,
+        UserProfileRepositoryPort,
     },
 };
 
 use tokio::sync::Mutex;
 
-use app::conversation::ChatMessageRepositoryPort;
+use app::conversation::{ChatMessageRepositoryPort, EphemeralImageStorePort};
 
 pub struct DbRepos {
     pub db: Arc<Mutex<toasty::Db>>,
@@ -25,7 +27,10 @@ pub struct DbRepos {
     pub user_expectation_repo: Arc<dyn UserHealthExpectationRepositoryPort>,
     pub user_preferences_repo: Arc<dyn UserPreferencesRepositoryPort>,
     pub dining_companion_repo: Arc<dyn DiningCompanionRepositoryPort>,
+    pub user_ai_config_repo: Arc<dyn UserAIConfigRepositoryPort>,
+    pub secret_store: Arc<dyn SecretStorePort>,
     pub chat_repo: Arc<dyn ChatMessageRepositoryPort>,
+    pub ephemeral_image_store: Arc<dyn EphemeralImageStorePort>,
     pub meal_repo: Arc<dyn MealRecordRepositoryPort>,
     pub pending_meal_repo: Arc<dyn PendingMealLogRepositoryPort>,
     pub meal_day_finalization_repo: Arc<dyn MealDayFinalizationRepositoryPort>,

@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    AppTheme, DiningCompanionId, ExpectationSource, HealthExpectationId, HealthExpectationKind,
-    HealthExpectationStatus, PreferenceConfidence, UserId,
+    AICapability, AIProviderKind, AppTheme, DiningCompanionId, ExpectationSource,
+    HealthExpectationId, HealthExpectationKind, HealthExpectationStatus, PreferenceConfidence,
+    UserId,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -84,4 +85,37 @@ pub struct DietaryPreferences {
 pub struct CuisinePreference {
     pub cuisine: String,
     pub confidence: PreferenceConfidence,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UserAIProvider {
+    pub id: String,
+    pub user_id: UserId,
+    pub kind: AIProviderKind,
+    pub name: String,
+    pub base_url: String,
+    pub secret_ref: Option<String>,
+    pub enabled: bool,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UserAIRoute {
+    pub id: String,
+    pub user_id: UserId,
+    pub capability: AICapability,
+    pub provider_id: String,
+    pub model: String,
+    pub embedding_ndims: Option<usize>,
+    pub enabled: bool,
+    pub updated_at: String,
+}
+
+impl UserAIProvider {
+    pub fn has_secret(&self) -> bool {
+        self.secret_ref
+            .as_deref()
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false)
+    }
 }
