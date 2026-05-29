@@ -4,7 +4,8 @@ use domain::UserId;
 use crate::app_error::AppResult;
 use crate::conversation::{
     ChatMessage, ContinueInteractionCommand, ConversationReplyStream, EphemeralImageData,
-    SendUserMessageCommand, SendUserMessageResult, StoreEphemeralImageInput, StoredEphemeralImage,
+    SaveMessageImageAttachment, SendUserMessageCommand, SendUserMessageResult,
+    StoreEphemeralImageInput, StoredEphemeralImage,
 };
 
 #[async_trait]
@@ -38,7 +39,15 @@ pub trait ChatMessageRepositoryPort: Send + Sync {
         session_id: &str,
         role: &str,
         content: &str,
-    ) -> Result<(), String>;
+    ) -> Result<Option<String>, String>;
+    async fn save_message_with_attachments(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        role: &str,
+        content: &str,
+        attachments: Vec<SaveMessageImageAttachment>,
+    ) -> Result<Option<String>, String>;
     async fn find_memory_messages(
         &self,
         user_id: &UserId,

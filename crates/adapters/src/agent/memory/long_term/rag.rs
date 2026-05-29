@@ -67,7 +67,7 @@ pub struct RagDocument {
 pub type OpenAiCompatibleRagIndex = WarmmyLanceDbVectorIndex<rig::providers::openai::EmbeddingModel>;
 
 pub struct WarmmyLanceDbVectorIndex<M: EmbeddingModel> {
-    table: lancedb::Table,
+    table: Option<lancedb::Table>,
     model: M,
 }
 
@@ -115,7 +115,7 @@ pub async fn build_rag_index(config: &RagConfig) -> AppResult<OpenAiCompatibleRa
     config.validate()?;
 
     let model = build_embedding_model(config)?;
-    let table = open_or_create_table(config).await?;
+    let table = open_table_if_present(config).await?;
 
     Ok(WarmmyLanceDbVectorIndex { table, model })
 }
@@ -210,6 +210,29 @@ fn build_embedding_model(config: &RagConfig) -> AppResult<rig::providers::openai
     Ok(client.embedding_model(&config.embedding_model))
 }
 
+async fn open_table_if_present(config: &RagConfig) -> AppResult<Option<lancedb::Table>> {
+    let db = lancedb::connect(&config.lancedb_path)
+        .execute()
+        .await
+        .map_err(|e| AppError::database(e.to_string()))?;
+
+    let tables = db
+        .table_names()
+        .execute()
+        .await
+        .map_err(|e| AppError::database(e.to_string()))?;
+
+    if !tables.iter().any(|name| name == TABLE_NAME) {
+        return Ok(None);
+    }
+
+    match db.open_table(TABLE_NAME).execute().await {
+        Ok(table) => Ok(Some(table)),
+        Err(err) if is_lancedb_table_not_found(&err) => Ok(None),
+        Err(err) => Err(AppError::database(err.to_string())),
+    }
+}
+
 async fn open_or_create_table(config: &RagConfig) -> AppResult<lancedb::Table> {
     let db = lancedb::connect(&config.lancedb_path)
         .execute()
@@ -233,6 +256,10 @@ async fn open_or_create_table(config: &RagConfig) -> AppResult<lancedb::Table> {
             .await
             .map_err(|e| AppError::database(e.to_string()))
     }
+}
+
+fn is_lancedb_table_not_found(err: &lancedb::Error) -> bool {
+    matches!(err, lancedb::Error::TableNotFound { .. })
 }
 
 fn rag_schema(dims: usize) -> Schema {
@@ -287,9 +314,12 @@ where
         &self,
         req: VectorSearchRequest<Self::Filter>,
     ) -> Result<Vec<(f64, String, T)>, VectorStoreError> {
+        let Some(table) = self.table.as_ref() else {
+            return Ok(Vec::new());
+        };
+
         let embedding = self.model.embed_text(req.query()).await?;
-        let mut query = self
-            .table
+        let mut query = table
             .vector_search(embedding.vec)
             .map_err(lancedb_to_vector_store_error)?
             .distance_type(lancedb::DistanceType::Cosine)
@@ -304,13 +334,17 @@ where
             query = query.only_if(filter.into_inner()?);
         }
 
-        let batches = query
-            .execute()
-            .await
-            .map_err(lancedb_to_vector_store_error)?
-            .try_collect::<Vec<_>>()
-            .await
-            .map_err(lancedb_to_vector_store_error)?;
+        let stream = match query.execute().await {
+            Ok(stream) => stream,
+            Err(err) if is_lancedb_table_not_found(&err) => return Ok(Vec::new()),
+            Err(err) => return Err(lancedb_to_vector_store_error(err)),
+        };
+
+        let batches = match stream.try_collect::<Vec<_>>().await {
+            Ok(batches) => batches,
+            Err(err) if is_lancedb_table_not_found(&err) => return Ok(Vec::new()),
+            Err(err) => return Err(lancedb_to_vector_store_error(err)),
+        };
 
         let mut results = Vec::new();
         for batch in batches {

@@ -2,7 +2,14 @@
 name = "warmmy"
 tailwind_input = "tailwind.css"
 tailwind_output = "assets/mobile.css"
+android_main_activity = "android/MainActivity.kt"
 
 [bundle]
 identifier = "com.zhiyanzhaijie.warmmy"
 publisher = "zhiyanzhaijie"
+
+[ios]
+deployment_target = "15.0"
+
+[ios.plist]
+NSPhotoLibraryUsageDescription = "Warmmy 需要访问你选择的图片，用于识别和记录餐食。"

@@ -1,6 +1,6 @@
 use crate::Route;
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{House, MessageCircle, Sparkles, User};
+use dioxus_icons::lucide::{House, Map, MessageCircle, Sparkles, User};
 use ui::blocks::{provide_current_user_context, ConversationTransitionContext};
 
 #[component]
@@ -31,6 +31,10 @@ fn BottomNav() -> Element {
     let nav = navigator();
     let is_home = matches!(&route, Route::HomeView { .. });
     let is_chat = matches!(&route, Route::ChatDetailView { .. });
+    let is_travel = matches!(
+        &route,
+        Route::TravelView { .. } | Route::TravelDetailView { .. }
+    );
     let is_me = matches!(&route, Route::MeView { .. });
 
     let open_chat = move |_| {
@@ -62,6 +66,15 @@ fn BottomNav() -> Element {
                     span { class: "text-[11px] font-semibold mt-1", "Chat" }
                 }
                 Link {
+                    to: Route::TravelView {},
+                    class: format!(
+                        "flex flex-col items-center justify-between p-2 relative group {}",
+                        if is_travel { "text-foreground" } else { "text-muted-foreground" }
+                    ),
+                    Map { size: 24 }
+                    span { class: "text-[11px] font-semibold mt-1", "Travel" }
+                }
+                Link {
                     to: Route::MeView {},
                     class: format!(
                         "flex flex-col items-center justify-between p-2 relative group {}",
@@ -81,6 +94,10 @@ fn SideNav() -> Element {
     let nav = navigator();
     let is_home = matches!(&route, Route::HomeView { .. });
     let is_chat = matches!(&route, Route::ChatDetailView { .. });
+    let is_travel = matches!(
+        &route,
+        Route::TravelView { .. } | Route::TravelDetailView { .. }
+    );
     let is_me = matches!(&route, Route::MeView { .. });
 
     let open_chat = move |_| {
@@ -130,6 +147,19 @@ fn SideNav() -> Element {
                     ),
                     MessageCircle { size: 24, class: "mx-auto lg:mx-0 shrink-0" }
                     span { class: "hidden lg:block", "Chat" }
+                }
+                Link {
+                    to: Route::TravelView {},
+                    class: format!(
+                        "flex items-center lg:justify-start justify-center gap-4 p-3.5 rounded-[1.25rem] transition-all relative overflow-hidden {}",
+                        if is_travel {
+                            "bg-muted text-sidebar-foreground font-bold"
+                        } else {
+                            "text-muted-foreground hover:bg-muted/50 hover:text-sidebar-foreground font-medium"
+                        }
+                    ),
+                    Map { size: 24, class: "mx-auto lg:mx-0 shrink-0" }
+                    span { class: "hidden lg:block", "Travel" }
                 }
                 Link {
                     to: Route::MeView {},

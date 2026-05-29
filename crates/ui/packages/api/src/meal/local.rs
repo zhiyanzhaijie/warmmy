@@ -19,6 +19,14 @@ pub struct NutritionDTO {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+pub struct MealRecordDTO {
+    pub session_id: String,
+    pub day_cycle: String,
+    pub foods: Vec<FoodItemDTO>,
+    pub nutrition: NutritionDTO,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub struct PendingMealLogDTO {
     pub id: String,
     pub day_cycle: String,
@@ -83,6 +91,37 @@ pub async fn get_meal_day_summary(
         .await
         .map_err(api_error)?;
     Ok(item.map(summary_to_dto))
+}
+
+pub async fn list_meal_day_summaries(
+    user_id: String,
+) -> Result<Vec<MealDaySummaryDTO>, ServerFnError> {
+    let state = crate::local_state::state().await?;
+    let user_id = parse_user_id(&user_id)?;
+    let items = state
+        .0
+        .meal
+        .command
+        .list_meal_day_summaries(&user_id)
+        .await
+        .map_err(api_error)?;
+    Ok(items.into_iter().map(summary_to_dto).collect())
+}
+
+pub async fn list_meal_logs(
+    user_id: String,
+    session_id: String,
+) -> Result<Vec<MealRecordDTO>, ServerFnError> {
+    let state = crate::local_state::state().await?;
+    let user_id = parse_user_id(&user_id)?;
+    let items = state
+        .0
+        .meal
+        .query
+        .list_meals(&user_id, &session_id)
+        .await
+        .map_err(api_error)?;
+    Ok(items.into_iter().map(meal_to_dto).collect())
 }
 
 pub async fn finalize_meal_day(
@@ -309,6 +348,23 @@ fn summary_to_dto(item: domain::MealDaySummary) -> MealDaySummaryDTO {
     }
 }
 
+fn meal_to_dto(item: domain::MealRecord) -> MealRecordDTO {
+    MealRecordDTO {
+        session_id: item.session_id,
+        day_cycle: item.day_cycle.to_string(),
+        foods: item
+            .foods
+            .into_iter()
+            .map(|food| FoodItemDTO {
+                name: food.name,
+                quantity: food.quantity,
+                unit: food.unit,
+            })
+            .collect(),
+        nutrition: nutrition_to_dto(item.nutrition),
+    }
+}
+
 fn pending_to_dto(item: domain::PendingMealLog) -> PendingMealLogDTO {
     PendingMealLogDTO {
         id: item.id.to_string(),
@@ -322,18 +378,22 @@ fn pending_to_dto(item: domain::PendingMealLog) -> PendingMealLogDTO {
                 unit: food.unit,
             })
             .collect(),
-        nutrition: NutritionDTO {
-            calories: item.nutrition.calories,
-            protein_g: item.nutrition.protein_g,
-            fat_g: item.nutrition.fat_g,
-            carbs_g: item.nutrition.carbs_g,
-        },
+        nutrition: nutrition_to_dto(item.nutrition),
         status: match item.status {
             domain::PendingMealLogStatus::Proposed => "proposed",
             domain::PendingMealLogStatus::Confirmed => "confirmed",
             domain::PendingMealLogStatus::Rejected => "rejected",
         }
         .to_string(),
+    }
+}
+
+fn nutrition_to_dto(nutrition: domain::Nutrition) -> NutritionDTO {
+    NutritionDTO {
+        calories: nutrition.calories,
+        protein_g: nutrition.protein_g,
+        fat_g: nutrition.fat_g,
+        carbs_g: nutrition.carbs_g,
     }
 }
 

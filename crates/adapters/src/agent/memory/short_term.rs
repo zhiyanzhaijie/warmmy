@@ -87,6 +87,9 @@ impl ConversationMemory for SessionConversationMemory {
                 }
 
                 if let Some((role, content)) = visible_text_message(&message) {
+                    if role == "user" && content.contains("[用户发送了一张图片]") {
+                        continue;
+                    }
                     self.repo
                         .save_message(&self.user_id, conversation_id, role, &content)
                         .await

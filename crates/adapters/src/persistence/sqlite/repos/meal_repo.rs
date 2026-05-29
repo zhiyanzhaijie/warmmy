@@ -287,6 +287,25 @@ impl MealDaySummaryRepositoryPort for SqliteMealRepo {
             Err(err) => Err(err.to_string()),
         }
     }
+
+    async fn list_summaries(&self, user_id: &UserId) -> Result<Vec<MealDaySummary>, String> {
+        let mut db = self.db.lock().await;
+        let rows = MealDaySummaryRow::filter(
+            MealDaySummaryRow::fields()
+                .user_id()
+                .eq(user_id.as_str()),
+        )
+        .exec(&mut *db)
+        .await
+        .map_err(|err| err.to_string())?;
+
+        let mut summaries = rows
+            .into_iter()
+            .map(Self::row_to_summary)
+            .collect::<Result<Vec<_>, _>>()?;
+        summaries.sort_by(|left, right| right.finalized_at.cmp(&left.finalized_at));
+        Ok(summaries)
+    }
 }
 
 #[async_trait]

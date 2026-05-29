@@ -35,6 +35,8 @@ pub trait MealDaySummaryRepositoryPort: Send + Sync {
         user_id: &UserId,
         session_id: &str,
     ) -> Result<Option<MealDaySummary>, String>;
+
+    async fn list_summaries(&self, user_id: &UserId) -> Result<Vec<MealDaySummary>, String>;
 }
 
 #[async_trait]

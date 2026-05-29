@@ -1,9 +1,10 @@
 use toasty::Db;
 
 use super::models::{
-    ChatMessageRow, DiningCompanionRow, FoodNutritionReferenceRow, MealDayFinalizationRow,
-    MealDaySummaryRow, MealRecordRow, PendingMealLogRow, UserAIProviderRow, UserAIRouteRow,
-    UserHealthExpectationRow, UserPreferencesRow, UserProfileRow, UserSecretRow,
+    ChatMessageAttachmentRow, ChatMessageRow, DiningCompanionRow, FoodNutritionReferenceRow,
+    MealDayFinalizationRow, MealDaySummaryRow, MealRecordRow, PendingMealLogRow,
+    UserAIProviderRow, UserAIRouteRow, UserHealthExpectationRow, UserPreferencesRow,
+    UserProfileRow, UserSecretRow,
 };
 
 pub async fn connect_sqlite(database_url: &str) -> toasty::Result<Db> {
@@ -21,7 +22,8 @@ pub async fn connect_sqlite(database_url: &str) -> toasty::Result<Db> {
             MealDaySummaryRow,
             PendingMealLogRow,
             FoodNutritionReferenceRow,
-            ChatMessageRow
+            ChatMessageRow,
+            ChatMessageAttachmentRow
         ))
         .connect(database_url)
         .await?;
@@ -136,6 +138,27 @@ fn ensure_user_extension_tables(database_url: &str) -> Result<(), rusqlite::Erro
             basis_unit TEXT NOT NULL,
             nutrition_json TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS chat_message_attachment_rows (
+            id TEXT PRIMARY KEY NOT NULL,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            message_id TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            size_bytes INTEGER NOT NULL,
+            width INTEGER,
+            height INTEGER,
+            data_url TEXT,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_message_attachment_rows_user_id
+            ON chat_message_attachment_rows (user_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_message_attachment_rows_session_id
+            ON chat_message_attachment_rows (session_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_message_attachment_rows_message_id
+            ON chat_message_attachment_rows (message_id);
 
         CREATE TABLE IF NOT EXISTS meal_day_finalization_rows (
             id TEXT PRIMARY KEY NOT NULL,

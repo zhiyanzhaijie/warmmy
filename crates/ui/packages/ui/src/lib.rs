@@ -2,6 +2,7 @@
 pub mod blocks;
 pub mod components;
 pub mod impls;
+pub mod platform;
 pub mod views;
 
 pub fn today_session_id() -> String {

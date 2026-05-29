@@ -470,6 +470,16 @@ impl MealCommandHandler {
             .map_err(AppError::upstream)
     }
 
+    pub async fn list_meal_day_summaries(
+        &self,
+        user_id: &UserId,
+    ) -> AppResult<Vec<MealDaySummary>> {
+        self.day_summaries
+            .list_summaries(user_id)
+            .await
+            .map_err(AppError::upstream)
+    }
+
     async fn ensure_day_is_open(&self, user_id: &UserId, session_id: &str) -> AppResult<()> {
         if self
             .day_finalizations

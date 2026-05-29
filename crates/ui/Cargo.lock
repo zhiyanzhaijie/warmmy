@@ -12987,6 +12987,7 @@ dependencies = [
  "dioxus-primitives",
  "dioxus-sdk-time",
  "futures-util",
+ "manganis",
  "serde",
  "serde_json",
 ]

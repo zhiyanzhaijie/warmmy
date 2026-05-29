@@ -23,6 +23,7 @@ pub struct ChatImageAttachmentInput {
     pub size_bytes: u64,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    pub preview_data_url: Option<String>,
 }
 
 #[post("/api/echo", state: State)]
@@ -160,6 +161,7 @@ fn to_app_input(input: ChatSendInput) -> app::conversation::ConversationUserInpu
                         size_bytes: image.size_bytes,
                         width: image.width,
                         height: image.height,
+                        preview_data_url: image.preview_data_url,
                     },
                 )
             })

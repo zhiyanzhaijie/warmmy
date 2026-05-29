@@ -3,10 +3,12 @@ use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use app::conversation::{ChatMessage, ChatMessageRepositoryPort};
+use app::conversation::{
+    ChatMessage, ChatMessageAttachment, ChatMessageRepositoryPort, SaveMessageImageAttachment,
+};
 use domain::UserId;
 
-use crate::persistence::sqlite::models::ChatMessageRow;
+use crate::persistence::sqlite::models::{ChatMessageAttachmentRow, ChatMessageRow};
 
 const RIG_MEMORY_ROLE: &str = "rig_memory";
 
@@ -18,6 +20,33 @@ pub struct SqliteChatMessageRepo {
 impl SqliteChatMessageRepo {
     pub fn new(db: Arc<Mutex<toasty::Db>>) -> Self {
         Self { db }
+    }
+
+    async fn save_message_inner(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        role: &str,
+        content: &str,
+    ) -> Result<Option<String>, String> {
+        if is_internal_conversation_message(role, content) {
+            return Ok(None);
+        }
+
+        let mut db = self.db.lock().await;
+        let created_at = Utc::now().to_rfc3339();
+        let row = toasty::create!(ChatMessageRow {
+            user_id: user_id.as_str().to_string(),
+            session_id: session_id.to_string(),
+            role: role.to_string(),
+            content: content.to_string(),
+            created_at,
+        })
+        .exec(&mut *db)
+        .await
+        .map_err(|err| err.to_string())?;
+
+        Ok(Some(row.id.to_string()))
     }
 }
 
@@ -45,13 +74,25 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
             .collect();
         messages.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
 
+        let attachments = ChatMessageAttachmentRow::filter(
+            ChatMessageAttachmentRow::fields()
+                .user_id()
+                .eq(user_id.as_str())
+                .and(ChatMessageAttachmentRow::fields().session_id().eq(session_id)),
+        )
+        .exec(&mut *db)
+        .await
+        .map_err(|err| err.to_string())?;
+
         Ok(messages
             .into_iter()
             .filter(|row| row.2 != RIG_MEMORY_ROLE)
             .filter(|row| !is_internal_conversation_message(&row.2, &row.3))
             .map(|row| ChatMessage {
+                id: row.1.to_string(),
                 role: row.2,
                 content: row.3,
+                attachments: attachments_for_message(&attachments, &row.1.to_string()),
             })
             .collect())
     }
@@ -62,25 +103,52 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
         session_id: &str,
         role: &str,
         content: &str,
-    ) -> Result<(), String> {
-        if is_internal_conversation_message(role, content) {
-            return Ok(());
-        }
+    ) -> Result<Option<String>, String> {
+        self.save_message_inner(user_id, session_id, role, content)
+            .await
+    }
+
+    async fn save_message_with_attachments(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        role: &str,
+        content: &str,
+        attachments: Vec<SaveMessageImageAttachment>,
+    ) -> Result<Option<String>, String> {
+        let Some(message_id) = self
+            .save_message_inner(user_id, session_id, role, content)
+            .await?
+        else {
+            return Ok(None);
+        };
 
         let mut db = self.db.lock().await;
         let created_at = Utc::now().to_rfc3339();
-        let _ = toasty::create!(ChatMessageRow {
-            user_id: user_id.as_str().to_string(),
-            session_id: session_id.to_string(),
-            role: role.to_string(),
-            content: content.to_string(),
-            created_at,
-        })
-        .exec(&mut *db)
-        .await
-        .map_err(|err| err.to_string())?;
+        for (index, attachment) in attachments.into_iter().enumerate() {
+            let width = attachment.width.and_then(|value| i32::try_from(value).ok());
+            let height = attachment.height.and_then(|value| i32::try_from(value).ok());
+            let size_bytes = i64::try_from(attachment.size_bytes).unwrap_or(i64::MAX);
+            toasty::create!(ChatMessageAttachmentRow {
+                id: format!("{message_id}:image:{index}"),
+                user_id: user_id.as_str().to_string(),
+                session_id: session_id.to_string(),
+                message_id: message_id.clone(),
+                kind: "image".to_string(),
+                mime_type: attachment.mime_type,
+                size_bytes,
+                width,
+                height,
+                data_url: attachment.data_url,
+                status: attachment.status,
+                created_at: created_at.clone(),
+            })
+            .exec(&mut *db)
+            .await
+            .map_err(|err| err.to_string())?;
+        }
 
-        Ok(())
+        Ok(Some(message_id))
     }
 
     async fn find_memory_messages(
@@ -166,4 +234,23 @@ fn is_internal_conversation_message(role: &str, content: &str) -> bool {
             .starts_with("[warmmy:internal-continuation]")
             || content.starts_with("用户已在界面确认一条待确认用餐记录。")
             || content.starts_with("用户已在界面取消一条待确认用餐记录。"))
+}
+
+fn attachments_for_message(
+    rows: &[ChatMessageAttachmentRow],
+    message_id: &str,
+) -> Vec<ChatMessageAttachment> {
+    rows.iter()
+        .filter(|row| row.message_id == message_id)
+        .map(|row| ChatMessageAttachment {
+            id: row.id.clone(),
+            kind: row.kind.clone(),
+            mime_type: row.mime_type.clone(),
+            size_bytes: u64::try_from(row.size_bytes).unwrap_or_default(),
+            width: row.width.and_then(|value| u32::try_from(value).ok()),
+            height: row.height.and_then(|value| u32::try_from(value).ok()),
+            data_url: row.data_url.clone(),
+            status: row.status.clone(),
+        })
+        .collect()
 }

@@ -15,8 +15,9 @@ pub use conversation::{
 };
 pub use meal::{
     confirm_pending_meal, finalize_and_summarize_meal_day, get_meal_day_summary,
-    list_pending_meals, preview_pending_meal, reject_pending_meal, ConfirmPendingMealInput,
-    FoodItemDTO, MealDaySummaryDTO, NutritionDTO, PendingMealLogDTO,
+    list_meal_day_summaries, list_meal_logs, list_pending_meals, preview_pending_meal,
+    reject_pending_meal, ConfirmPendingMealInput, FoodItemDTO, MealDaySummaryDTO, MealRecordDTO,
+    NutritionDTO, PendingMealLogDTO,
 };
 pub use user::{
     confirm_health_expectation, create_user_profile, delete_dining_companion,

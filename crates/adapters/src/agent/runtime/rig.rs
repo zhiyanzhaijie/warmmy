@@ -3,7 +3,7 @@ use std::sync::Arc;
 use app::app_error::{AppError, AppResult};
 use app::conversation::{
     ChatMessageRepositoryPort, ConversationReplyStream, ConversationUserInput, EphemeralImageData,
-    EphemeralImageStorePort, SendUserMessageResult,
+    EphemeralImageStorePort, SaveMessageImageAttachment, SendUserMessageResult,
 };
 use app::meal::MealCommandHandler;
 use app::user::{ResolvedAIModelConfig, UserAIConfigQueryHandler, UserDietaryContextQueryHandler};
@@ -105,13 +105,26 @@ impl RigConversationRuntime {
         )
     }
 
+    async fn resolve_conversation_model(
+        &self,
+        user_id: &UserId,
+        input: &ConversationUserInput,
+    ) -> AppResult<ResolvedAIModelConfig> {
+        let capability = if input.has_images() {
+            AICapability::Vision
+        } else {
+            AICapability::Chat
+        };
+        self.ai_configs.resolve(user_id, capability).await
+    }
+
     pub async fn complete(
         &self,
         user_id: &UserId,
         session_id: &str,
         input: ConversationUserInput,
     ) -> AppResult<SendUserMessageResult> {
-        let chat = self.ai_configs.resolve(user_id, AICapability::Chat).await?;
+        let chat = self.resolve_conversation_model(user_id, &input).await?;
         let rag = self.resolve_rag(user_id).await?;
         let facts = self.profile_facts(user_id).await;
         let preamble = self.runtime_preamble(&facts, rag.is_some());
@@ -119,14 +132,66 @@ impl RigConversationRuntime {
         let interaction_sink = AgentInteractionSink::default();
         let memory_input = input.visible_text();
         let prompt = self.build_prompt_message(&input).await?;
+        self.persist_user_image_message(user_id, session_id, &input, &memory_input)
+            .await;
 
         let reply = match chat.provider.as_str() {
-            "openai" | "openai_compatible" | "siliconflow" => {
+            "openai" => {
                 let client = openai::Client::builder()
                     .api_key(&chat.api_key)
                     .base_url(&chat.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
+                let hook = WarmmyPromptHook::new(self.guardrail.clone());
+                if let Some(rag) = rag.clone() {
+                    let rag_index = build_rag_index(&rag).await?;
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .dynamic_context(rag.top_k, rag_index)
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .prompt(prompt.clone())
+                        .conversation(session_id)
+                        .await
+                        .map_err(|e| AppError::upstream(e.to_string()))?
+                } else {
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .prompt(prompt)
+                        .conversation(session_id)
+                        .await
+                        .map_err(|e| AppError::upstream(e.to_string()))?
+                }
+            }
+            "openai_compatible" | "siliconflow" => {
+                let client = openai::Client::builder()
+                    .api_key(&chat.api_key)
+                    .base_url(&chat.base_url)
+                    .build()
+                    .map_err(|e| AppError::upstream(e.to_string()))?
+                    .completions_api();
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
                 if let Some(rag) = rag.clone() {
                     let rag_index = build_rag_index(&rag).await?;
@@ -237,7 +302,7 @@ impl RigConversationRuntime {
         session_id: &str,
         input: ConversationUserInput,
     ) -> AppResult<ConversationReplyStream> {
-        let chat = self.ai_configs.resolve(user_id, AICapability::Chat).await?;
+        let chat = self.resolve_conversation_model(user_id, &input).await?;
         let rag = self.resolve_rag(user_id).await?;
         let facts = self.profile_facts(user_id).await;
         let preamble = self.runtime_preamble(&facts, rag.is_some());
@@ -245,18 +310,77 @@ impl RigConversationRuntime {
         let interaction_sink = AgentInteractionSink::default();
         let user_input = input.visible_text();
         let prompt = self.build_prompt_message(&input).await?;
+        self.persist_user_image_message(user_id, session_id, &input, &user_input)
+            .await;
         let user_id_for_memory = user_id.clone();
         let chat_for_memory = chat.clone();
         let rag_for_memory = rag.clone();
         let ai_configs = self.ai_configs.clone();
 
         match chat.provider.as_str() {
-            "openai" | "openai_compatible" | "siliconflow" => {
+            "openai" => {
                 let client = openai::Client::builder()
                     .api_key(&chat.api_key)
                     .base_url(&chat.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
+                let hook = WarmmyPromptHook::new(self.guardrail.clone());
+                let raw = if let Some(rag) = rag.clone() {
+                    let rag_index = build_rag_index(&rag).await?;
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .dynamic_context(rag.top_k, rag_index)
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .stream_prompt(prompt.clone())
+                        .conversation(session_id.to_string())
+                        .await
+                } else {
+                    client
+                        .agent(model)
+                        .preamble(&preamble)
+                        .tool_choice(ToolChoice::Auto)
+                        .default_max_turns(DEFAULT_MAX_TURNS)
+                        .memory(self.build_memory(user_id))
+                        .hook(hook)
+                        .tools(tool::tools(
+                            user_id,
+                            session_id,
+                            self.meal_command.clone(),
+                            interaction_sink.clone(),
+                        ))
+                        .build()
+                        .stream_prompt(prompt.clone())
+                        .conversation(session_id.to_string())
+                        .await
+                };
+                Ok(Self::wrap_stream(
+                    raw,
+                    interaction_sink,
+                    user_id_for_memory,
+                    user_input,
+                    chat_for_memory,
+                    rag_for_memory,
+                    ai_configs,
+                ))
+            }
+            "openai_compatible" | "siliconflow" => {
+                let client = openai::Client::builder()
+                    .api_key(&chat.api_key)
+                    .base_url(&chat.base_url)
+                    .build()
+                    .map_err(|e| AppError::upstream(e.to_string()))?
+                    .completions_api();
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
                 let raw = if let Some(rag) = rag.clone() {
                     let rag_index = build_rag_index(&rag).await?;
@@ -405,6 +529,42 @@ impl RigConversationRuntime {
             images.push(self.image_store.load_image(&image.asset_id).await?);
         }
         Ok(images)
+    }
+
+    async fn persist_user_image_message(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        input: &ConversationUserInput,
+        visible_text: &str,
+    ) {
+        let attachments = input
+            .image_attachments()
+            .map(|image| SaveMessageImageAttachment {
+                mime_type: image.mime_type.clone(),
+                size_bytes: image.size_bytes,
+                width: image.width,
+                height: image.height,
+                data_url: image.preview_data_url.clone(),
+                status: if image.preview_data_url.is_some() {
+                    "available".to_string()
+                } else {
+                    "missing".to_string()
+                },
+            })
+            .collect::<Vec<_>>();
+
+        if attachments.is_empty() {
+            return;
+        }
+
+        if let Err(err) = self
+            .repo
+            .save_message_with_attachments(user_id, session_id, "user", visible_text, attachments)
+            .await
+        {
+            tracing::warn!(error = %err, "failed to persist image message attachments");
+        }
     }
 
     fn wrap_stream<S, R>(

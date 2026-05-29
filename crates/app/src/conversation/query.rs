@@ -7,8 +7,23 @@ use crate::conversation::ChatMessageRepositoryPort;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChatMessage {
+    pub id: String,
     pub role: String,
     pub content: String,
+    #[serde(default)]
+    pub attachments: Vec<ChatMessageAttachment>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChatMessageAttachment {
+    pub id: String,
+    pub kind: String,
+    pub mime_type: String,
+    pub size_bytes: u64,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub data_url: Option<String>,
+    pub status: String,
 }
 
 #[derive(Clone)]

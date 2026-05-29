@@ -69,6 +69,8 @@ pub struct ConversationImageAttachment {
     pub size_bytes: u64,
     pub width: Option<u32>,
     pub height: Option<u32>,
+    #[serde(default)]
+    pub preview_data_url: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +97,16 @@ pub struct EphemeralImageData {
     pub asset_id: String,
     pub mime_type: String,
     pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SaveMessageImageAttachment {
+    pub mime_type: String,
+    pub size_bytes: u64,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    pub data_url: Option<String>,
+    pub status: String,
 }
 #[derive(Debug, Clone)]
 pub struct SendUserMessageResult {
