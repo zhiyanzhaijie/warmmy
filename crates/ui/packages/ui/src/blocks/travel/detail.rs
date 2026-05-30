@@ -1,8 +1,9 @@
 use api::meal;
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{ArrowLeft, CalendarDays, CircleGauge, ListChecks, Soup, Target};
+use dioxus_icons::lucide::{ArrowLeft, CalendarDays, Flame, ListChecks};
 
 use crate::blocks::CurrentUserContext;
+use crate::components::common::MarkdownContent;
 
 use super::metrics::{compact_number, detail_date_label, parse_metrics};
 
@@ -32,16 +33,19 @@ pub fn TravelDetailBlock(summary_id: String) -> Element {
     });
 
     rsx! {
-        div { class: "h-full min-h-0 overflow-y-auto px-4 py-5 pb-28 md:px-8 md:py-8 md:pb-12",
-            div { class: "mx-auto flex w-full max-w-4xl flex-col gap-5",
-                button {
-                    r#type: "button",
-                    onclick: move |_| {
-                        nav.push("/travel");
-                    },
-                    class: "inline-flex w-fit items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground transition-opacity active:opacity-80",
-                    ArrowLeft { size: 16 }
-                    "返回旅程"
+        div { class: "relative h-full min-h-0 overflow-y-auto px-4 py-4 pb-28 md:px-8 md:py-8 md:pb-12",
+            div { class: "relative mx-auto flex w-full max-w-5xl flex-col gap-4 md:gap-5",
+                div { class: "flex items-center justify-between gap-4",
+                    button {
+                        r#type: "button",
+                        onclick: move |_| {
+                            nav.push("/travel");
+                        },
+                        class: "inline-flex items-center gap-2 rounded-full border border-border bg-card/80 px-3 py-2 text-sm text-foreground transition-opacity active:opacity-80",
+                        ArrowLeft { size: 16 }
+                        "返回"
+                    }
+                    p { class: "text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Travel summary" }
                 }
 
                 if !error().is_empty() {
@@ -51,8 +55,8 @@ pub fn TravelDetailBlock(summary_id: String) -> Element {
                 } else if loading() {
                     DetailSkeleton {}
                 } else if let Some(item) = summary() {
-                    SummaryDetail { summary: item.clone() }
-                    MealLogsSection {
+                    SummaryDetail {
+                        summary: item.clone(),
                         user_id: user_id.clone(),
                         session_id: item.session_id.clone(),
                     }
@@ -71,7 +75,7 @@ pub fn TravelDetailBlock(summary_id: String) -> Element {
 }
 
 #[component]
-fn SummaryDetail(summary: meal::MealDaySummaryDTO) -> Element {
+fn SummaryDetail(summary: meal::MealDaySummaryDTO, user_id: String, session_id: String) -> Element {
     let metrics = parse_metrics(&summary);
     let total = compact_number(summary.overall_score);
     let nutrition = compact_number(summary.nutrition_score);
@@ -80,52 +84,60 @@ fn SummaryDetail(summary: meal::MealDaySummaryDTO) -> Element {
     let protein = compact_number(metrics.total_nutrition.protein_g);
     let fat = compact_number(metrics.total_nutrition.fat_g);
     let carbs = compact_number(metrics.total_nutrition.carbs_g);
+    let summary_content = use_signal(|| summary.content.clone());
 
     rsx! {
-        section { class: "rounded-xl border border-border bg-card p-5 md:p-8",
-            div { class: "flex flex-col gap-6 md:flex-row md:items-start md:justify-between",
-                div { class: "max-w-2xl",
-                    p { class: "mb-3 flex items-center gap-2 text-sm text-muted-foreground",
-                        CalendarDays { size: 16 }
-                        "{detail_date_label(&summary.session_id)}"
-                    }
-                    h1 { class: "font-sans text-5xl font-semibold leading-none tracking-[-1.2px] text-foreground md:text-6xl",
-                        "Summary"
-                    }
-                    p { class: "mt-4 text-base leading-relaxed text-muted-foreground",
-                        "这一天的饮食总结、目标匹配和营养概况。"
-                    }
+        section { class: "rounded-2xl border border-border bg-card/85 p-4 md:p-5",
+            div { class: "flex items-start justify-between gap-4",
+                p { class: "inline-flex items-center gap-2 rounded-full border border-border bg-background/70 px-3 py-1 text-xs text-muted-foreground",
+                    CalendarDays { size: 14 }
+                    "{detail_date_label(&summary.session_id)}"
                 }
-                div { class: "rounded-lg border border-border bg-background px-5 py-4 text-right",
-                    p { class: "text-sm text-muted-foreground", "总分" }
-                    p { class: "mt-1 text-5xl font-semibold leading-none tracking-[-1px] text-foreground",
+                p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Scores" }
+            }
+            div { class: "mt-5 grid grid-cols-[1.15fr_1fr] gap-2 md:grid-cols-[1.2fr_repeat(3,0.8fr)]",
+                div { class: "rounded-xl border border-border bg-background/70 px-4 py-4",
+                    p { class: "text-[11px] text-muted-foreground", "总分" }
+                    p { class: "mt-1 text-5xl font-semibold leading-none tracking-[-1px] text-foreground md:text-6xl",
                         "{total}"
                     }
                 }
+                MiniSignal { label: "营养".to_string(), value: nutrition }
+                MiniSignal { label: "期望".to_string(), value: expectation }
+                MiniSignal { label: "餐次".to_string(), value: metrics.meal_count.to_string() }
             }
-
-            div { class: "mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3",
-                ScoreCard { icon: "gauge".to_string(), label: "营养分".to_string(), value: nutrition }
-                ScoreCard { icon: "target".to_string(), label: "期望匹配".to_string(), value: expectation }
-                ScoreCard { icon: "meal".to_string(), label: "餐次".to_string(), value: metrics.meal_count.to_string() }
-            }
-        }
-
-        section { class: "rounded-xl border border-border bg-card p-5 md:p-8",
-            h2 { class: "text-3xl font-semibold tracking-[-0.6px] text-foreground", "当天记录" }
-            div { class: "mt-5 whitespace-pre-wrap text-base leading-relaxed text-foreground",
-                "{summary.content}"
-            }
-        }
-
-        section { class: "rounded-xl border border-border bg-card p-5 md:p-8",
-            h2 { class: "text-3xl font-semibold tracking-[-0.6px] text-foreground", "营养概况" }
-            div { class: "mt-5 grid grid-cols-2 gap-3 md:grid-cols-4",
+            div { class: "mt-3 grid grid-cols-2 gap-2 md:grid-cols-4",
                 NutritionTile { label: "热量".to_string(), value: calories, unit: "kcal".to_string() }
                 NutritionTile { label: "蛋白质".to_string(), value: protein, unit: "g".to_string() }
                 NutritionTile { label: "脂肪".to_string(), value: fat, unit: "g".to_string() }
                 NutritionTile { label: "碳水".to_string(), value: carbs, unit: "g".to_string() }
             }
+        }
+
+        MealLogsSection {
+            user_id,
+            session_id,
+        }
+
+        section { class: "rounded-2xl border border-border bg-card/85 p-4 md:p-5",
+            div { class: "mb-4 flex items-center justify-between gap-4",
+                p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Warmmy says" }
+                Flame { size: 20, class: "text-muted-foreground" }
+            }
+            MarkdownContent {
+                src: summary_content,
+                class: "text-sm leading-relaxed text-foreground md:text-[0.95rem]".to_string()
+            }
+        }
+    }
+}
+
+#[component]
+fn MiniSignal(label: String, value: String) -> Element {
+    rsx! {
+        div { class: "rounded-xl border border-border bg-background/70 px-3 py-3",
+            p { class: "text-[11px] text-muted-foreground", "{label}" }
+            p { class: "mt-1 text-2xl font-semibold leading-none tracking-[-0.4px] text-foreground", "{value}" }
         }
     }
 }
@@ -151,16 +163,16 @@ fn MealLogsSection(user_id: String, session_id: String) -> Element {
     });
 
     rsx! {
-        section { class: "rounded-xl border border-border bg-card p-5 md:p-8",
+        section { class: "rounded-2xl border border-border bg-card/75 p-4 md:p-5",
             div { class: "flex items-start justify-between gap-4",
                 div {
-                    p { class: "mb-3 flex items-center gap-2 text-sm text-muted-foreground",
+                    p { class: "mb-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground",
                         ListChecks { size: 16 }
                         "Meal logs"
                     }
                     h2 { class: "text-3xl font-semibold tracking-[-0.6px] text-foreground", "当天餐食" }
                 }
-                div { class: "rounded-full border border-border bg-background px-3 py-1 text-sm text-muted-foreground",
+                div { class: "rounded-full border border-border bg-background/70 px-3 py-1 text-sm font-semibold text-foreground",
                     "{logs().len()}"
                 }
             }
@@ -170,7 +182,7 @@ fn MealLogsSection(user_id: String, session_id: String) -> Element {
                     "{error}"
                 }
             } else if loading() {
-                div { class: "mt-5 grid grid-cols-1 gap-3",
+                div { class: "mt-4 grid grid-cols-1 gap-2",
                     for _ in 0..3 {
                         div { class: "h-28 animate-pulse rounded-lg border border-border bg-muted" }
                     }
@@ -198,27 +210,29 @@ fn MealLogCard(item: meal::MealRecordDTO) -> Element {
     let carbs = compact_number(item.nutrition.carbs_g);
 
     rsx! {
-        article { class: "rounded-lg border border-border bg-background p-4",
-            div { class: "flex flex-col gap-3 md:flex-row md:items-start md:justify-between",
-                div { class: "min-w-0 flex-1",
-                    div { class: "flex items-center gap-2",
-                        span { class: "rounded-full border border-border bg-card px-3 py-1 text-sm text-foreground",
-                            "{day_cycle_label(&item.day_cycle)}"
+        article { class: "overflow-hidden rounded-xl border border-border bg-background/70",
+            div { class: "grid grid-cols-1 md:grid-cols-[0.8fr_1.2fr]",
+                div { class: "min-w-0",
+                    div { class: "flex h-full flex-col justify-between gap-4 px-4 py-4",
+                        div { class: "flex items-center gap-2",
+                            span { class: "rounded-full border border-border bg-card px-3 py-1 text-sm font-semibold text-foreground",
+                                "{day_cycle_label(&item.day_cycle)}"
+                            }
+                            span { class: "text-sm text-muted-foreground", "{item.foods.len()} foods" }
                         }
-                        span { class: "text-sm text-muted-foreground", "{item.foods.len()} foods" }
-                    }
-                    div { class: "mt-3 flex flex-wrap gap-2",
-                        for food in item.foods.clone() {
-                            span { class: "rounded-md border border-border bg-card px-3 py-1.5 text-sm text-foreground",
-                                "{food.name}"
-                                span { class: "ml-1 text-muted-foreground",
-                                    "{compact_number(food.quantity)}{food.unit}"
+                        div { class: "mt-3 flex flex-wrap gap-2",
+                            for food in item.foods.clone() {
+                                span { class: "rounded-lg border border-border bg-card/80 px-3 py-1.5 text-sm text-foreground",
+                                    "{food.name}"
+                                    span { class: "ml-1 text-muted-foreground",
+                                        "{compact_number(food.quantity)}{food.unit}"
+                                    }
                                 }
                             }
                         }
                     }
                 }
-                div { class: "grid min-w-full grid-cols-4 gap-2 md:min-w-[18rem]",
+                div { class: "grid grid-cols-4 border-t border-border bg-card/60 md:border-l md:border-t-0",
                     TinyNutrition { label: "热量".to_string(), value: calories, unit: "kcal".to_string() }
                     TinyNutrition { label: "蛋白".to_string(), value: protein, unit: "g".to_string() }
                     TinyNutrition { label: "脂肪".to_string(), value: fat, unit: "g".to_string() }
@@ -232,31 +246,12 @@ fn MealLogCard(item: meal::MealRecordDTO) -> Element {
 #[component]
 fn TinyNutrition(label: String, value: String, unit: String) -> Element {
     rsx! {
-        div { class: "rounded-md border border-border bg-card px-2 py-2 text-center",
-            p { class: "text-xs text-muted-foreground", "{label}" }
+        div { class: "border-r border-border px-2 py-3 text-center last:border-r-0 md:py-4",
+            p { class: "text-[11px] text-muted-foreground", "{label}" }
             p { class: "mt-1 text-sm text-foreground",
                 "{value}"
-                span { class: "ml-0.5 text-xs text-muted-foreground", "{unit}" }
+                span { class: "ml-0.5 text-[11px] text-muted-foreground", "{unit}" }
             }
-        }
-    }
-}
-
-#[component]
-fn ScoreCard(icon: String, label: String, value: String) -> Element {
-    rsx! {
-        div { class: "rounded-lg border border-border bg-background p-4",
-            div { class: "mb-3 flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card text-muted-foreground",
-                if icon == "gauge" {
-                    CircleGauge { size: 17 }
-                } else if icon == "target" {
-                    Target { size: 17 }
-                } else {
-                    Soup { size: 17 }
-                }
-            }
-            p { class: "text-sm text-muted-foreground", "{label}" }
-            p { class: "mt-1 text-3xl font-semibold tracking-[-0.6px] text-foreground", "{value}" }
         }
     }
 }
@@ -264,7 +259,7 @@ fn ScoreCard(icon: String, label: String, value: String) -> Element {
 #[component]
 fn NutritionTile(label: String, value: String, unit: String) -> Element {
     rsx! {
-        div { class: "rounded-lg border border-border bg-background p-4",
+        div { class: "rounded-xl border border-border bg-background/70 p-4",
             p { class: "text-sm text-muted-foreground", "{label}" }
             p { class: "mt-2 text-2xl font-semibold tracking-[-0.4px] text-foreground",
                 "{value}"
