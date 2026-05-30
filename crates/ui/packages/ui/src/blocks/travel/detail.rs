@@ -33,8 +33,8 @@ pub fn TravelDetailBlock(summary_id: String) -> Element {
     });
 
     rsx! {
-        div { class: "relative h-full min-h-0 overflow-y-auto px-4 py-4 pb-28 md:px-8 md:py-8 md:pb-12",
-            div { class: "relative mx-auto flex w-full max-w-5xl flex-col gap-4 md:gap-5",
+        div { class: "relative flex h-full min-h-0 flex-col px-4 py-4 md:px-8 md:py-8",
+            div { class: "relative mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-4 md:gap-5",
                 div { class: "flex items-center justify-between gap-4",
                     button {
                         r#type: "button",
@@ -48,24 +48,26 @@ pub fn TravelDetailBlock(summary_id: String) -> Element {
                     p { class: "text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Travel summary" }
                 }
 
-                if !error().is_empty() {
-                    div { class: "rounded-xl border border-border bg-card px-4 py-3 text-sm text-destructive",
-                        "{error}"
-                    }
-                } else if loading() {
-                    DetailSkeleton {}
-                } else if let Some(item) = summary() {
-                    SummaryDetail {
-                        summary: item.clone(),
-                        user_id: user_id.clone(),
-                        session_id: item.session_id.clone(),
-                    }
-                } else {
-                    div { class: "rounded-xl border border-dashed border-border bg-card px-5 py-10 text-center",
-                        CalendarDays { size: 32, class: "mx-auto text-muted-foreground" }
-                        h1 { class: "mt-4 text-3xl font-semibold tracking-[-0.6px] text-foreground", "没有找到这一天" }
-                        p { class: "mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground",
-                            "这个 summary 可能还没有生成，或者当前用户下没有对应记录。"
+                div { class: "min-h-0 flex-1 overflow-y-auto pb-28 md:pb-12",
+                    if !error().is_empty() {
+                        div { class: "rounded-xl border border-border bg-card px-4 py-3 text-sm text-destructive",
+                            "{error}"
+                        }
+                    } else if loading() {
+                        DetailSkeleton {}
+                    } else if let Some(item) = summary() {
+                        SummaryDetail {
+                            summary: item.clone(),
+                            user_id: user_id.clone(),
+                            session_id: item.session_id.clone(),
+                        }
+                    } else {
+                        div { class: "rounded-xl border border-dashed border-border bg-card px-5 py-10 text-center",
+                            CalendarDays { size: 32, class: "mx-auto text-muted-foreground" }
+                            h1 { class: "mt-4 text-3xl font-semibold tracking-[-0.6px] text-foreground", "没有找到这一天" }
+                            p { class: "mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground",
+                                "这个 summary 可能还没有生成，或者当前用户下没有对应记录。"
+                            }
                         }
                     }
                 }

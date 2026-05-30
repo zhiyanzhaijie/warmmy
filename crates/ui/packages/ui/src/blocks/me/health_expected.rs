@@ -1,6 +1,6 @@
 use api::user;
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{ArrowLeft, Check, Flame, Pencil, Plus, RefreshCw, X};
+use dioxus_icons::lucide::{ArrowLeft, Check, Flame, Pencil, Plus, X};
 
 use crate::blocks::CurrentUserContext;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
@@ -109,8 +109,8 @@ pub fn HealthExpectationEditBlock() -> Element {
     let nav = navigator();
 
     rsx! {
-        div { class: "h-full min-h-0 overflow-y-auto px-4 py-5 pb-28 md:px-8 md:py-8 md:pb-12",
-            div { class: "mx-auto flex w-full max-w-4xl flex-col gap-5",
+        div { class: "flex h-full min-h-0 flex-col px-4 py-5 md:px-8 md:py-8",
+            div { class: "mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-5",
                 div { class: "flex items-center justify-between gap-3",
                     Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3", onclick: move |_| {
                         nav.push("/me");
@@ -120,9 +120,11 @@ pub fn HealthExpectationEditBlock() -> Element {
                     }
                     p { class: "text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Expectations" }
                 }
-                HealthExpectedBlock {
-                    user_id: current_user_id,
-                    on_loaded: move |value| items.set(value),
+                div { class: "min-h-0 flex-1 overflow-y-auto pb-28 md:pb-12",
+                    HealthExpectedBlock {
+                        user_id: current_user_id,
+                        on_loaded: move |value| items.set(value),
+                    }
                 }
             }
         }
@@ -164,23 +166,6 @@ pub fn HealthExpectedBlock(
             });
         }
     });
-
-    let refresh_user_id = user_id.clone();
-    let refresh = move |_| {
-        let request_user_id = refresh_user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            message.set(String::new());
-            match user::list_health_expectations(request_user_id.clone()).await {
-                Ok(items) => {
-                    on_loaded.call(items.clone());
-                    expectations.set(items);
-                }
-                Err(err) => message.set(format!("加载健康期望失败: {err}")),
-            }
-            loading.set(false);
-        });
-    };
 
     let open_new = move |_| {
         reset_expectation_form(
@@ -247,13 +232,6 @@ pub fn HealthExpectedBlock(
                         p { class: "mt-2 text-sm leading-relaxed text-muted-foreground", "阶段性目标用小卡片承载。点击卡片编辑，新增只占一个按钮。" }
                     }
                     div { class: "flex shrink-0 gap-2",
-                        Button {
-                            variant: ButtonVariant::Ghost,
-                            size: ButtonSize::IconSm,
-                            class: "rounded-full border border-border",
-                            onclick: refresh,
-                            RefreshCw { size: 15 }
-                        }
                         Button {
                             size: ButtonSize::IconSm,
                             class: "rounded-full bg-foreground text-background hover:opacity-90",
@@ -333,7 +311,7 @@ pub fn HealthExpectedBlock(
                             DialogTitle {
                                 if expectation_id().trim().is_empty() { "新增健康期望" } else { "编辑健康期望" }
                             }
-                            DialogDescription { "健康期望会作为长期事实进入 agent 上下文。" }
+                            DialogDescription { "阶段目标与优先级。" }
                         }
                         Button {
                             variant: ButtonVariant::Ghost,
@@ -386,7 +364,7 @@ pub fn HealthExpectedBlock(
                             }
                         }
                     }
-                    div { class: "flex shrink-0 flex-col gap-2 border-t border-border px-4 py-4 sm:flex-row sm:justify-end md:px-6",
+                    div { class: "flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-4 md:px-6",
                         Button {
                             variant: ButtonVariant::Ghost,
                             class: "rounded-xl border border-border px-4",
@@ -397,7 +375,7 @@ pub fn HealthExpectedBlock(
                             class: "rounded-xl bg-foreground px-5 text-background shadow-sm hover:opacity-90",
                             disabled: saving(),
                             onclick: save,
-                            if saving() { "保存中..." } else { "保存健康期望" }
+                            if saving() { "保存中..." } else { "保存" }
                         }
                     }
                 }

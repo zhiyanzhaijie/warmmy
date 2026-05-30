@@ -98,8 +98,8 @@ pub fn DietPreferenceEditBlock() -> Element {
     let nav = navigator();
 
     rsx! {
-        div { class: "h-full min-h-0 overflow-y-auto px-4 py-5 pb-28 md:px-8 md:py-8 md:pb-12",
-            div { class: "mx-auto flex w-full max-w-3xl flex-col gap-5",
+        div { class: "flex h-full min-h-0 flex-col px-4 py-5 md:px-8 md:py-8",
+            div { class: "mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col gap-5",
                 div { class: "flex items-center justify-between gap-3",
                     Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3", onclick: move |_| {
                         nav.push("/me");
@@ -109,9 +109,11 @@ pub fn DietPreferenceEditBlock() -> Element {
                     }
                     p { class: "text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Preferences" }
                 }
-                DietPreferenceBlock {
-                    user_id: current_user_id,
-                    on_saved: move |value| preferences.set(Some(value)),
+                div { class: "min-h-0 flex-1 overflow-y-auto pb-28 md:pb-12",
+                    DietPreferenceBlock {
+                        user_id: current_user_id,
+                        on_saved: move |value| preferences.set(Some(value)),
+                    }
                 }
             }
         }
@@ -210,7 +212,7 @@ pub fn DietPreferenceBlock(
                         "{preferred_cuisines().len() + avoided_cuisines().len()} tags"
                     }
                 }
-                p { class: "text-sm leading-relaxed text-muted-foreground", "保留在首页直接编辑，因为它是餐食建议最常被修正的长期事实。" }
+                p { class: "text-sm leading-relaxed text-muted-foreground", "输入多个条目后点击右侧加号，保存时会写入长期偏好。" }
             }
             CardContent { class: "space-y-4 px-5 pb-5 pt-5 md:px-6 md:pb-6",
                 BlockMessage { message: message() }

@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_icons::lucide::X;
+use dioxus_icons::lucide::{Plus, X};
 
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::input::Input;
@@ -155,7 +155,7 @@ pub fn TagListInput(
     rsx! {
         div { class: "flex flex-col gap-2",
             span { class: "flex items-center gap-2 text-sm font-medium text-foreground/80", {icon} "{label}" }
-            div { class: "rounded-[1.5rem] border border-border bg-background p-3",
+            div { class: "rounded-[1.25rem] border border-border bg-background p-3",
                 div { class: "mb-3 flex min-h-8 flex-wrap gap-2",
                     if values.is_empty() {
                         span { class: "rounded-full border border-dashed border-border px-3 py-1 text-xs text-muted-foreground", "暂无条目" }
@@ -177,7 +177,7 @@ pub fn TagListInput(
                 }
                 div { class: "flex flex-col gap-2 sm:flex-row sm:items-center",
                     Input {
-                        class: "min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-3 text-sm shadow-none",
+                        class: "min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-2.5 text-sm shadow-none",
                         value: draft(),
                         placeholder,
                         oninput: move |e: FormEvent| draft.set(e.value()),
@@ -190,14 +190,14 @@ pub fn TagListInput(
                     }
                     Button {
                         variant: ButtonVariant::Ghost,
-                        size: ButtonSize::Sm,
-                        class: "rounded-xl border border-border px-4",
+                        size: ButtonSize::IconSm,
+                        class: "shrink-0 rounded-xl border border-border",
                         onclick: move |_| oncommit.call(()),
-                        "添加"
+                        Plus { size: 16 }
                     }
                 }
-                p { class: "mt-3 text-xs leading-relaxed text-muted-foreground", "支持使用英文逗号、中文逗号、分号或换行一次输入多个条目。" }
             }
+            p { class: "px-1 text-xs leading-relaxed text-muted-foreground/75", "支持使用英文逗号、中文逗号、分号或换行一次输入多个条目。" }
         }
     }
 }

@@ -1,9 +1,10 @@
 use api::user;
 use dioxus::prelude::*;
-use dioxus_icons::lucide::{ArrowLeft, HeartHandshake, Pencil, Save, Trash2, UserPlus};
+use dioxus_icons::lucide::{ArrowLeft, HeartHandshake, Pencil, Save, Trash2, UserPlus, X};
 
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
+use crate::components::ui::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
 
 use super::common::{
     merge_tags, BlockMessage, LabeledInput, LabeledTextarea, MiniTag, TagListInput,
@@ -123,8 +124,8 @@ pub fn CompanionsBlock() -> Element {
     let current_user = use_context::<CurrentUserContext>();
     let user_id = (current_user.user_id)();
     rsx! {
-        div { class: "h-full min-h-0 overflow-y-auto px-4 py-5 pb-28 md:px-8 md:py-8 md:pb-12",
-            div { class: "mx-auto flex w-full max-w-5xl flex-col gap-5",
+        div { class: "flex h-full min-h-0 flex-col px-4 py-5 md:px-8 md:py-8",
+            div { class: "mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-5",
                 CompanionsEditor { user_id }
             }
         }
@@ -135,6 +136,7 @@ pub fn CompanionsBlock() -> Element {
 fn CompanionsEditor(user_id: String) -> Element {
     let mut loading = use_signal(|| false);
     let mut saving = use_signal(|| false);
+    let mut dialog_open = use_signal(|| false);
     let mut companions = use_signal(Vec::<user::DiningCompanionDTO>::new);
     let editing_id = use_signal(|| None::<String>);
     let display_name = use_signal(String::new);
@@ -177,6 +179,7 @@ fn CompanionsEditor(user_id: String) -> Element {
             health_notes_input,
         );
         message.set(String::new());
+        dialog_open.set(true);
     };
 
     let commit_preferred = move |_| {
@@ -222,6 +225,7 @@ fn CompanionsEditor(user_id: String) -> Element {
                         health_notes,
                         health_notes_input,
                     );
+                    dialog_open.set(false);
                     message.set("关系人已保存".to_string());
                 }
                 Err(err) => message.set(format!("保存关系人失败: {err}")),
@@ -240,91 +244,119 @@ fn CompanionsEditor(user_id: String) -> Element {
             }
             p { class: "text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Companions" }
         }
-        Card { class: "rounded-[2rem] border border-border bg-card px-0 py-0 shadow-none",
-            CardHeader { class: "gap-3 px-5 pb-0 pt-5 md:px-6 md:pt-6",
-                div { class: "flex items-start justify-between gap-3",
-                    div {
-                        CardTitle { class: "flex items-center gap-2 text-xl font-semibold tracking-[-0.3px]",
-                            HeartHandshake { size: 18 }
-                            "常一起吃饭的人"
+        div { class: "min-h-0 flex-1 overflow-y-auto pb-28 md:pb-12",
+            Card { class: "rounded-[2rem] border border-border bg-card px-0 py-0 shadow-none",
+                CardHeader { class: "gap-3 px-5 pb-0 pt-5 md:px-6 md:pt-6",
+                    div { class: "flex items-start justify-between gap-3",
+                        div {
+                            CardTitle { class: "flex items-center gap-2 text-xl font-semibold tracking-[-0.3px]",
+                                HeartHandshake { size: 18 }
+                                "常一起吃饭的人"
+                            }
+                            p { class: "mt-2 text-sm leading-relaxed text-muted-foreground", "这些人不会切换成当前用户，只会在多人用餐建议时作为关系链约束。" }
                         }
-                        p { class: "mt-2 text-sm leading-relaxed text-muted-foreground", "这些人不会切换成当前用户，只会在多人用餐建议时作为关系链约束。" }
+                        Button { size: ButtonSize::IconSm, class: "rounded-full bg-foreground text-background hover:opacity-90", onclick: start_new,
+                            UserPlus { size: 16 }
+                        }
                     }
-                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, class: "rounded-xl border border-border px-3", onclick: start_new,
-                        UserPlus { size: 16 }
-                        "新增"
+                }
+                CardContent { class: "space-y-5 px-5 pb-5 pt-5 md:px-6 md:pb-6",
+                    BlockMessage { message: message() }
+
+                    div { class: "grid grid-cols-1 gap-3 md:grid-cols-2",
+                        if companions().is_empty() && !loading() {
+                            div { class: "rounded-[1.5rem] border border-dashed border-border bg-background/70 p-4 text-sm leading-relaxed text-muted-foreground md:col-span-2",
+                                "还没有添加家人或朋友。添加后，agent 可以在聚餐、家庭餐建议中一起考虑他们的偏好。"
+                            }
+                        }
+                        for companion in companions() {
+                            CompanionCard {
+                                key: "{companion.id}",
+                                companion: companion.clone(),
+                                onedit: move |item| {
+                                    apply_companion(
+                                        item,
+                                        editing_id,
+                                        display_name,
+                                        relationship,
+                                        introduction,
+                                        preferred,
+                                        preferred_input,
+                                        avoided,
+                                        avoided_input,
+                                        health_notes,
+                                        health_notes_input,
+                                    );
+                                    dialog_open.set(true);
+                                },
+                                ondelete: {
+                                    let request_user_id = user_id.clone();
+                                    move |companion_id: String| {
+                                        let request_user_id = request_user_id.clone();
+                                        spawn(async move {
+                                            saving.set(true);
+                                            message.set(String::new());
+                                            match user::delete_dining_companion(request_user_id, companion_id).await {
+                                                Ok(items) => {
+                                                    companions.set(items);
+                                                    message.set("关系人已删除".to_string());
+                                                }
+                                                Err(err) => message.set(format!("删除关系人失败: {err}")),
+                                            }
+                                            saving.set(false);
+                                        });
+                                    }
+                                },
+                            }
+                        }
                     }
                 }
             }
-            CardContent { class: "space-y-5 px-5 pb-5 pt-5 md:px-6 md:pb-6",
-                BlockMessage { message: message() }
+        }
 
-                div { class: "grid grid-cols-1 gap-3 md:grid-cols-2",
-                    if companions().is_empty() && !loading() {
-                        div { class: "rounded-[1.5rem] border border-dashed border-border bg-background/70 p-4 text-sm leading-relaxed text-muted-foreground md:col-span-2",
-                            "还没有添加家人或朋友。添加后，agent 可以在聚餐、家庭餐建议中一起考虑他们的偏好。"
+        DialogRoot {
+            open: dialog_open(),
+            on_open_change: move |open| dialog_open.set(open),
+            DialogContent { class: "max-h-[min(86dvh,760px)] w-[calc(100vw-1rem)] max-w-[760px] overflow-hidden rounded-[1.5rem] border border-border bg-card p-0 text-left shadow-2xl sm:w-[calc(100vw-2rem)] sm:rounded-[2rem]",
+                div { class: "flex min-h-0 max-h-[min(86dvh,760px)] flex-col",
+                    div { class: "flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-4 md:px-6",
+                        div {
+                            DialogTitle {
+                                if editing_id().is_some() { "编辑关系人" } else { "新增关系人" }
+                            }
+                            DialogDescription { "偏好、忌口与健康备注。" }
+                        }
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            size: ButtonSize::IconSm,
+                            class: "rounded-full border border-border",
+                            onclick: move |_| dialog_open.set(false),
+                            X { size: 16 }
                         }
                     }
-                    for companion in companions() {
-                        CompanionCard {
-                            key: "{companion.id}",
-                            companion: companion.clone(),
-                            onedit: move |item| apply_companion(
-                                item,
-                                editing_id,
-                                display_name,
-                                relationship,
-                                introduction,
-                                preferred,
-                                preferred_input,
-                                avoided,
-                                avoided_input,
-                                health_notes,
-                                health_notes_input,
-                            ),
-                            ondelete: {
-                                let request_user_id = user_id.clone();
-                                move |companion_id: String| {
-                                    let request_user_id = request_user_id.clone();
-                                    spawn(async move {
-                                        saving.set(true);
-                                        message.set(String::new());
-                                        match user::delete_dining_companion(request_user_id, companion_id).await {
-                                            Ok(items) => {
-                                                companions.set(items);
-                                                message.set("关系人已删除".to_string());
-                                            }
-                                            Err(err) => message.set(format!("删除关系人失败: {err}")),
-                                        }
-                                        saving.set(false);
-                                    });
-                                }
-                            },
+                    div { class: "min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6",
+                        div { class: "grid grid-cols-1 gap-3 md:grid-cols-2",
+                            LabeledInput { label: "Name", icon: rsx! { HeartHandshake { size: 16 } }, value: display_name, placeholder: "例如：妈妈、朋友 A" }
+                            LabeledInput { label: "Relationship", icon: rsx! { HeartHandshake { size: 16 } }, value: relationship, placeholder: "家人 / 朋友 / 室友" }
+                        }
+                        LabeledTextarea { label: "Introduction", icon: rsx! { HeartHandshake { size: 16 } }, value: introduction, placeholder: "例如：喜欢清淡，晚餐通常一起吃。" }
+                        div { class: "grid grid-cols-1 gap-4 xl:grid-cols-3",
+                            TagListInput { label: "偏好", icon: rsx! { HeartHandshake { size: 16 } }, values: preferred(), draft: preferred_input, placeholder: "清淡, 粤菜", oncommit: commit_preferred, onremove: move |value| preferred.write().retain(|item| item != &value) }
+                            TagListInput { label: "忌口", icon: rsx! { Trash2 { size: 16 } }, values: avoided(), draft: avoided_input, placeholder: "辣椒, 牛肉", oncommit: commit_avoided, onremove: move |value| avoided.write().retain(|item| item != &value) }
+                            TagListInput { label: "健康备注", icon: rsx! { HeartHandshake { size: 16 } }, values: health_notes(), draft: health_notes_input, placeholder: "控糖, 少盐", oncommit: commit_health_notes, onremove: move |value| health_notes.write().retain(|item| item != &value) }
                         }
                     }
-                }
-
-                div { class: "rounded-[1.5rem] border border-border bg-background/70 p-4 md:p-5",
-                    div { class: "mb-4 flex items-center justify-between gap-3",
-                        h3 { class: "text-base font-semibold text-foreground", if editing_id().is_some() { "编辑关系人" } else { "添加关系人" } }
-                        if editing_id().is_some() {
-                            Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, class: "rounded-xl border border-border", onclick: start_new, "取消编辑" }
+                    div { class: "flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-4 md:px-6",
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            class: "rounded-xl border border-border px-4",
+                            onclick: move |_| dialog_open.set(false),
+                            "取消"
                         }
-                    }
-                    div { class: "grid grid-cols-1 gap-3 md:grid-cols-2",
-                        LabeledInput { label: "Name", icon: rsx! { HeartHandshake { size: 16 } }, value: display_name, placeholder: "例如：妈妈、朋友 A" }
-                        LabeledInput { label: "Relationship", icon: rsx! { HeartHandshake { size: 16 } }, value: relationship, placeholder: "家人 / 朋友 / 室友" }
-                    }
-                    div { class: "mt-3" }
-                    LabeledTextarea { label: "Introduction", icon: rsx! { HeartHandshake { size: 16 } }, value: introduction, placeholder: "例如：喜欢清淡，晚餐通常一起吃。" }
-                    div { class: "mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3",
-                        TagListInput { label: "偏好", icon: rsx! { HeartHandshake { size: 16 } }, values: preferred(), draft: preferred_input, placeholder: "清淡, 粤菜", oncommit: commit_preferred, onremove: move |value| preferred.write().retain(|item| item != &value) }
-                        TagListInput { label: "忌口", icon: rsx! { Trash2 { size: 16 } }, values: avoided(), draft: avoided_input, placeholder: "辣椒, 牛肉", oncommit: commit_avoided, onremove: move |value| avoided.write().retain(|item| item != &value) }
-                        TagListInput { label: "健康备注", icon: rsx! { HeartHandshake { size: 16 } }, values: health_notes(), draft: health_notes_input, placeholder: "控糖, 少盐", oncommit: commit_health_notes, onremove: move |value| health_notes.write().retain(|item| item != &value) }
-                    }
-                    Button { class: "mt-5 w-full rounded-xl bg-foreground text-background shadow-sm hover:opacity-90 sm:w-auto", disabled: saving() || loading(), onclick: save,
-                        Save { size: 16 }
-                        if saving() { "保存中..." } else { "保存关系人" }
+                        Button { class: "rounded-xl bg-foreground px-5 text-background shadow-sm hover:opacity-90", disabled: saving() || loading(), onclick: save,
+                            Save { size: 16 }
+                            if saving() { "保存中..." } else { "保存" }
+                        }
                     }
                 }
             }
