@@ -5,3 +5,4 @@ pub mod dropdown_menu;
 pub mod input;
 pub mod sheet;
 pub mod skeleton;
+pub mod textarea;

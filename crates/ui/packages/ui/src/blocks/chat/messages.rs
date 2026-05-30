@@ -39,7 +39,7 @@ pub(super) fn ChatMessageList(has_pending_transition: bool) -> Element {
     rsx! {
         div {
             id: "chat-message-viewport",
-            class: "flex-1 min-h-0 overflow-y-auto space-y-5 px-4 py-5 md:px-6 md:py-6",
+            class: "flex-1 min-h-0 overflow-y-auto space-y-4 px-4 py-4 md:px-5 md:py-5",
             if CHAT_MESSAGES().is_empty() && has_pending_transition {
                 PendingChatPlaceholder {}
             } else {
@@ -78,7 +78,7 @@ fn ChatMessageBubble(message: ChatMessage) -> Element {
     if message.is_bot {
         rsx! {
             div {
-                class: "max-w-[90%] rounded-[1.5rem] rounded-tl-sm border border-border bg-background p-4 text-[15px] font-medium leading-relaxed text-foreground shadow-none md:max-w-[76%]",
+                class: "max-w-[92%] rounded-[1.5rem] rounded-tl-sm bg-card/80 p-4 text-[15px] font-medium leading-relaxed text-foreground shadow-none md:max-w-[76%]",
                 StreamMessage {
                     text: message.text,
                     is_skeleton: message.is_skeleton,
@@ -89,7 +89,7 @@ fn ChatMessageBubble(message: ChatMessage) -> Element {
     } else {
         rsx! {
             div {
-                class: "ml-auto max-w-[86%] rounded-[1.5rem] rounded-tr-sm bg-foreground p-4 text-[15px] font-medium leading-relaxed text-background shadow-sm whitespace-pre-wrap md:max-w-[70%]",
+                class: "ml-auto max-w-[88%] rounded-[1.5rem] rounded-tr-sm bg-foreground p-4 text-[0.80rem] font-medium leading-relaxed text-background shadow-sm whitespace-pre-wrap md:max-w-[70%]",
                 MessageAttachmentGrid { attachments: message.attachments }
                 if !message.text.trim().is_empty() {
                     div { class: "mt-3 first:mt-0", "{message.text}" }

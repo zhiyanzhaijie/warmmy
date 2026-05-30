@@ -3,6 +3,7 @@ use crate::blocks::{
     CHAT_INPUT, CHAT_MESSAGES, CHAT_NEXT_ID,
 };
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+use crate::components::ui::textarea::{Textarea, TextareaVariant};
 use crate::today_session_id;
 use chrono::{Datelike, Local};
 use dioxus::prelude::*;
@@ -71,23 +72,14 @@ pub fn HomeView() -> Element {
 
                     div { class: "w-full rounded-[2rem] border border-border bg-card/80 p-2 shadow-lg backdrop-blur",
                         div { class: "flex items-end gap-2 rounded-[1.5rem] border border-border bg-background/95 p-2 focus-within:shadow-md",
-                            textarea {
-                                id: "home-chat-input",
-                                class: "max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border-none bg-transparent px-4 py-3 text-base font-medium leading-relaxed text-foreground shadow-none outline-none placeholder:text-muted-foreground",
+                            Textarea {
+                                variant: TextareaVariant::Ghost,
+                                class: "max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border-none bg-transparent px-4 py-3 text-base font-medium leading-relaxed text-foreground shadow-none outline-none placeholder:text-muted-foreground placeholder:whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis [field-sizing:content]",
                                 rows: "1",
                                 placeholder: "记录餐食，或询问下一顿吃什么...",
                                 value: input(),
                                 oninput: move |e: FormEvent| {
                                     input.set(e.value());
-                                    document::eval(
-                                        r#"
-                                        const el = document.getElementById("home-chat-input");
-                                        if (el) {
-                                            el.style.height = "auto";
-                                            el.style.height = Math.min(el.scrollHeight, 160) + "px";
-                                        }
-                                        "#,
-                                    );
                                 },
                                 onkeydown: move |e: KeyboardEvent| {
                                     if e.key() == Key::Enter && !e.modifiers().shift() {

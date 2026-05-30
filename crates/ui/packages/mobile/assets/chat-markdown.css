@@ -1,16 +1,16 @@
 .warmmy-markdown {
   color: inherit;
-  font-size: 0.95rem;
+  font-size: 0.80rem;
   line-height: 1.72;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-.warmmy-markdown > :first-child {
+.warmmy-markdown> :first-child {
   margin-top: 0;
 }
 
-.warmmy-markdown > :last-child {
+.warmmy-markdown> :last-child {
   margin-bottom: 0;
 }
 
@@ -74,7 +74,7 @@
   list-style: decimal;
 }
 
-.warmmy-markdown li + li {
+.warmmy-markdown li+li {
   margin-top: 0.28rem;
 }
 
@@ -143,6 +143,7 @@
 }
 
 @keyframes chat-stream-caret-pulse {
+
   0%,
   100% {
     opacity: 0.24;

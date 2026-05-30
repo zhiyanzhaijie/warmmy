@@ -28,9 +28,9 @@ pub(super) fn SessionStrip(user_id: String, active_session_id: String) -> Elemen
 
     rsx! {
         div {
-            class: "overflow-x-auto px-4 pb-3 hide-scrollbar",
+            class: "overflow-x-auto px-4 pb-2 pt-1 md:px-5 hide-scrollbar",
             div {
-                class: "flex min-w-max gap-2",
+                class: "flex min-w-max gap-1.5 rounded-[1.15rem] bg-background/75 p-1",
                 for (day, has_session) in days {
                     SessionChip {
                         session_id: day,
@@ -53,8 +53,8 @@ fn SessionChip(session_id: String, active_session_id: String, has_session: bool)
             button {
                 r#type: "button",
                 disabled: true,
-                class: "inline-flex items-center gap-2 rounded-full bg-foreground px-3 py-2 text-xs font-semibold text-background shadow-sm opacity-95",
-                CalendarDays { size: 14 }
+                class: "inline-flex items-center gap-1.5 rounded-full bg-foreground px-2.5 py-1.5 text-xs font-semibold text-background shadow-sm",
+                CalendarDays { size: 13 }
                 "{label}"
             }
         }
@@ -64,8 +64,8 @@ fn SessionChip(session_id: String, active_session_id: String, has_session: bool)
             button {
                 r#type: "button",
                 onclick: move |_| { navigator().push(format!("/{sid}")); },
-                class: "inline-flex items-center gap-2 rounded-full border border-border bg-background px-3 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground",
-                CalendarDays { size: 14 }
+                class: "inline-flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:border-border hover:bg-card hover:text-foreground",
+                CalendarDays { size: 13 }
                 "{label}"
             }
         }
@@ -74,8 +74,8 @@ fn SessionChip(session_id: String, active_session_id: String, has_session: bool)
             button {
                 r#type: "button",
                 disabled: true,
-                class: "inline-flex items-center gap-2 rounded-full border border-dashed border-border bg-transparent px-3 py-2 text-xs font-semibold text-muted-foreground opacity-45",
-                CalendarDays { size: 14 }
+                class: "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs font-semibold text-muted-foreground opacity-35",
+                CalendarDays { size: 13 }
                 "{label}"
             }
         }

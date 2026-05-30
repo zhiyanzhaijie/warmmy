@@ -8,6 +8,8 @@ pub fn RootLayout() -> Element {
     let pending = use_signal(|| None);
     use_context_provider(|| ConversationTransitionContext { pending });
     provide_current_user_context();
+    let route = use_route::<Route>();
+    let is_chat = matches!(&route, Route::ChatDetailView { .. });
 
     rsx! {
         div {
@@ -15,7 +17,14 @@ pub fn RootLayout() -> Element {
             style: "--warmmy-bottom-nav-height: calc(88px + env(safe-area-inset-bottom));",
             SideNav {}
             div {
-                class: "relative h-[calc(100dvh-var(--warmmy-bottom-nav-height))] min-h-0 flex-1 overflow-hidden md:h-full",
+                class: format!(
+                    "relative min-h-0 flex-1 overflow-hidden transition-[height] duration-300 ease-out md:h-full {}",
+                    if is_chat {
+                        "h-[100dvh]"
+                    } else {
+                        "h-[calc(100dvh-var(--warmmy-bottom-nav-height))]"
+                    }
+                ),
                 div {
                     class: "h-full min-h-0",
                     Outlet::<Route> {}
@@ -51,9 +60,16 @@ fn BottomNav() -> Element {
 
     rsx! {
         div {
-            class: "fixed bottom-0 z-50 w-full overflow-hidden rounded-t-[2rem] border-t border-border bg-background md:hidden",
+            class: format!(
+                "fixed bottom-0 z-50 w-full overflow-hidden rounded-t-[2rem] bg-background transition-all duration-300 ease-out md:hidden {}",
+                if is_chat {
+                    "h-0 translate-y-full border-t-0 opacity-0"
+                } else {
+                    "h-[var(--warmmy-bottom-nav-height)] translate-y-0 border-t border-border opacity-100"
+                }
+            ),
             div {
-                class: "relative flex min-h-[88px] items-start justify-around px-4 pb-safe pt-3",
+                class: "relative flex h-full min-h-[88px] items-start justify-around px-4 pb-safe pt-3",
                 Link {
                     to: Route::HomeView {},
                     class: format!(

@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::rc::Rc;
 
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
-use crate::components::ui::input::Input;
+use crate::components::ui::textarea::{Textarea, TextareaVariant};
 
 use super::state::{
     ComposerImageAttachment, CHAT_ATTACHMENT_NEXT_ID, CHAT_COMPOSER_ATTACHMENTS, CHAT_INPUT,
@@ -106,15 +106,15 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
 
     rsx! {
         div {
-            class: "border-t border-border bg-card/95 px-4 pb-5 pt-3 backdrop-blur md:px-6 md:pb-6",
+            class: "px-4 pb-4 pt-2 md:px-5 md:pb-5",
             div {
-                class: "rounded-[1.75rem] border border-border bg-background p-2 focus-within:shadow-md",
+                class: "rounded-[2rem] border border-border bg-card/85 p-2 shadow-lg backdrop-blur focus-within:shadow-md",
                 AttachmentPreviewStrip {}
                 div {
-                    class: "flex items-center gap-2",
+                    class: "flex items-end gap-2 rounded-[1.5rem] bg-background/95 p-2",
                     button {
                         r#type: "button",
-                        class: "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:border-foreground/30 hover:bg-muted hover:text-foreground active:scale-[0.98] disabled:opacity-50",
+                        class: "mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:border-foreground/30 hover:bg-muted hover:text-foreground active:scale-[0.98] disabled:opacity-50",
                         disabled: is_streaming,
                         title: "选择图片",
                         onclick: move |_| {
@@ -122,15 +122,18 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
                         },
                         ImagePlus { size: 16 }
                     }
-                    Input {
-                        class: "flex-1 border-none bg-transparent px-4 py-3 font-medium text-foreground shadow-none outline-none placeholder:text-muted-foreground",
-                        r#type: "text",
+                    Textarea {
+                        variant: TextareaVariant::Ghost,
+                        class: "max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border-none bg-transparent px-3 py-3 font-medium leading-relaxed text-foreground shadow-none outline-none placeholder:text-muted-foreground placeholder:whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis [field-sizing:content]",
+                        rows: "1",
                         placeholder: "记录餐食，或询问下一顿吃什么...",
                         value: CHAT_INPUT(),
                         disabled: is_streaming,
-                        oninput: move |e: FormEvent| *CHAT_INPUT.write() = e.value(),
+                        oninput: move |e: FormEvent| {
+                            *CHAT_INPUT.write() = e.value();
+                        },
                         onkeydown: move |e: KeyboardEvent| {
-                            if e.key() == Key::Enter && !is_streaming {
+                            if e.key() == Key::Enter && !e.modifiers().shift() && !is_streaming {
                                 send_message_keydown();
                             }
                         }
@@ -138,7 +141,7 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
                     Button {
                         variant: ButtonVariant::Ghost,
                         size: ButtonSize::Icon,
-                        class: "rounded-full bg-foreground p-3 text-background shadow-sm hover:opacity-90",
+                        class: "mb-1 rounded-full bg-foreground p-3 text-background shadow-sm hover:opacity-90",
                         disabled: is_streaming,
                         onclick: move |_| send_message_click(),
                         Send { size: 20, class: "ml-0.5" }
