@@ -14,9 +14,9 @@ use rig::agent::MultiTurnStreamItem;
 use rig::agent::StreamingError;
 use rig::client::CompletionClient;
 use rig::completion::Prompt;
+use rig::message::ToolChoice;
 use rig::completion::Message;
 use rig::message::{ImageDetail, ImageMediaType, MimeType, UserContent};
-use rig::message::ToolChoice;
 use rig::providers::{deepseek, openai};
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 use rig::OneOrMany;
@@ -36,6 +36,7 @@ use domain::{AICapability, UserId};
 const DEFAULT_MAX_TURNS: usize = 4;
 const DEFAULT_HISTORY_WINDOW_MESSAGES: usize = 24;
 const DEFAULT_EMBEDDING_NDIMS: usize = 1024;
+const INTERNAL_CONVERSATION_MARKER: &str = "[warmmy:internal-continuation]";
 const WARMMY_PREAMBLE: &str = r#"你是 warmmy，一个温暖、专业的对话型饮食助理。
 
 ## 核心行为
@@ -134,6 +135,8 @@ impl RigConversationRuntime {
         let prompt = self.build_prompt_message(&input).await?;
         self.persist_user_image_message(user_id, session_id, &input, &memory_input)
             .await;
+        self.persist_user_visible_message(user_id, session_id, &input, &memory_input)
+            .await?;
 
         let reply = match chat.provider.as_str() {
             "openai" => {
@@ -287,6 +290,8 @@ impl RigConversationRuntime {
             p => return Err(AppError::internal(format!("unsupported provider: {p}"))),
         };
 
+        self.persist_assistant_visible_message(user_id, session_id, &reply)
+            .await?;
         self.extract_memory_if_enabled(user_id, &memory_input, chat, rag)
             .await;
 
@@ -312,7 +317,12 @@ impl RigConversationRuntime {
         let prompt = self.build_prompt_message(&input).await?;
         self.persist_user_image_message(user_id, session_id, &input, &user_input)
             .await;
+        self.persist_user_visible_message(user_id, session_id, &input, &user_input)
+            .await?;
         let user_id_for_memory = user_id.clone();
+        let user_id_for_history = user_id.clone();
+        let session_id_for_history = session_id.to_string();
+        let repo_for_history = self.repo.clone();
         let chat_for_memory = chat.clone();
         let rag_for_memory = rag.clone();
         let ai_configs = self.ai_configs.clone();
@@ -369,6 +379,9 @@ impl RigConversationRuntime {
                     interaction_sink,
                     user_id_for_memory,
                     user_input,
+                    repo_for_history,
+                    user_id_for_history,
+                    session_id_for_history,
                     chat_for_memory,
                     rag_for_memory,
                     ai_configs,
@@ -426,6 +439,9 @@ impl RigConversationRuntime {
                     interaction_sink,
                     user_id_for_memory,
                     user_input,
+                    repo_for_history,
+                    user_id_for_history,
+                    session_id_for_history,
                     chat_for_memory,
                     rag_for_memory,
                     ai_configs,
@@ -482,6 +498,9 @@ impl RigConversationRuntime {
                     interaction_sink,
                     user_id_for_memory,
                     user_input,
+                    repo_for_history,
+                    user_id_for_history,
+                    session_id_for_history,
                     chat_for_memory,
                     rag_for_memory,
                     ai_configs,
@@ -489,6 +508,43 @@ impl RigConversationRuntime {
             }
             p => Err(AppError::internal(format!("unsupported provider: {p}"))),
         }
+    }
+
+    async fn persist_user_visible_message(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        input: &ConversationUserInput,
+        visible_text: &str,
+    ) -> AppResult<()> {
+        let visible_text = visible_text.trim();
+        if visible_text.is_empty() || input.has_images() || is_internal_conversation_input(visible_text) {
+            return Ok(());
+        }
+
+        self.repo
+            .save_message(user_id, session_id, "user", visible_text)
+            .await
+            .map_err(AppError::database)?;
+        Ok(())
+    }
+
+    async fn persist_assistant_visible_message(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        reply: &str,
+    ) -> AppResult<()> {
+        let reply = reply.trim();
+        if reply.is_empty() {
+            return Ok(());
+        }
+
+        self.repo
+            .save_message(user_id, session_id, "assistant", reply)
+            .await
+            .map_err(AppError::database)?;
+        Ok(())
     }
 
     async fn build_prompt_message(&self, input: &ConversationUserInput) -> AppResult<Message> {
@@ -572,6 +628,9 @@ impl RigConversationRuntime {
         interaction_sink: AgentInteractionSink,
         user_id_for_memory: UserId,
         user_input: String,
+        repo_for_history: Arc<dyn ChatMessageRepositoryPort>,
+        user_id_for_history: UserId,
+        session_id_for_history: String,
         chat_for_memory: ResolvedAIModelConfig,
         rag_for_memory: Option<RagConfig>,
         ai_configs: UserAIConfigQueryHandler,
@@ -585,6 +644,7 @@ impl RigConversationRuntime {
     {
         let s = stream! {
             let mut has_text_delta = false;
+            let mut assistant_output = String::new();
             let mut output_len = 0usize;
             while let Some(item) = raw.next().await {
                 match item {
@@ -592,16 +652,29 @@ impl RigConversationRuntime {
                         if !text.text.is_empty() {
                             has_text_delta = true;
                             output_len += text.text.len();
+                            assistant_output.push_str(&text.text);
                             yield Ok(chat_text_event(&text.text));
                         }
                     }
                     Ok(MultiTurnStreamItem::FinalResponse(r)) => {
                         if !has_text_delta && !r.response().is_empty() {
                             output_len += r.response().len();
+                            assistant_output.push_str(r.response());
                             yield Ok(chat_text_event(r.response()));
                         }
                         for interaction in interaction_sink.drain() {
                             yield Ok(interaction_event(interaction));
+                        }
+                        if let Err(err) = persist_assistant_visible_message(
+                            &repo_for_history,
+                            &user_id_for_history,
+                            &session_id_for_history,
+                            &assistant_output,
+                        )
+                        .await
+                        {
+                            yield Err(err);
+                            break;
                         }
                         extract_memory_if_enabled(
                             &ai_configs,
@@ -713,4 +786,27 @@ fn interaction_event(interaction: AgentInteractionRequest) -> String {
     })
     .to_string()
         + "\n"
+}
+
+async fn persist_assistant_visible_message(
+    repo: &Arc<dyn ChatMessageRepositoryPort>,
+    user_id: &UserId,
+    session_id: &str,
+    reply: &str,
+) -> AppResult<()> {
+    let reply = reply.trim();
+    if reply.is_empty() {
+        return Ok(());
+    }
+
+    repo.save_message(user_id, session_id, "assistant", reply)
+        .await
+        .map_err(AppError::database)?;
+    Ok(())
+}
+
+fn is_internal_conversation_input(text: &str) -> bool {
+    text.trim_start().starts_with(INTERNAL_CONVERSATION_MARKER)
+        || text.starts_with("用户已在界面确认一条待确认用餐记录。")
+        || text.starts_with("用户已在界面取消一条待确认用餐记录。")
 }

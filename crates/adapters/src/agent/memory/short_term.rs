@@ -3,7 +3,7 @@ use std::sync::Arc;
 use app::conversation::ChatMessageRepositoryPort;
 use domain::UserId;
 use rig::memory::{ConversationMemory, MemoryError};
-use rig::message::{AssistantContent, Message, UserContent};
+use rig::message::{Message, UserContent};
 use rig::wasm_compat::WasmBoxedFuture;
 
 const INTERNAL_CONVERSATION_MARKER: &str = "[warmmy:internal-continuation]";
@@ -85,16 +85,6 @@ impl ConversationMemory for SessionConversationMemory {
                         .await
                         .map_err(|err| MemoryError::Policy(err.to_string()))?;
                 }
-
-                if let Some((role, content)) = visible_text_message(&message) {
-                    if role == "user" && content.contains("[用户发送了一张图片]") {
-                        continue;
-                    }
-                    self.repo
-                        .save_message(&self.user_id, conversation_id, role, &content)
-                        .await
-                        .map_err(|err| MemoryError::Policy(err.to_string()))?;
-                }
             }
 
             Ok(())
@@ -116,46 +106,6 @@ fn apply_recent_window(history: &mut Vec<Message>, max_recent_messages: usize) {
 
     let keep_from = history.len() - max_recent_messages;
     history.drain(0..keep_from);
-}
-
-fn visible_text_message(message: &Message) -> Option<(&'static str, String)> {
-    match message {
-        Message::User { content } => {
-            let text = content
-                .iter()
-                .filter_map(|item| {
-                    if let UserContent::Text(text) = item {
-                        Some(text.text.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("");
-
-            if is_internal_continuation(&text) {
-                return None;
-            }
-
-            (!text.is_empty()).then_some(("user", text))
-        }
-        Message::Assistant { content, .. } => {
-            let text = content
-                .iter()
-                .filter_map(|item| {
-                    if let AssistantContent::Text(text) = item {
-                        Some(text.text.as_str())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join("");
-
-            (!text.is_empty()).then_some(("assistant", text))
-        }
-        Message::System { .. } => None,
-    }
 }
 
 fn is_internal_message(message: &Message) -> bool {
