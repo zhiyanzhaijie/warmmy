@@ -1,9 +1,9 @@
 #[cfg(feature = "local")]
 mod local;
 #[cfg(not(feature = "local"))]
-mod remote;
+mod server;
 
 #[cfg(feature = "local")]
 pub use local::*;
 #[cfg(not(feature = "local"))]
-pub use remote::*;
+pub use server::*;

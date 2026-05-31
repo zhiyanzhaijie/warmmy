@@ -7,6 +7,7 @@ use crate::components::ui::sheet::{
     Sheet, SheetContent, SheetContentClose, SheetDescription, SheetFooter, SheetHeader, SheetSide,
     SheetTitle,
 };
+use crate::providers::set_current_preferences;
 
 use super::common::{
     apply_document_theme, normalize_theme, BlockMessage, ChoiceOption, LabeledChoiceGroup,
@@ -52,6 +53,7 @@ pub fn SystemPreferenceBlock(
                             .clone()
                             .unwrap_or_else(|| "zh-CN".to_string()),
                     );
+                    set_current_preferences(preferences.clone());
                     on_saved.call(preferences);
                 }
                 Err(err) => message.set(format!("加载系统偏好失败: {err}")),
@@ -97,6 +99,7 @@ pub fn SystemPreferenceBlock(
                             .clone()
                             .unwrap_or_else(|| "zh-CN".to_string()),
                     );
+                    set_current_preferences(result.clone());
                     on_saved.call(result);
                     message.set("系统偏好已保存".to_string());
                     sheet_open.set(false);

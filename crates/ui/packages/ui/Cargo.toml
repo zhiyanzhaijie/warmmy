@@ -18,5 +18,6 @@ base64 = "0.22"
 manganis = "0.7.9"
 
 [features]
+web = []
 server = ["api/server"]
 local = ["api/local"]

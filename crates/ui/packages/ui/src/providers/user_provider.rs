@@ -1,4 +1,7 @@
+use api::user;
 use dioxus::prelude::*;
+
+use crate::hooks::use_IO;
 
 pub const DEFAULT_USER_ID: &str = "default";
 
@@ -7,11 +10,18 @@ pub struct CurrentUserContext {
     pub user_id: Signal<String>,
 }
 
-pub fn provide_current_user_context() -> CurrentUserContext {
+#[component]
+pub fn UserProvider(children: Element) -> Element {
     let user_id = use_signal(|| DEFAULT_USER_ID.to_string());
-    let context = CurrentUserContext { user_id };
-    use_context_provider(|| context);
-    context
+    use_context_provider(|| CurrentUserContext { user_id });
+
+    use_IO(move || async move {
+        let _ = user::get_user_profile(DEFAULT_USER_ID.to_string()).await;
+    });
+
+    rsx! {
+        {children}
+    }
 }
 
 pub fn current_user_id() -> String {

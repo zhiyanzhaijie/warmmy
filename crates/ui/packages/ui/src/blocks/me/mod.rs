@@ -8,7 +8,8 @@ mod system_preference;
 use api::user;
 use dioxus::prelude::*;
 
-use crate::blocks::CurrentUserContext;
+use crate::hooks::use_IO;
+use crate::providers::CurrentUserContext;
 use profile::ProfileSummaryBlock;
 use system_preference::SystemPreferenceBlock;
 
@@ -31,16 +32,25 @@ pub fn MeBlock() -> Element {
 
     let current_user_id = (current_user.user_id)();
     let stats_user_id = current_user_id.clone();
-    use_effect(move || {
+    let stats = use_IO(move || {
         let request_user_id = stats_user_id.clone();
-        spawn(async move {
-            if let Ok(items) = user::list_health_expectations(request_user_id.clone()).await {
-                active_count.set(items.iter().filter(|item| item.status == "active").count());
-            }
-            if let Ok(items) = user::list_dining_companions(request_user_id).await {
-                companion_count.set(items.len());
-            }
-        });
+        async move {
+            let health_expectations = user::list_health_expectations(request_user_id.clone()).await;
+            let dining_companions = user::list_dining_companions(request_user_id).await;
+
+            (
+                health_expectations
+                    .map(|items| items.iter().filter(|item| item.status == "active").count()),
+                dining_companions.map(|items| items.len()),
+            )
+        }
+    });
+
+    use_effect(move || {
+        if let Some((Ok(next_active_count), Ok(next_companion_count))) = stats.read().as_ref() {
+            active_count.set(*next_active_count);
+            companion_count.set(*next_companion_count);
+        }
     });
 
     rsx! {

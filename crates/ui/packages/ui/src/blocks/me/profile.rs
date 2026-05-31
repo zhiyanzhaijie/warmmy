@@ -8,7 +8,7 @@ use crate::components::ui::button::Button;
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
 
 use super::common::{BlockMessage, LabeledInput, LabeledTextarea};
-use crate::blocks::CurrentUserContext;
+use crate::providers::CurrentUserContext;
 
 #[component]
 pub fn ProfileSummaryBlock(

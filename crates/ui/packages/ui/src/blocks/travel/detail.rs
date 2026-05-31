@@ -2,7 +2,7 @@ use api::meal;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ArrowLeft, CalendarDays, Flame, ListChecks};
 
-use crate::blocks::CurrentUserContext;
+use crate::providers::CurrentUserContext;
 use crate::components::common::MarkdownContent;
 
 use super::metrics::{compact_number, detail_date_label, parse_metrics};

@@ -1,6 +1,6 @@
 use dioxus::prelude::*;
 
-use crate::blocks::current_user_id;
+use crate::providers::current_user_id;
 use crate::components::ui::button::{Button, ButtonVariant};
 use crate::components::ui::input::Input;
 use crate::today_session_id;

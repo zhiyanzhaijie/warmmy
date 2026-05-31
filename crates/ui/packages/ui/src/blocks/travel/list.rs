@@ -3,7 +3,7 @@ use dioxus::prelude::*;
 use dioxus_icons::lucide::{CalendarDays, CircleGauge, Tent, TrendingUp};
 use dioxus_primitives::{ContentAlign, ContentSide};
 
-use crate::blocks::CurrentUserContext;
+use crate::providers::CurrentUserContext;
 use crate::components::ui::popover::{PopoverContent, PopoverRoot, PopoverTrigger};
 
 use super::metrics::{compact_number, date_label, parse_metrics};

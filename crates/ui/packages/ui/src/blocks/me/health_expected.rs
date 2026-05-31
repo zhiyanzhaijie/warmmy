@@ -2,7 +2,7 @@ use api::user;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ArrowLeft, Check, Flame, Pencil, Plus, X};
 
-use crate::blocks::CurrentUserContext;
+use crate::providers::CurrentUserContext;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
 use crate::components::ui::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};

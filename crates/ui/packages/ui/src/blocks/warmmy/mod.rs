@@ -3,7 +3,7 @@ mod ai_model;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ArrowLeft, Bot, Sparkles};
 
-use crate::blocks::CurrentUserContext;
+use crate::providers::CurrentUserContext;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 
 use ai_model::AIModelBlock;

@@ -9,7 +9,7 @@ use dioxus::prelude::*;
 use dioxus_icons::lucide::{ArrowLeft, Check};
 use std::rc::Rc;
 
-use crate::blocks::current_user_id;
+use crate::providers::current_user_id;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::today_session_id;
 

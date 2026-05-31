@@ -2,9 +2,9 @@ use api::user;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ArrowLeft, Check, Flame, Pencil, Trash2};
 
-use crate::blocks::CurrentUserContext;
 use crate::components::ui::button::{Button, ButtonVariant};
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
+use crate::providers::{set_current_preferences, CurrentUserContext};
 
 use super::common::{merge_tags, BlockMessage, TagListInput};
 
@@ -29,6 +29,7 @@ pub fn DietPreferenceSummaryBlock(
                 Ok(preferences) => {
                     preferred_cuisines.set(preferences.preferred_cuisines.clone());
                     avoided_cuisines.set(preferences.avoided_cuisines.clone());
+                    set_current_preferences(preferences.clone());
                     on_loaded.call(preferences);
                 }
                 Err(err) => message.set(format!("加载饮食偏好失败: {err}")),
@@ -145,6 +146,7 @@ pub fn DietPreferenceBlock(
                     avoided_cuisines.set(preferences.avoided_cuisines.clone());
                     preferred_cuisines_input.set(String::new());
                     avoided_cuisines_input.set(String::new());
+                    set_current_preferences(preferences.clone());
                     on_saved.call(preferences);
                 }
                 Err(err) => message.set(format!("加载饮食偏好失败: {err}")),
@@ -191,6 +193,7 @@ pub fn DietPreferenceBlock(
                     avoided_cuisines.set(result.avoided_cuisines.clone());
                     preferred_cuisines_input.set(String::new());
                     avoided_cuisines_input.set(String::new());
+                    set_current_preferences(result.clone());
                     on_saved.call(result);
                     message.set("饮食偏好已保存".to_string());
                 }

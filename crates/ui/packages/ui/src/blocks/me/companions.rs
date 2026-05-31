@@ -9,7 +9,7 @@ use crate::components::ui::dialog::{DialogContent, DialogDescription, DialogRoot
 use super::common::{
     merge_tags, BlockMessage, LabeledInput, LabeledTextarea, MiniTag, TagListInput,
 };
-use crate::blocks::CurrentUserContext;
+use crate::providers::CurrentUserContext;
 
 #[component]
 pub fn CompanionsSummaryBlock(user_id: String) -> Element {

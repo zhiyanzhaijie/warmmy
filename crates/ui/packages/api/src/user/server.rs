@@ -145,18 +145,30 @@ pub struct SaveDiningCompanionInput {
 #[post("/api/user/profile/get", state: State)]
 pub async fn get_user_profile(user_id: String) -> Result<UserProfileDTO, ServerFnError> {
     let user_id = parse_user_id(&user_id)?;
-    let profile = state
+    let profile = if let Some(profile) = state
         .0
         .user
         .query
         .get_profile(&user_id)
         .await
         .map_err(api_error)?
-        .ok_or_else(|| ServerFnError::ServerError {
-            message: format!("user profile not found for {}", user_id.as_str()),
-            code: 404,
-            details: None,
-        })?;
+    {
+        profile
+    } else {
+        state
+            .0
+            .user
+            .command
+            .save_profile(app::user::SaveUserProfileCommand {
+                user_id,
+                display_name: DEFAULT_DISPLAY_NAME.to_string(),
+                introduction: String::new(),
+                gender: None,
+                age: None,
+            })
+            .await
+            .map_err(api_error)?
+    };
 
     Ok(profile_to_dto(profile))
 }

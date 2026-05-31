@@ -1,36 +1,35 @@
 use crate::Route;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{House, Map, MessageCircle, Sparkles, User};
-use ui::blocks::{provide_current_user_context, ConversationTransitionContext};
+use ui::providers::AppProviders;
 
 #[component]
 pub fn RootLayout() -> Element {
-    let pending = use_signal(|| None);
-    use_context_provider(|| ConversationTransitionContext { pending });
-    provide_current_user_context();
     let route = use_route::<Route>();
     let is_chat = matches!(&route, Route::ChatDetailView { .. });
 
     rsx! {
-        div {
-            class: "flex h-[100dvh] w-full overflow-hidden bg-background text-foreground font-sans",
-            style: "--warmmy-bottom-nav-height: calc(88px + env(safe-area-inset-bottom));",
-            SideNav {}
+        AppProviders {
             div {
-                class: format!(
-                    "relative min-h-0 flex-1 overflow-hidden transition-[height] duration-300 ease-out md:h-full {}",
-                    if is_chat {
-                        "h-[100dvh]"
-                    } else {
-                        "h-[calc(100dvh-var(--warmmy-bottom-nav-height))]"
-                    }
-                ),
+                class: "flex h-[100dvh] w-full overflow-hidden bg-background text-foreground font-sans",
+                style: "--warmmy-bottom-nav-height: calc(88px + env(safe-area-inset-bottom));",
+                SideNav {}
                 div {
-                    class: "h-full min-h-0",
-                    Outlet::<Route> {}
+                    class: format!(
+                        "relative min-h-0 flex-1 overflow-hidden transition-[height] duration-300 ease-out md:h-full {}",
+                        if is_chat {
+                            "h-[100dvh]"
+                        } else {
+                            "h-[calc(100dvh-var(--warmmy-bottom-nav-height))]"
+                        }
+                    ),
+                    div {
+                        class: "h-full min-h-0",
+                        Outlet::<Route> {}
+                    }
                 }
+                BottomNav {}
             }
-            BottomNav {}
         }
     }
 }
