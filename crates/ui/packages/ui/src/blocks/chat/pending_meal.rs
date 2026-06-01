@@ -1,18 +1,18 @@
 use dioxus::prelude::*;
 
-use crate::providers::current_user_id;
 use crate::components::ui::button::{Button, ButtonVariant};
 use crate::components::ui::input::Input;
-use crate::today_session_id;
+use crate::providers::current_user_id;
 
-use super::state::ACTIVE_SESSION_ID;
-use super::stream::{append_agent_stream, append_bot_text, append_streaming_bot_slot};
+use super::state::ChatStateContext;
+use super::stream::{active_session_id, append_agent_stream, append_bot_text, append_streaming_bot_slot};
 use api::meal;
 
 #[component]
 pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element {
+    let chat_state = use_context::<ChatStateContext>();
     let user_id = current_user_id();
-    let session_id = ACTIVE_SESSION_ID().unwrap_or_else(today_session_id);
+    let session_id = active_session_id(chat_state);
     let confirm_session_id = session_id.clone();
     let reject_session_id = session_id.clone();
     let mut saving = use_signal(|| false);
@@ -39,7 +39,11 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                     Ok(updated) => {
                         nutrition.set(updated.nutrition);
                     }
-                    Err(err) => append_bot_text(format!("更新营养估算失败：{err}")),
+                    Err(err) => append_bot_text(
+                        chat_state,
+                        active_session_id(chat_state),
+                        format!("更新营养估算失败：{err}"),
+                    ),
                 }
                 previewing.set(false);
             });
@@ -59,15 +63,19 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
             };
             spawn(async move {
                 saving.set(true);
-                let bot_id = append_streaming_bot_slot();
+                let bot_id = append_streaming_bot_slot(chat_state, request_session_id.clone());
                 match meal::confirm_pending_meal(request_user_id, request_session_id.clone(), input)
                     .await
                 {
                     Ok(stream) => {
                         confirmed.set(true);
-                        append_agent_stream(stream, bot_id, request_session_id).await;
+                        append_agent_stream(chat_state, stream, bot_id, request_session_id).await;
                     }
-                    Err(err) => append_bot_text(format!("确认用餐记录失败：{err}")),
+                    Err(err) => append_bot_text(
+                        chat_state,
+                        request_session_id,
+                        format!("确认用餐记录失败：{err}"),
+                    ),
                 }
                 saving.set(false);
             });
@@ -83,7 +91,7 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
             let request_pending_id = pending_id.clone();
             spawn(async move {
                 saving.set(true);
-                let bot_id = append_streaming_bot_slot();
+                let bot_id = append_streaming_bot_slot(chat_state, request_session_id.clone());
                 match meal::reject_pending_meal(
                     request_user_id,
                     request_session_id.clone(),
@@ -93,9 +101,13 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                 {
                     Ok(stream) => {
                         rejected.set(true);
-                        append_agent_stream(stream, bot_id, request_session_id).await;
+                        append_agent_stream(chat_state, stream, bot_id, request_session_id).await;
                     }
-                    Err(err) => append_bot_text(format!("取消用餐记录失败：{err}")),
+                    Err(err) => append_bot_text(
+                        chat_state,
+                        request_session_id,
+                        format!("取消用餐记录失败：{err}"),
+                    ),
                 }
                 saving.set(false);
             });

@@ -2,10 +2,11 @@ use api::user;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ArrowLeft, Check, Flame, Pencil, Plus, X};
 
-use crate::providers::CurrentUserContext;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
 use crate::components::ui::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
+use crate::hooks::use_IO;
+use crate::providers::CurrentUserContext;
 
 use super::common::{
     BlockMessage, ChoiceOption, LabeledChoiceGroup, LabeledInput, LabeledTextarea,
@@ -21,21 +22,25 @@ pub fn HealthExpectationSummaryBlock(
     let mut message = use_signal(String::new);
     let nav = navigator();
 
-    let load_user_id = user_id.clone();
+    let loaded_expectations = use_IO({
+        let user_id = user_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            async move { user::list_health_expectations(request_user_id).await }
+        }
+    });
     use_effect(move || {
-        let request_user_id = load_user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            message.set(String::new());
-            match user::list_health_expectations(request_user_id).await {
+        loading.set(loaded_expectations.read().is_none());
+        if let Some(result) = loaded_expectations.read().as_ref() {
+            match result {
                 Ok(items) => {
+                    message.set(String::new());
                     on_loaded.call(items.clone());
-                    expectations.set(items);
+                    expectations.set(items.clone());
                 }
                 Err(err) => message.set(format!("加载健康期望失败: {err}")),
             }
-            loading.set(false);
-        });
+        }
     });
 
     let expectation_items = expectations();
@@ -147,23 +152,28 @@ pub fn HealthExpectedBlock(
     let mut expectation_status = use_signal(|| "proposed".to_string());
     let mut expectation_priority = use_signal(|| "50".to_string());
     let mut message = use_signal(String::new);
+    let mut hydrated = use_signal(|| false);
 
-    use_effect({
-        let load_user_id = user_id.clone();
+    let loaded_expectations = use_IO({
+        let user_id = user_id.clone();
         move || {
-            let request_user_id = load_user_id.clone();
-            spawn(async move {
-                loading.set(true);
-                message.set(String::new());
-                match user::list_health_expectations(request_user_id.clone()).await {
-                    Ok(items) => {
-                        on_loaded.call(items.clone());
-                        expectations.set(items);
-                    }
-                    Err(err) => message.set(format!("加载健康期望失败: {err}")),
+            let request_user_id = user_id.clone();
+            async move { user::list_health_expectations(request_user_id).await }
+        }
+    });
+    use_effect(move || {
+        loading.set(loaded_expectations.read().is_none());
+        if let Some(result) = loaded_expectations.read().as_ref() {
+            match result {
+                Ok(items) if !hydrated() => {
+                    message.set(String::new());
+                    on_loaded.call(items.clone());
+                    expectations.set(items.clone());
+                    hydrated.set(true);
                 }
-                loading.set(false);
-            });
+                Ok(_) => {}
+                Err(err) => message.set(format!("加载健康期望失败: {err}")),
+            }
         }
     });
 
@@ -182,7 +192,7 @@ pub fn HealthExpectedBlock(
     let save_user_id = user_id.clone();
     let save = move |_| {
         let request_user_id = save_user_id.clone();
-        spawn(async move {
+        async move {
             saving.set(true);
             message.set(String::new());
             let priority = expectation_priority().trim().parse::<u8>().unwrap_or(50);
@@ -210,13 +220,14 @@ pub fn HealthExpectedBlock(
                         expectation_status,
                         expectation_priority,
                     );
+                    hydrated.set(true);
                     dialog_open.set(false);
                     message.set("健康期望已保存".to_string());
                 }
                 Err(err) => message.set(format!("保存健康期望失败: {err}")),
             }
             saving.set(false);
-        });
+        }
     };
 
     rsx! {
@@ -265,34 +276,36 @@ pub fn HealthExpectedBlock(
                                 on_confirm: {
                                     let action_user_id = user_id.clone();
                                     move |id| {
-                                    let request_user_id = action_user_id.clone();
-                                    spawn(async move {
-                                        match user::confirm_health_expectation(request_user_id.clone(), id).await {
-                                            Ok(items) => {
-                                                expectations.set(items.clone());
-                                                on_loaded.call(items);
-                                                message.set("已确认健康期望".to_string());
+                                        let request_user_id = action_user_id.clone();
+                                        async move {
+                                            match user::confirm_health_expectation(request_user_id.clone(), id).await {
+                                                Ok(items) => {
+                                                    expectations.set(items.clone());
+                                                    on_loaded.call(items);
+                                                    hydrated.set(true);
+                                                    message.set("已确认健康期望".to_string());
+                                                }
+                                                Err(err) => message.set(format!("确认失败: {err}")),
                                             }
-                                            Err(err) => message.set(format!("确认失败: {err}")),
                                         }
-                                    });
-                                }
+                                    }
                                 },
                                 on_delete: {
                                     let action_user_id = user_id.clone();
                                     move |id| {
-                                    let request_user_id = action_user_id.clone();
-                                    spawn(async move {
-                                        match user::delete_health_expectation(request_user_id.clone(), id).await {
-                                            Ok(items) => {
-                                                expectations.set(items.clone());
-                                                on_loaded.call(items);
-                                                message.set("已删除健康期望".to_string());
+                                        let request_user_id = action_user_id.clone();
+                                        async move {
+                                            match user::delete_health_expectation(request_user_id.clone(), id).await {
+                                                Ok(items) => {
+                                                    expectations.set(items.clone());
+                                                    on_loaded.call(items);
+                                                    hydrated.set(true);
+                                                    message.set("已删除健康期望".to_string());
+                                                }
+                                                Err(err) => message.set(format!("删除失败: {err}")),
                                             }
-                                            Err(err) => message.set(format!("删除失败: {err}")),
                                         }
-                                    });
-                                }
+                                    }
                                 },
                             }
                         }

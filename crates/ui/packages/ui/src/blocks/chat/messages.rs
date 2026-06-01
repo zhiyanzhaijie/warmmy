@@ -6,12 +6,13 @@ use crate::components::common::MarkdownContent;
 use crate::components::ui::skeleton::Skeleton;
 
 use super::pending_meal::PendingMealCard;
-use super::state::{ChatMessage, ChatMessageAttachment, CHAT_MESSAGES};
+use super::state::{ChatMessage, ChatMessageAttachment, ChatStateContext};
 
 #[component]
 pub(super) fn ChatMessageList(has_pending_transition: bool) -> Element {
+    let chat_state = use_context::<ChatStateContext>();
     let scroll_signature = use_memo(move || {
-        let messages = CHAT_MESSAGES.read();
+        let messages = chat_state.messages.read();
         let last = messages.last();
         format!(
             "{}:{}:{}",
@@ -40,10 +41,10 @@ pub(super) fn ChatMessageList(has_pending_transition: bool) -> Element {
         div {
             id: "chat-message-viewport",
             class: "flex-1 min-h-0 overflow-y-auto space-y-4 px-4 py-4 md:px-5 md:py-5",
-            if CHAT_MESSAGES().is_empty() && has_pending_transition {
+            if chat_state.messages.read().is_empty() && has_pending_transition {
                 PendingChatPlaceholder {}
             } else {
-                for msg in CHAT_MESSAGES().iter() {
+                for msg in chat_state.messages.read().iter() {
                     ChatMessageBubble {
                         key: "{msg.id}",
                         message: msg.clone(),

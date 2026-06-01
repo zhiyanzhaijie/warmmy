@@ -40,27 +40,27 @@ fn main() {
 fn App() -> Element {
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
-        Router::<Route> {}
+        AppProviders {
+            Router::<Route> {}
+        }
     }
 }
 
 #[component]
 fn WebLayout() -> Element {
     rsx! {
-        AppProviders {
-            nav {
-                Link {
-                    to: Route::HomeView {},
-                    "home"
-                }
-                " · "
-                Link {
-                    to: Route::MeView {},
-                    "/me"
-                }
+        nav {
+            Link {
+                to: Route::HomeView {},
+                "home"
             }
-            Outlet::<Route> {}
+            " · "
+            Link {
+                to: Route::MeView {},
+                "/me"
+            }
         }
+        Outlet::<Route> {}
         document::Link { rel: "stylesheet", href: WEB_CSS }
     }
 }

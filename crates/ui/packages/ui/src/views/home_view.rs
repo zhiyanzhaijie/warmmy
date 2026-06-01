@@ -1,6 +1,5 @@
 use crate::blocks::{
-    ChatBlock, ConversationTransitionContext, PendingConversationMessage, ACTIVE_SESSION_ID,
-    CHAT_INPUT, CHAT_MESSAGES, CHAT_NEXT_ID,
+    ChatBlock, ChatStateContext, ConversationTransitionContext, PendingConversationMessage,
 };
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::textarea::{Textarea, TextareaVariant};
@@ -13,6 +12,7 @@ use dioxus_icons::lucide::{Send, Sparkles};
 pub fn HomeView() -> Element {
     let mut input = use_signal(String::new);
     let mut transition = use_context::<ConversationTransitionContext>();
+    let mut chat_state = use_context::<ChatStateContext>();
     let today_index = Local::now().weekday().num_days_from_monday() as usize;
 
     let mut start_chat_with_msg = move || {
@@ -24,10 +24,11 @@ pub fn HomeView() -> Element {
         input.set(String::new());
         let session_id = today_session_id();
 
-        *ACTIVE_SESSION_ID.write() = Some(session_id.clone());
-        CHAT_MESSAGES.write().clear();
-        CHAT_INPUT.write().clear();
-        *CHAT_NEXT_ID.write() = 1;
+        chat_state.active_session_id.set(Some(session_id.clone()));
+        chat_state.messages.write().clear();
+        chat_state.session_messages.write().remove(&session_id);
+        chat_state.input.set(String::new());
+        chat_state.next_id.set(1);
 
         transition.pending.set(Some(PendingConversationMessage {
             session_id,

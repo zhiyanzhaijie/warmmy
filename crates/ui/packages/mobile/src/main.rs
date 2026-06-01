@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use ui::providers::AppProviders;
 use ui::views::{
     ChatDetailView, HomeView, MeCompanionsView, MeDietPreferenceView, MeHealthExpectationView,
     MeProfileEditView, MeView, TravelDetailView, TravelView, WarmmyView,
@@ -46,6 +47,8 @@ fn App() -> Element {
     rsx! {
         document::Stylesheet { href: MOBILE_CSS }
         document::Stylesheet { href: CHAT_MARKDOWN_CSS }
-        Router::<Route> {}
+        AppProviders {
+            Router::<Route> {}
+        }
     }
 }

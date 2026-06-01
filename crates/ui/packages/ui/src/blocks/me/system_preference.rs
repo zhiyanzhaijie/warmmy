@@ -7,6 +7,7 @@ use crate::components::ui::sheet::{
     Sheet, SheetContent, SheetContentClose, SheetDescription, SheetFooter, SheetHeader, SheetSide,
     SheetTitle,
 };
+use crate::hooks::use_IO;
 use crate::providers::set_current_preferences;
 
 use super::common::{
@@ -25,19 +26,25 @@ pub fn SystemPreferenceBlock(
     let mut theme = use_signal(|| "system".to_string());
     let mut language = use_signal(|| "zh-CN".to_string());
     let mut message = use_signal(String::new);
+    let mut hydrated = use_signal(|| false);
 
     use_effect(move || {
         apply_document_theme(&theme());
     });
 
-    let load_user_id = user_id.clone();
+    let loaded_preferences = use_IO({
+        let user_id = user_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            async move { user::get_user_preferences(request_user_id).await }
+        }
+    });
     use_effect(move || {
-        let request_user_id = load_user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            message.set(String::new());
-            match user::get_user_preferences(request_user_id.clone()).await {
-                Ok(preferences) => {
+        loading.set(loaded_preferences.read().is_none());
+        if let Some(result) = loaded_preferences.read().as_ref() {
+            match result {
+                Ok(preferences) if !hydrated() => {
+                    message.set(String::new());
                     let next_theme = normalize_theme(
                         preferences
                             .theme
@@ -54,18 +61,19 @@ pub fn SystemPreferenceBlock(
                             .unwrap_or_else(|| "zh-CN".to_string()),
                     );
                     set_current_preferences(preferences.clone());
-                    on_saved.call(preferences);
+                    on_saved.call(preferences.clone());
+                    hydrated.set(true);
                 }
+                Ok(_) => {}
                 Err(err) => message.set(format!("加载系统偏好失败: {err}")),
             }
-            loading.set(false);
-        });
+        }
     });
 
     let save_user_id = user_id.clone();
     let save = move |_| {
         let request_user_id = save_user_id.clone();
-        spawn(async move {
+        async move {
             saving.set(true);
             message.set(String::new());
             let current = match user::get_user_preferences(request_user_id.clone()).await {
@@ -101,13 +109,14 @@ pub fn SystemPreferenceBlock(
                     );
                     set_current_preferences(result.clone());
                     on_saved.call(result);
+                    hydrated.set(true);
                     message.set("系统偏好已保存".to_string());
                     sheet_open.set(false);
                 }
                 Err(err) => message.set(format!("保存系统偏好失败: {err}")),
             }
             saving.set(false);
-        });
+        }
     };
 
     let language_label = if language().trim().is_empty() {

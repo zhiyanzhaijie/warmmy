@@ -9,8 +9,8 @@ use dioxus::prelude::*;
 use dioxus_icons::lucide::{ArrowLeft, Check};
 use std::rc::Rc;
 
-use crate::providers::current_user_id;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+use crate::providers::current_user_id;
 use crate::today_session_id;
 
 use api::conversation;
@@ -20,148 +20,63 @@ use composer::{ChatComposer, SendChatMessage};
 use messages::ChatMessageList;
 use sessions::SessionStrip;
 use stream::{
-    append_agent_stream, append_bot_text, append_outgoing_message_pair,
-    append_pending_meal_messages, append_streaming_bot_slot, is_active_session, next_chat_id,
+    activate_session, append_bot_text, append_pending_meal_messages, append_streaming_bot_slot,
+    set_active_session_messages,
 };
 
 pub use state::{
-    ChatMessage, ConversationTransitionContext, PendingConversationMessage, ACTIVE_SESSION_ID,
-    CHAT_INPUT, CHAT_MESSAGES, CHAT_NEXT_ID,
+    ChatMessage, ChatRuntimeContext, ChatStateContext, ConversationTransitionContext,
+    PendingConversationMessage, SendConversationMessage,
 };
 
-use state::ComposerImageAttachment;
+pub(crate) use state::ComposerImageAttachment;
+pub(crate) use stream::{
+    activate_session as activate_chat_session, append_agent_stream,
+    append_bot_text as append_chat_bot_text, append_outgoing_message_pair,
+};
 
 #[component]
 pub fn ChatBlock(session_id: Option<String>) -> Element {
     let transition = try_consume_context::<ConversationTransitionContext>();
+    let chat_state = use_context::<ChatStateContext>();
     let user_id = current_user_id();
     let current_session_id = session_id.clone().unwrap_or_else(today_session_id);
     let send_session_id = current_session_id.clone();
     let header_session_id = current_session_id.clone();
     let should_route_after_stream = session_id.is_none();
+    let runtime = use_context::<ChatRuntimeContext>();
     let has_pending_transition = transition
         .map(|ctx| (ctx.pending)().is_some())
         .unwrap_or(false);
 
-    let execute_user_id = user_id.clone();
     let execute_send = Rc::new(
         move |content: String, attachments: Vec<ComposerImageAttachment>| {
             let sid = send_session_id.clone();
-            let request_user_id = execute_user_id.clone();
-            let route_after_stream = should_route_after_stream;
-            let transition = transition;
-            let active_sid = ACTIVE_SESSION_ID.read().clone();
-            if active_sid.as_ref() != Some(&sid) {
-                *ACTIVE_SESSION_ID.write() = Some(sid.clone());
-                CHAT_MESSAGES.write().clear();
-                *CHAT_NEXT_ID.write() = 1;
+            if let Some(sender) = runtime.send_message.read().clone() {
+                sender.call(sid, content, attachments, should_route_after_stream);
             }
-
-            let bot_id = append_outgoing_message_pair(content.clone(), attachments.clone());
-            let content_for_server = content;
-            let attachments_for_server = attachments;
-
-            *ACTIVE_SESSION_ID.write() = Some(sid.clone());
-
-            spawn(async move {
-                let mut uploaded_attachments = Vec::new();
-                for attachment in attachments_for_server {
-                    let uploaded = conversation::store_ephemeral_image(
-                        request_user_id.clone(),
-                        sid.clone(),
-                        attachment.mime_type.clone(),
-                        attachment.bytes,
-                        None,
-                        None,
-                    )
-                    .await;
-                    match uploaded {
-                        Ok(image) => {
-                            uploaded_attachments.push(conversation::ChatImageAttachmentInput {
-                                asset_id: image.asset_id,
-                                mime_type: image.mime_type,
-                                size_bytes: image.size_bytes,
-                                width: image.width,
-                                height: image.height,
-                                preview_data_url: Some(attachment.preview_data_url),
-                            });
-                        }
-                        Err(err) => {
-                            let mut all = CHAT_MESSAGES.write();
-                            if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
-                                bot_msg.is_skeleton = false;
-                                bot_msg.is_streaming = false;
-                                bot_msg.text = format!("图片上传失败：{err}");
-                            }
-                            return;
-                        }
-                    }
-                }
-
-                let send_input = conversation::ChatSendInput {
-                    text: content_for_server.clone(),
-                    attachments: uploaded_attachments,
-                };
-                match conversation::echo_stream(
-                    request_user_id.clone(),
-                    send_input.clone(),
-                    sid.clone(),
-                )
-                .await
-                {
-                    Ok(stream) => {
-                        append_agent_stream(stream, bot_id, sid.clone()).await;
-                        if route_after_stream && is_active_session(&sid) {
-                            navigator().replace(format!("/{}", sid));
-                        }
-                        if let Some(mut transition) = transition {
-                            transition.pending.set(None);
-                        }
-                    }
-                    Err(stream_err) => {
-                        let fallback = match conversation::echo(
-                            request_user_id,
-                            send_input,
-                            sid.clone(),
-                        )
-                        .await
-                        {
-                            Ok(resp) => resp.reply,
-                            Err(err) => {
-                                format!("Server error: {stream_err}; fallback failed: {err}")
-                            }
-                        };
-                        let mut all = CHAT_MESSAGES.write();
-                        if is_active_session(&sid) {
-                            if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
-                                bot_msg.is_skeleton = false;
-                                bot_msg.is_streaming = false;
-                                bot_msg.text = fallback;
-                            }
-                        }
-                        drop(all);
-                        if route_after_stream && is_active_session(&sid) {
-                            navigator().replace(format!("/{}", sid));
-                        }
-                        if let Some(mut transition) = transition {
-                            transition.pending.set(None);
-                        }
-                    }
-                }
-            });
         },
+    );
+
+    start_pending_transition(
+        current_session_id.clone(),
+        chat_state,
+        transition,
+        execute_send.clone(),
     );
 
     load_session_history(
         user_id.clone(),
         current_session_id.clone(),
         session_id.is_some(),
+        chat_state,
         transition,
         execute_send.clone(),
     );
 
     let is_streaming = use_memo(move || {
-        CHAT_MESSAGES
+        chat_state
+            .messages
             .read()
             .iter()
             .any(|msg| msg.is_streaming || msg.is_skeleton)
@@ -177,17 +92,17 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
 
         let request_user_id = finalize_user_id.clone();
         let request_session_id = finalize_session_id.clone();
-        spawn(async move {
+        dioxus::core::spawn_forever(async move {
             finalizing_day.set(true);
-            let bot_id = append_streaming_bot_slot();
+            let bot_id = append_streaming_bot_slot(chat_state, request_session_id.clone());
             match meal::finalize_and_summarize_meal_day(request_user_id, request_session_id.clone())
                 .await
             {
                 Ok(stream) => {
-                    append_agent_stream(stream, bot_id, request_session_id).await;
+                    append_agent_stream(chat_state, stream, bot_id, request_session_id).await;
                 }
                 Err(err) => {
-                    append_bot_text(format!("生成今日总结失败：{err}"));
+                    append_bot_text(chat_state, request_session_id, format!("生成今日总结失败：{err}"));
                 }
             }
             finalizing_day.set(false);
@@ -276,91 +191,90 @@ fn ChatHeader(
 #[component]
 fn WarmmyMascotIcon(active: bool) -> Element {
     rsx! {
-            svg {
-                class: "h-12 w-12 shrink-0 text-foreground md:h-14 md:w-14",
-                view_box: "0 0 64 64",
-                role: "presentation",
-                "aria-hidden": "true",
-                path {
-                    d: "M 12 35 C 12 23, 22 15, 33 14 C 45 13, 53 22, 52 35 C 51 47, 42 53, 31 52 C 20 51, 12 46, 12 35 Z",
-                    fill: "none",
-                    stroke: "currentColor",
-                    stroke_width: "3.2",
-                    stroke_linecap: "round",
-                    stroke_linejoin: "round",
+        svg {
+            class: "h-12 w-12 shrink-0 text-foreground md:h-14 md:w-14",
+            view_box: "0 0 64 64",
+            role: "presentation",
+            "aria-hidden": "true",
+            path {
+                d: "M 12 35 C 12 23, 22 15, 33 14 C 45 13, 53 22, 52 35 C 51 47, 42 53, 31 52 C 20 51, 12 46, 12 35 Z",
+                fill: "none",
+                stroke: "currentColor",
+                stroke_width: "3.2",
+                stroke_linecap: "round",
+                stroke_linejoin: "round",
+            }
+            path {
+                d: "M 15 21 C 17 13, 21 7, 25 5 C 30 8, 33 12, 35 17 C 28 15, 21 17, 15 21 Z",
+                fill: "none",
+                stroke: "currentColor",
+                stroke_width: "3.4",
+                stroke_linecap: "round",
+                stroke_linejoin: "round",
+            }
+            path {
+                d: "M 48 20 C 47 13, 44 8, 40 6 C 35 9, 32 12, 30 17 C 37 15, 43 16, 48 20 Z",
+                fill: "none",
+                stroke: "currentColor",
+                stroke_width: "3.4",
+                stroke_linecap: "round",
+                stroke_linejoin: "round",
+            }
+            g {
+                if active {
+                    animateTransform {
+                        attribute_name: "transform",
+                        r#type: "translate",
+                        values: "-4 1; 2 -1; 5 1; -2 0; -4 1",
+                        dur: "1.35s",
+                        repeat_count: "indefinite",
+                    }
+                    animateTransform {
+                        attribute_name: "transform",
+                        r#type: "rotate",
+                        values: "-7 32 33; 4 32 33; 8 32 33; -3 32 33; -7 32 33",
+                        dur: "1.35s",
+                        additive: "sum",
+                        repeat_count: "indefinite",
+                    }
                 }
-                path {
-                    d: "M 15 21 C 17 13, 21 7, 25 5 C 30 8, 33 12, 35 17 C 28 15, 21 17, 15 21 Z",
-                    fill: "none",
+                line {
+                    x1: "25",
+                    y1: "30",
+                    x2: "25",
+                    y2: "42",
                     stroke: "currentColor",
-                    stroke_width: "3.4",
+                    stroke_width: "6",
                     stroke_linecap: "round",
-                    stroke_linejoin: "round",
-                }
-                path {
-                    d: "M 48 20 C 47 13, 44 8, 40 6 C 35 9, 32 12, 30 17 C 37 15, 43 16, 48 20 Z",
-                    fill: "none",
-                    stroke: "currentColor",
-                    stroke_width: "3.4",
-                    stroke_linecap: "round",
-                    stroke_linejoin: "round",
-                }
-                g {
-                    if active {
-                        animateTransform {
-                            attribute_name: "transform",
-                            r#type: "translate",
-                            values: "-4 1; 2 -1; 5 1; -2 0; -4 1",
-                            dur: "1.35s",
+                    if !active {
+                        animate {
+                            attribute_name: "y1",
+                            values: "30;30;41;30;30",
+                            key_times: "0;0.80;0.82;0.84;1",
+                            dur: "3.4s",
                             repeat_count: "indefinite",
                         }
-                        animateTransform {
-                            attribute_name: "transform",
-                            r#type: "rotate",
-                            values: "-7 32 33; 4 32 33; 8 32 33; -3 32 33; -7 32 33",
-                            dur: "1.35s",
-                            additive: "sum",
+                    }
+                }
+                line {
+                    x1: "41",
+                    y1: "30",
+                    x2: "41",
+                    y2: "42",
+                    stroke: "currentColor",
+                    stroke_width: "6",
+                    stroke_linecap: "round",
+                    if !active {
+                        animate {
+                            attribute_name: "y1",
+                            values: "30;30;41;30;30",
+                            key_times: "0;0.80;0.82;0.84;1",
+                            dur: "3.4s",
                             repeat_count: "indefinite",
-                        }
-                    } else {
-                    }
-                    line {
-                        x1: "25",
-                        y1: "30",
-                        x2: "25",
-                        y2: "42",
-                        stroke: "currentColor",
-                        stroke_width: "6",
-                        stroke_linecap: "round",
-                        if !active {
-                            animate {
-                                attribute_name: "y1",
-                                values: "30;30;41;30;30",
-                                key_times: "0;0.80;0.82;0.84;1",
-                                dur: "3.4s",
-                                repeat_count: "indefinite",
-                            }
-                        }
-                    }
-                    line {
-                        x1: "41",
-                        y1: "30",
-                        x2: "41",
-                        y2: "42",
-                        stroke: "currentColor",
-                        stroke_width: "6",
-                        stroke_linecap: "round",
-                        if !active {
-                            animate {
-                                attribute_name: "y1",
-                                values: "30;30;41;30;30",
-                                key_times: "0;0.80;0.82;0.84;1",
-                                dur: "3.4s",
-                                repeat_count: "indefinite",
-                            }
                         }
                     }
                 }
+            }
         }
     }
 }
@@ -369,6 +283,7 @@ fn load_session_history(
     history_user_id: String,
     history_session_id: String,
     history_is_detail_route: bool,
+    chat_state: ChatStateContext,
     transition: Option<ConversationTransitionContext>,
     execute_send_after_history: Rc<dyn Fn(String, Vec<ComposerImageAttachment>)>,
 ) {
@@ -379,14 +294,14 @@ fn load_session_history(
             &history_is_detail_route,
         ),
         move |(request_user_id, sid, is_detail_route)| {
-            let execute_send_after_history = execute_send_after_history.clone();
             let transition = transition;
+            let execute_send_after_history = execute_send_after_history.clone();
             async move {
                 if sid.is_empty() {
                     return;
                 }
 
-                *ACTIVE_SESSION_ID.write() = Some(sid.clone());
+                activate_session(chat_state, sid.clone());
                 let pending_message = transition
                     .and_then(|ctx| ctx.pending.peek().clone())
                     .filter(|pending| pending.session_id == sid);
@@ -401,19 +316,23 @@ fn load_session_history(
                     Ok(history) => {
                         if history.is_empty() {
                             if is_detail_route && !has_pending {
-                                *CHAT_MESSAGES.write() = vec![ChatMessage {
-                                    id: 0,
-                                    text: "嗨！我是 warmmy，你的对话饮食助理。今天有什么想记录的，或者关于饮食健康的疑问吗？🍎".to_string(),
-                                    is_bot: true,
-                                    is_skeleton: false,
-                                    is_streaming: false,
-                                    attachments: Vec::new(),
-                                    pending_meal: None,
-                                }];
+                                set_active_session_messages(
+                                    chat_state,
+                                    sid.clone(),
+                                    vec![ChatMessage {
+                                        id: 0,
+                                        text: "嗨！我是 warmmy，你的对话饮食助理。今天有什么想记录的，或者关于饮食健康的疑问吗？🍎".to_string(),
+                                        is_bot: true,
+                                        is_skeleton: false,
+                                        is_streaming: false,
+                                        attachments: Vec::new(),
+                                        pending_meal: None,
+                                    }],
+                                    1,
+                                );
                             } else {
-                                append_pending_meal_messages(pending_meals, 1);
+                                append_pending_meal_messages(chat_state, sid.clone(), pending_meals, 1);
                             }
-                            *CHAT_NEXT_ID.write() = next_chat_id();
                         } else {
                             if !is_detail_route && !has_pending {
                                 navigator().replace(format!("/{}", sid));
@@ -457,8 +376,12 @@ fn load_session_history(
                                 });
                                 current_next_id += 1;
                             }
-                            *CHAT_MESSAGES.write() = loaded_msgs;
-                            *CHAT_NEXT_ID.write() = current_next_id;
+                            set_active_session_messages(
+                                chat_state,
+                                sid.clone(),
+                                loaded_msgs,
+                                current_next_id,
+                            );
                         }
 
                         send_pending_transition(
@@ -469,20 +392,23 @@ fn load_session_history(
                     }
                     Err(_) => {
                         if !has_pending {
-                            *CHAT_MESSAGES.write() = vec![ChatMessage {
-                                id: 0,
-                                text: "嗨！今天想吃点什么呢？".to_string(),
-                                is_bot: true,
-                                is_skeleton: false,
-                                is_streaming: false,
-                                attachments: Vec::new(),
-                                pending_meal: None,
-                            }];
-                            append_pending_meal_messages(pending_meals, 1);
-                            *CHAT_NEXT_ID.write() = next_chat_id();
+                            set_active_session_messages(
+                                chat_state,
+                                sid.clone(),
+                                vec![ChatMessage {
+                                    id: 0,
+                                    text: "嗨！今天想吃点什么呢？".to_string(),
+                                    is_bot: true,
+                                    is_skeleton: false,
+                                    is_streaming: false,
+                                    attachments: Vec::new(),
+                                    pending_meal: None,
+                                }],
+                                1,
+                            );
+                            append_pending_meal_messages(chat_state, sid.clone(), pending_meals, 1);
                         } else {
-                            append_pending_meal_messages(pending_meals, 1);
-                            *CHAT_NEXT_ID.write() = next_chat_id();
+                            append_pending_meal_messages(chat_state, sid.clone(), pending_meals, 1);
                             send_pending_transition(
                                 pending_message,
                                 transition,
@@ -494,6 +420,19 @@ fn load_session_history(
             }
         },
     ));
+}
+
+fn start_pending_transition(
+    current_session_id: String,
+    chat_state: ChatStateContext,
+    transition: Option<ConversationTransitionContext>,
+    execute_send_after_history: Rc<dyn Fn(String, Vec<ComposerImageAttachment>)>,
+) {
+    let pending_message = transition
+        .and_then(|ctx| ctx.pending.peek().clone())
+        .filter(|pending| pending.session_id == current_session_id);
+    send_pending_transition(pending_message, transition, execute_send_after_history);
+    let _ = chat_state;
 }
 
 fn send_pending_transition(

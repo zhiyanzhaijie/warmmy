@@ -1,4 +1,6 @@
 use dioxus::prelude::*;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 use api::meal;
 
@@ -48,10 +50,47 @@ pub struct ConversationTransitionContext {
     pub pending: Signal<Option<PendingConversationMessage>>,
 }
 
-pub static CHAT_MESSAGES: GlobalSignal<Vec<ChatMessage>> = Signal::global(Vec::new);
-pub static ACTIVE_SESSION_ID: GlobalSignal<Option<String>> = Signal::global(|| None);
-pub static CHAT_INPUT: GlobalSignal<String> = Signal::global(String::new);
-pub static CHAT_NEXT_ID: GlobalSignal<u64> = Signal::global(|| 1_u64);
-pub static CHAT_COMPOSER_ATTACHMENTS: GlobalSignal<Vec<ComposerImageAttachment>> =
-    Signal::global(Vec::new);
-pub static CHAT_ATTACHMENT_NEXT_ID: GlobalSignal<u64> = Signal::global(|| 1_u64);
+#[derive(Clone, Copy)]
+pub struct ChatStateContext {
+    pub messages: Signal<Vec<ChatMessage>>,
+    pub session_messages: Signal<HashMap<String, Vec<ChatMessage>>>,
+    pub active_session_id: Signal<Option<String>>,
+    pub input: Signal<String>,
+    pub next_id: Signal<u64>,
+    pub composer_attachments: Signal<Vec<ComposerImageAttachment>>,
+    pub attachment_next_id: Signal<u64>,
+}
+
+#[derive(Clone)]
+pub struct SendConversationMessage {
+    handler: Rc<dyn Fn(String, String, Vec<ComposerImageAttachment>, bool)>,
+}
+
+impl SendConversationMessage {
+    pub fn new(
+        handler: Rc<dyn Fn(String, String, Vec<ComposerImageAttachment>, bool)>,
+    ) -> Self {
+        Self { handler }
+    }
+
+    pub fn call(
+        &self,
+        session_id: String,
+        content: String,
+        attachments: Vec<ComposerImageAttachment>,
+        route_after_stream: bool,
+    ) {
+        (self.handler)(session_id, content, attachments, route_after_stream);
+    }
+}
+
+impl PartialEq for SendConversationMessage {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.handler, &other.handler)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct ChatRuntimeContext {
+    pub send_message: Signal<Option<SendConversationMessage>>,
+}

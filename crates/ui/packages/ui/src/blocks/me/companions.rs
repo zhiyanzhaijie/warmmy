@@ -5,6 +5,7 @@ use dioxus_icons::lucide::{ArrowLeft, HeartHandshake, Pencil, Save, Trash2, User
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
 use crate::components::ui::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
+use crate::hooks::use_IO;
 
 use super::common::{
     merge_tags, BlockMessage, LabeledInput, LabeledTextarea, MiniTag, TagListInput,
@@ -18,18 +19,24 @@ pub fn CompanionsSummaryBlock(user_id: String) -> Element {
     let mut message = use_signal(String::new);
     let nav = navigator();
 
-    let load_user_id = user_id.clone();
+    let loaded_companions = use_IO({
+        let user_id = user_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            async move { user::list_dining_companions(request_user_id).await }
+        }
+    });
     use_effect(move || {
-        let request_user_id = load_user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            message.set(String::new());
-            match user::list_dining_companions(request_user_id).await {
-                Ok(items) => companions.set(items),
+        loading.set(loaded_companions.read().is_none());
+        if let Some(result) = loaded_companions.read().as_ref() {
+            match result {
+                Ok(items) => {
+                    message.set(String::new());
+                    companions.set(items.clone());
+                }
                 Err(err) => message.set(format!("加载关系人失败: {err}")),
             }
-            loading.set(false);
-        });
+        }
     });
 
     rsx! {
@@ -149,20 +156,29 @@ fn CompanionsEditor(user_id: String) -> Element {
     let mut health_notes = use_signal(Vec::<String>::new);
     let mut health_notes_input = use_signal(String::new);
     let mut message = use_signal(String::new);
+    let mut hydrated = use_signal(|| false);
     let nav = navigator();
 
-    let load_user_id = user_id.clone();
+    let loaded_companions = use_IO({
+        let user_id = user_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            async move { user::list_dining_companions(request_user_id).await }
+        }
+    });
     use_effect(move || {
-        let request_user_id = load_user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            message.set(String::new());
-            match user::list_dining_companions(request_user_id).await {
-                Ok(items) => companions.set(items),
+        loading.set(loaded_companions.read().is_none());
+        if let Some(result) = loaded_companions.read().as_ref() {
+            match result {
+                Ok(items) if !hydrated() => {
+                    message.set(String::new());
+                    companions.set(items.clone());
+                    hydrated.set(true);
+                }
+                Ok(_) => {}
                 Err(err) => message.set(format!("加载关系人失败: {err}")),
             }
-            loading.set(false);
-        });
+        }
     });
 
     let start_new = move |_| {
@@ -198,7 +214,7 @@ fn CompanionsEditor(user_id: String) -> Element {
     let save_user_id = user_id.clone();
     let save = move |_| {
         let request_user_id = save_user_id.clone();
-        spawn(async move {
+        async move {
             saving.set(true);
             message.set(String::new());
             let input = user::SaveDiningCompanionInput {
@@ -225,13 +241,14 @@ fn CompanionsEditor(user_id: String) -> Element {
                         health_notes,
                         health_notes_input,
                     );
+                    hydrated.set(true);
                     dialog_open.set(false);
                     message.set("关系人已保存".to_string());
                 }
                 Err(err) => message.set(format!("保存关系人失败: {err}")),
             }
             saving.set(false);
-        });
+        }
     };
 
     rsx! {
@@ -293,18 +310,19 @@ fn CompanionsEditor(user_id: String) -> Element {
                                     let request_user_id = user_id.clone();
                                     move |companion_id: String| {
                                         let request_user_id = request_user_id.clone();
-                                        spawn(async move {
+                                        async move {
                                             saving.set(true);
                                             message.set(String::new());
                                             match user::delete_dining_companion(request_user_id, companion_id).await {
                                                 Ok(items) => {
                                                     companions.set(items);
+                                                    hydrated.set(true);
                                                     message.set("关系人已删除".to_string());
                                                 }
                                                 Err(err) => message.set(format!("删除关系人失败: {err}")),
                                             }
                                             saving.set(false);
-                                        });
+                                        }
                                     }
                                 },
                             }

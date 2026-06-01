@@ -3,8 +3,9 @@ use dioxus::prelude::*;
 use dioxus_icons::lucide::{CalendarDays, CircleGauge, Tent, TrendingUp};
 use dioxus_primitives::{ContentAlign, ContentSide};
 
-use crate::providers::CurrentUserContext;
 use crate::components::ui::popover::{PopoverContent, PopoverRoot, PopoverTrigger};
+use crate::hooks::use_IO;
+use crate::providers::CurrentUserContext;
 
 use super::metrics::{compact_number, date_label, parse_metrics};
 
@@ -41,24 +42,22 @@ struct DisplaySummary {
 pub fn TravelListBlock() -> Element {
     let current_user = use_context::<CurrentUserContext>();
     let user_id = (current_user.user_id)();
-    let mut items = use_signal(Vec::<meal::MealDaySummaryDTO>::new);
-    let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
-
-    use_effect(move || {
-        let request_user_id = user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            error.set(String::new());
-            match meal::list_meal_day_summaries(request_user_id).await {
-                Ok(next) => items.set(next),
-                Err(err) => error.set(format!("加载旅程失败: {err}")),
-            }
-            loading.set(false);
-        });
+    let summaries_resource = use_IO({
+        let user_id = user_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            async move { meal::list_meal_day_summaries(request_user_id).await }
+        }
     });
 
-    let summaries = items();
+    let loading = summaries_resource.read().is_none();
+    let result = summaries_resource.read().as_ref().cloned();
+    let error = result
+        .as_ref()
+        .and_then(|result| result.as_ref().err())
+        .map(|err| format!("加载旅程失败: {err}"))
+        .unwrap_or_default();
+    let summaries = result.and_then(Result::ok).unwrap_or_default();
     let display_summaries = build_display_summaries(&summaries);
     let count = summaries.len();
     let average_score = if summaries.is_empty() {
@@ -75,11 +74,11 @@ pub fn TravelListBlock() -> Element {
         div { class: "relative h-full min-h-0 overflow-y-auto px-4 py-4 pb-28 md:px-8 md:py-8 md:pb-12",
             div { class: "relative mx-auto w-full max-w-6xl",
                 section { class: "min-h-0 pr-16 md:pr-28",
-                    if !error().is_empty() {
+                    if !error.is_empty() {
                         div { class: "rounded-xl border border-border bg-card px-4 py-3 text-sm text-destructive",
                             "{error}"
                         }
-                    } else if loading() {
+                    } else if loading {
                         TimelineSkeleton {}
                     } else if summaries.is_empty() {
                         EmptyTimeline {}

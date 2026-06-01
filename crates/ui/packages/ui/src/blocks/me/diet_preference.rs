@@ -4,6 +4,7 @@ use dioxus_icons::lucide::{ArrowLeft, Check, Flame, Pencil, Trash2};
 
 use crate::components::ui::button::{Button, ButtonVariant};
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
+use crate::hooks::use_IO;
 use crate::providers::{set_current_preferences, CurrentUserContext};
 
 use super::common::{merge_tags, BlockMessage, TagListInput};
@@ -19,23 +20,27 @@ pub fn DietPreferenceSummaryBlock(
     let mut message = use_signal(String::new);
     let nav = navigator();
 
-    let load_user_id = user_id.clone();
+    let loaded_preferences = use_IO({
+        let user_id = user_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            async move { user::get_user_preferences(request_user_id).await }
+        }
+    });
     use_effect(move || {
-        let request_user_id = load_user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            message.set(String::new());
-            match user::get_user_preferences(request_user_id).await {
+        loading.set(loaded_preferences.read().is_none());
+        if let Some(result) = loaded_preferences.read().as_ref() {
+            match result {
                 Ok(preferences) => {
+                    message.set(String::new());
                     preferred_cuisines.set(preferences.preferred_cuisines.clone());
                     avoided_cuisines.set(preferences.avoided_cuisines.clone());
                     set_current_preferences(preferences.clone());
-                    on_loaded.call(preferences);
+                    on_loaded.call(preferences.clone());
                 }
                 Err(err) => message.set(format!("加载饮食偏好失败: {err}")),
             }
-            loading.set(false);
-        });
+        }
     });
 
     let total = preferred_cuisines().len() + avoided_cuisines().len();
@@ -133,26 +138,33 @@ pub fn DietPreferenceBlock(
     let mut avoided_cuisines = use_signal(Vec::<String>::new);
     let mut avoided_cuisines_input = use_signal(String::new);
     let mut message = use_signal(String::new);
+    let mut hydrated = use_signal(|| false);
 
-    let load_user_id = user_id.clone();
+    let loaded_preferences = use_IO({
+        let user_id = user_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            async move { user::get_user_preferences(request_user_id).await }
+        }
+    });
     use_effect(move || {
-        let request_user_id = load_user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            message.set(String::new());
-            match user::get_user_preferences(request_user_id.clone()).await {
-                Ok(preferences) => {
+        loading.set(loaded_preferences.read().is_none());
+        if let Some(result) = loaded_preferences.read().as_ref() {
+            match result {
+                Ok(preferences) if !hydrated() => {
+                    message.set(String::new());
                     preferred_cuisines.set(preferences.preferred_cuisines.clone());
                     avoided_cuisines.set(preferences.avoided_cuisines.clone());
                     preferred_cuisines_input.set(String::new());
                     avoided_cuisines_input.set(String::new());
                     set_current_preferences(preferences.clone());
-                    on_saved.call(preferences);
+                    on_saved.call(preferences.clone());
+                    hydrated.set(true);
                 }
+                Ok(_) => {}
                 Err(err) => message.set(format!("加载饮食偏好失败: {err}")),
             }
-            loading.set(false);
-        });
+        }
     });
 
     let commit_preferred = move |_| {
@@ -170,7 +182,7 @@ pub fn DietPreferenceBlock(
     let save_user_id = user_id.clone();
     let save = move |_| {
         let request_user_id = save_user_id.clone();
-        spawn(async move {
+        async move {
             saving.set(true);
             message.set(String::new());
             let current = match user::get_user_preferences(request_user_id.clone()).await {
@@ -195,12 +207,13 @@ pub fn DietPreferenceBlock(
                     avoided_cuisines_input.set(String::new());
                     set_current_preferences(result.clone());
                     on_saved.call(result);
+                    hydrated.set(true);
                     message.set("饮食偏好已保存".to_string());
                 }
                 Err(err) => message.set(format!("保存饮食偏好失败: {err}")),
             }
             saving.set(false);
-        });
+        }
     };
 
     rsx! {

@@ -8,6 +8,7 @@ use crate::components::ui::button::Button;
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
 
 use super::common::{BlockMessage, LabeledInput, LabeledTextarea};
+use crate::hooks::use_IO;
 use crate::providers::CurrentUserContext;
 
 #[component]
@@ -24,18 +25,24 @@ pub fn ProfileSummaryBlock(
     let age = use_signal(String::new);
     let mut message = use_signal(String::new);
 
-    let load_user_id = user_id.clone();
+    let loaded_profile = use_IO({
+        let user_id = user_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            async move { user::get_user_profile(request_user_id).await }
+        }
+    });
     use_effect(move || {
-        let request_user_id = load_user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            message.set(String::new());
-            match user::get_user_profile(request_user_id).await {
-                Ok(profile) => apply_profile(profile, display_name, introduction, gender, age),
+        loading.set(loaded_profile.read().is_none());
+        if let Some(result) = loaded_profile.read().as_ref() {
+            match result {
+                Ok(profile) => {
+                    message.set(String::new());
+                    apply_profile(profile.clone(), display_name, introduction, gender, age);
+                }
                 Err(err) => message.set(format!("加载用户失败: {err}")),
             }
-            loading.set(false);
-        });
+        }
     });
 
     let avatar_initial = display_name()
@@ -334,26 +341,35 @@ fn ProfileEditor(user_id: String) -> Element {
     let gender = use_signal(String::new);
     let age = use_signal(String::new);
     let mut message = use_signal(String::new);
+    let mut hydrated = use_signal(|| false);
     let nav = navigator();
 
-    let load_user_id = user_id.clone();
+    let loaded_profile = use_IO({
+        let user_id = user_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            async move { user::get_user_profile(request_user_id).await }
+        }
+    });
     use_effect(move || {
-        let request_user_id = load_user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            message.set(String::new());
-            match user::get_user_profile(request_user_id).await {
-                Ok(profile) => apply_profile(profile, display_name, introduction, gender, age),
+        loading.set(loaded_profile.read().is_none());
+        if let Some(result) = loaded_profile.read().as_ref() {
+            match result {
+                Ok(profile) if !hydrated() => {
+                    message.set(String::new());
+                    apply_profile(profile.clone(), display_name, introduction, gender, age);
+                    hydrated.set(true);
+                }
+                Ok(_) => {}
                 Err(err) => message.set(format!("加载用户失败: {err}")),
             }
-            loading.set(false);
-        });
+        }
     });
 
     let save_user_id = user_id.clone();
     let save_profile = move |_| {
         let request_user_id = save_user_id.clone();
-        spawn(async move {
+        async move {
             saving.set(true);
             message.set(String::new());
             let parsed_age = age().trim().parse::<u8>().ok();
@@ -367,12 +383,13 @@ fn ProfileEditor(user_id: String) -> Element {
             match user::save_user_profile(input).await {
                 Ok(profile) => {
                     apply_profile(profile, display_name, introduction, gender, age);
+                    hydrated.set(true);
                     message.set("用户信息已保存".to_string());
                 }
                 Err(err) => message.set(format!("保存用户失败: {err}")),
             }
             saving.set(false);
-        });
+        }
     };
 
     rsx! {

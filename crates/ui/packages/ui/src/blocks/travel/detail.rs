@@ -2,8 +2,9 @@ use api::meal;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ArrowLeft, CalendarDays, Flame, ListChecks};
 
-use crate::providers::CurrentUserContext;
 use crate::components::common::MarkdownContent;
+use crate::hooks::use_IO;
+use crate::providers::CurrentUserContext;
 
 use super::metrics::{compact_number, detail_date_label, parse_metrics};
 
@@ -11,26 +12,24 @@ use super::metrics::{compact_number, detail_date_label, parse_metrics};
 pub fn TravelDetailBlock(summary_id: String) -> Element {
     let current_user = use_context::<CurrentUserContext>();
     let user_id = (current_user.user_id)();
-    let mut summary = use_signal(|| Option::<meal::MealDaySummaryDTO>::None);
-    let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
     let nav = navigator();
-    let detail_user_id = user_id.clone();
-    let detail_summary_id = summary_id.clone();
-
-    use_effect(move || {
-        let request_user_id = detail_user_id.clone();
-        let request_summary_id = detail_summary_id.clone();
-        spawn(async move {
-            loading.set(true);
-            error.set(String::new());
-            match meal::get_meal_day_summary(request_user_id, request_summary_id).await {
-                Ok(next) => summary.set(next),
-                Err(err) => error.set(format!("加载 summary 失败: {err}")),
-            }
-            loading.set(false);
-        });
+    let summary_resource = use_IO({
+        let user_id = user_id.clone();
+        let summary_id = summary_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            let request_summary_id = summary_id.clone();
+            async move { meal::get_meal_day_summary(request_user_id, request_summary_id).await }
+        }
     });
+    let loading = summary_resource.read().is_none();
+    let result = summary_resource.read().as_ref().cloned();
+    let error = result
+        .as_ref()
+        .and_then(|result| result.as_ref().err())
+        .map(|err| format!("加载 summary 失败: {err}"))
+        .unwrap_or_default();
+    let summary = result.and_then(Result::ok).flatten();
 
     rsx! {
         div { class: "relative flex h-full min-h-0 flex-col px-4 py-4 md:px-8 md:py-8",
@@ -49,13 +48,13 @@ pub fn TravelDetailBlock(summary_id: String) -> Element {
                 }
 
                 div { class: "min-h-0 flex-1 overflow-y-auto pb-28 md:pb-12",
-                    if !error().is_empty() {
+                    if !error.is_empty() {
                         div { class: "rounded-xl border border-border bg-card px-4 py-3 text-sm text-destructive",
                             "{error}"
                         }
-                    } else if loading() {
+                    } else if loading {
                         DetailSkeleton {}
-                    } else if let Some(item) = summary() {
+                    } else if let Some(item) = summary {
                         SummaryDetail {
                             summary: item.clone(),
                             user_id: user_id.clone(),
@@ -146,23 +145,23 @@ fn MiniSignal(label: String, value: String) -> Element {
 
 #[component]
 fn MealLogsSection(user_id: String, session_id: String) -> Element {
-    let mut logs = use_signal(Vec::<meal::MealRecordDTO>::new);
-    let mut loading = use_signal(|| true);
-    let mut error = use_signal(String::new);
-
-    use_effect(move || {
-        let request_user_id = user_id.clone();
-        let request_session_id = session_id.clone();
-        spawn(async move {
-            loading.set(true);
-            error.set(String::new());
-            match meal::list_meal_logs(request_user_id, request_session_id).await {
-                Ok(next) => logs.set(next),
-                Err(err) => error.set(format!("加载 meal logs 失败: {err}")),
-            }
-            loading.set(false);
-        });
+    let logs_resource = use_IO({
+        let user_id = user_id.clone();
+        let session_id = session_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            let request_session_id = session_id.clone();
+            async move { meal::list_meal_logs(request_user_id, request_session_id).await }
+        }
     });
+    let loading = logs_resource.read().is_none();
+    let result = logs_resource.read().as_ref().cloned();
+    let error = result
+        .as_ref()
+        .and_then(|result| result.as_ref().err())
+        .map(|err| format!("加载 meal logs 失败: {err}"))
+        .unwrap_or_default();
+    let logs = result.and_then(Result::ok).unwrap_or_default();
 
     rsx! {
         section { class: "rounded-2xl border border-border bg-card/75 p-4 md:p-5",
@@ -175,27 +174,27 @@ fn MealLogsSection(user_id: String, session_id: String) -> Element {
                     h2 { class: "text-3xl font-semibold tracking-[-0.6px] text-foreground", "当天餐食" }
                 }
                 div { class: "rounded-full border border-border bg-background/70 px-3 py-1 text-sm font-semibold text-foreground",
-                    "{logs().len()}"
+                    "{logs.len()}"
                 }
             }
 
-            if !error().is_empty() {
+            if !error.is_empty() {
                 div { class: "mt-5 rounded-lg border border-border bg-background px-4 py-3 text-sm text-destructive",
                     "{error}"
                 }
-            } else if loading() {
+            } else if loading {
                 div { class: "mt-4 grid grid-cols-1 gap-2",
                     for _ in 0..3 {
                         div { class: "h-28 animate-pulse rounded-lg border border-border bg-muted" }
                     }
                 }
-            } else if logs().is_empty() {
+            } else if logs.is_empty() {
                 div { class: "mt-5 rounded-lg border border-dashed border-border bg-background px-4 py-8 text-center text-sm text-muted-foreground",
                     "这一天还没有保存的 meal log。"
                 }
             } else {
                 div { class: "mt-5 grid grid-cols-1 gap-3",
-                    for item in logs() {
+                    for item in logs {
                         MealLogCard { item }
                     }
                 }

@@ -8,6 +8,7 @@ use dioxus_icons::lucide::{
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
 use crate::components::ui::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
+use crate::hooks::use_IO;
 
 use super::super::me::common::{BlockMessage, ChoiceOption, LabeledChoiceGroup, LabeledInput};
 
@@ -88,26 +89,35 @@ pub fn AIModelBlock(user_id: String) -> Element {
     let mut route_model = use_signal(String::new);
     let mut route_embedding_ndims = use_signal(|| "1024".to_string());
     let mut route_enabled = use_signal(|| true);
+    let mut hydrated = use_signal(|| false);
 
-    let load_user_id = user_id.clone();
+    let loaded_config = use_IO({
+        let user_id = user_id.clone();
+        move || {
+            let request_user_id = user_id.clone();
+            async move { user::get_user_ai_config(request_user_id).await }
+        }
+    });
     use_effect(move || {
-        let request_user_id = load_user_id.clone();
-        spawn(async move {
-            loading.set(true);
-            message.set(String::new());
-            match user::get_user_ai_config(request_user_id).await {
-                Ok(next) => config.set(Some(next)),
+        loading.set(loaded_config.read().is_none());
+        if let Some(result) = loaded_config.read().as_ref() {
+            match result {
+                Ok(next) if !hydrated() => {
+                    message.set(String::new());
+                    config.set(Some(next.clone()));
+                    hydrated.set(true);
+                }
+                Ok(_) => {}
                 Err(err) => message.set(format!("加载模型配置失败: {err}")),
             }
-            loading.set(false);
-        });
+        }
     });
 
     let save_user_id = user_id.clone();
     let save_model = move |_| {
         let request_user_id = save_user_id.clone();
-        let capability = selected_capability();
-        spawn(async move {
+        async move {
+            let capability = selected_capability();
             saving.set(true);
             message.set(String::new());
 
@@ -154,11 +164,13 @@ pub fn AIModelBlock(user_id: String) -> Element {
                             Ok(next) => {
                                 config.set(Some(next));
                                 provider_api_key.set(String::new());
+                                hydrated.set(true);
                                 dialog_open.set(false);
                                 message.set("模型配置已保存".to_string());
                             }
                             Err(err) => {
                                 config.set(Some(after_provider));
+                                hydrated.set(true);
                                 message.set(format!("保存模型路由失败: {err}"));
                             }
                         }
@@ -168,7 +180,7 @@ pub fn AIModelBlock(user_id: String) -> Element {
             }
 
             saving.set(false);
-        });
+        }
     };
 
     let cfg = config();

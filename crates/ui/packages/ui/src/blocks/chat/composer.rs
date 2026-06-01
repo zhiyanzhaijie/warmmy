@@ -8,10 +8,9 @@ use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::textarea::{Textarea, TextareaVariant};
 
 use super::state::{
-    ComposerImageAttachment, CHAT_ATTACHMENT_NEXT_ID, CHAT_COMPOSER_ATTACHMENTS, CHAT_INPUT,
-    CHAT_MESSAGES,
+    ChatStateContext, ComposerImageAttachment,
 };
-use super::stream::append_bot_text;
+use super::stream::{active_session_id, append_bot_text};
 
 const MAX_COMPOSER_IMAGE_COUNT: usize = 4;
 const MAX_COMPOSER_IMAGE_SIZE_BYTES: usize = 10 * 1024 * 1024;
@@ -53,29 +52,31 @@ impl PartialEq for SendChatMessage {
 
 #[component]
 pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Element {
+    let mut chat_state = use_context::<ChatStateContext>();
     let send_message = {
         let on_send = on_send.clone();
         move || {
-            if CHAT_MESSAGES
+            if chat_state
+                .messages
                 .read()
                 .iter()
                 .any(|msg| msg.is_streaming || msg.is_skeleton)
             {
                 return;
             }
-            let content = CHAT_INPUT().trim().to_string();
-            let attachments = CHAT_COMPOSER_ATTACHMENTS.read().clone();
+            let content = (chat_state.input)().trim().to_string();
+            let attachments = chat_state.composer_attachments.read().clone();
             if content.is_empty() && attachments.is_empty() {
                 return;
             }
-            *CHAT_INPUT.write() = String::new();
-            CHAT_COMPOSER_ATTACHMENTS.write().clear();
+            chat_state.input.set(String::new());
+            chat_state.composer_attachments.write().clear();
             on_send.call(content, attachments);
         }
     };
 
-    let send_message_keydown = send_message.clone();
-    let send_message_click = send_message.clone();
+    let mut send_message_keydown = send_message.clone();
+    let mut send_message_click = send_message.clone();
     use_future(move || async move {
         let mut eval = document::eval(
             r#"
@@ -95,9 +96,13 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
 
         loop {
             match eval.recv::<PickedImages>().await {
-                Ok(picked) => append_picked_images(picked),
+                Ok(picked) => append_picked_images(chat_state, picked),
                 Err(err) => {
-                    append_bot_text(format!("选择图片失败：{err}"));
+                    append_bot_text(
+                        chat_state,
+                        active_session_id(chat_state),
+                        format!("选择图片失败：{err}"),
+                    );
                     return;
                 }
             }
@@ -118,7 +123,7 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
                         disabled: is_streaming,
                         title: "选择图片",
                         onclick: move |_| {
-                            pick_images();
+                            pick_images(chat_state);
                         },
                         ImagePlus { size: 16 }
                     }
@@ -127,10 +132,10 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
                         class: "max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border-none bg-transparent px-3 py-3 font-medium leading-relaxed text-foreground shadow-none outline-none placeholder:text-muted-foreground placeholder:whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis [field-sizing:content]",
                         rows: "1",
                         placeholder: "记录餐食，或询问下一顿吃什么...",
-                        value: CHAT_INPUT(),
+                        value: (chat_state.input)(),
                         disabled: is_streaming,
                         oninput: move |e: FormEvent| {
-                            *CHAT_INPUT.write() = e.value();
+                            chat_state.input.set(e.value());
                         },
                         onkeydown: move |e: KeyboardEvent| {
                             if e.key() == Key::Enter && !e.modifiers().shift() && !is_streaming {
@@ -152,7 +157,7 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
     }
 }
 
-fn pick_images() {
+fn pick_images(chat_state: ChatStateContext) {
     #[cfg(target_os = "android")]
     {
         document::eval(
@@ -172,14 +177,22 @@ fn pick_images() {
     #[cfg(target_os = "ios")]
     {
         if let Err(err) = crate::platform::pick_images() {
-            append_bot_text(format!("选择图片失败：{err}"));
+            append_bot_text(
+                chat_state,
+                active_session_id(chat_state),
+                format!("选择图片失败：{err}"),
+            );
         }
         return;
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        append_bot_text("当前平台暂不支持原生图片选择器".to_string());
+        append_bot_text(
+            chat_state,
+            active_session_id(chat_state),
+            "当前平台暂不支持原生图片选择器".to_string(),
+        );
     }
 }
 
@@ -192,14 +205,18 @@ fn decode_data_url(data_url: &str) -> Result<Vec<u8>, String> {
         .map_err(|err| err.to_string())
 }
 
-fn append_picked_images(picked: PickedImages) {
+fn append_picked_images(mut chat_state: ChatStateContext, picked: PickedImages) {
     if let Some(err) = picked.error {
-        append_bot_text(format!("选择图片失败：{err}"));
+        append_bot_text(
+            chat_state,
+            active_session_id(chat_state),
+            format!("选择图片失败：{err}"),
+        );
         return;
     }
 
     let mut appended = Vec::new();
-    let existing_count = CHAT_COMPOSER_ATTACHMENTS.read().len();
+    let existing_count = chat_state.composer_attachments.read().len();
     for file in picked.files {
         if existing_count + appended.len() >= MAX_COMPOSER_IMAGE_COUNT {
             break;
@@ -213,14 +230,18 @@ fn append_picked_images(picked: PickedImages) {
             continue;
         }
         if file.size_bytes as usize > MAX_COMPOSER_IMAGE_SIZE_BYTES {
-            append_bot_text(format!("图片 {} 超过大小限制（最多 10MB）", file.name));
+            append_bot_text(
+                chat_state,
+                active_session_id(chat_state),
+                format!("图片 {} 超过大小限制（最多 10MB）", file.name),
+            );
             continue;
         }
 
         match decode_data_url(&file.data_url) {
             Ok(bytes) => {
-                let id = CHAT_ATTACHMENT_NEXT_ID();
-                *CHAT_ATTACHMENT_NEXT_ID.write() = id.saturating_add(1);
+                let id = (chat_state.attachment_next_id)();
+                chat_state.attachment_next_id.set(id.saturating_add(1));
                 appended.push(ComposerImageAttachment {
                     id,
                     name: file.name,
@@ -231,28 +252,34 @@ fn append_picked_images(picked: PickedImages) {
                 });
             }
             Err(err) => {
-                append_bot_text(format!("读取图片失败：{err}"));
+                append_bot_text(
+                    chat_state,
+                    active_session_id(chat_state),
+                    format!("读取图片失败：{err}"),
+                );
             }
         }
     }
 
     if !appended.is_empty() {
-        CHAT_COMPOSER_ATTACHMENTS.write().extend(appended);
+        chat_state.composer_attachments.write().extend(appended);
     }
 }
 
 #[component]
 fn AttachmentPreviewStrip() -> Element {
-    let remove_attachment = move |id: u64| {
-        CHAT_COMPOSER_ATTACHMENTS
+    let mut chat_state = use_context::<ChatStateContext>();
+    let mut remove_attachment = move |id: u64| {
+        chat_state
+            .composer_attachments
             .write()
             .retain(|attachment| attachment.id != id);
     };
 
     rsx! {
-        if !CHAT_COMPOSER_ATTACHMENTS().is_empty() {
+        if !chat_state.composer_attachments.read().is_empty() {
             div { class: "mb-2 flex flex-wrap gap-2 px-2 pt-1",
-                for attachment in CHAT_COMPOSER_ATTACHMENTS().iter() {
+                for attachment in chat_state.composer_attachments.read().iter() {
                     div {
                         key: "{attachment.id}",
                         class: "group relative h-14 w-14 overflow-hidden rounded-xl border border-border bg-card",
