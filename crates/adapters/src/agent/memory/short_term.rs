@@ -3,7 +3,7 @@ use std::sync::Arc;
 use app::conversation::ChatMessageRepositoryPort;
 use domain::UserId;
 use rig::memory::{ConversationMemory, MemoryError};
-use rig::message::{Message, UserContent};
+use rig::message::{AssistantContent, Message, UserContent};
 use rig::wasm_compat::WasmBoxedFuture;
 
 const INTERNAL_CONVERSATION_MARKER: &str = "[warmmy:internal-continuation]";
@@ -45,6 +45,7 @@ impl ConversationMemory for SessionConversationMemory {
                 let mut history = memory_messages
                     .into_iter()
                     .filter_map(|content| serde_json::from_str::<Message>(&content).ok())
+                    .filter(is_safe_memory_message)
                     .collect::<Vec<_>>();
                 apply_recent_window(&mut history, self.max_recent_messages);
                 return Ok(history);
@@ -77,7 +78,7 @@ impl ConversationMemory for SessionConversationMemory {
     ) -> WasmBoxedFuture<'a, Result<(), MemoryError>> {
         Box::pin(async move {
             for message in messages {
-                if !is_internal_message(&message) {
+                if !is_internal_message(&message) && is_safe_memory_message(&message) {
                     let raw = serde_json::to_string(&message)
                         .map_err(|err| MemoryError::Policy(err.to_string()))?;
                     self.repo
@@ -106,6 +107,18 @@ fn apply_recent_window(history: &mut Vec<Message>, max_recent_messages: usize) {
 
     let keep_from = history.len() - max_recent_messages;
     history.drain(0..keep_from);
+}
+
+fn is_safe_memory_message(message: &Message) -> bool {
+    match message {
+        Message::System { .. } => false,
+        Message::User { content } => content
+            .iter()
+            .all(|item| matches!(item, UserContent::Text(_))),
+        Message::Assistant { content, .. } => content
+            .iter()
+            .all(|item| matches!(item, AssistantContent::Text(_))),
+    }
 }
 
 fn is_internal_message(message: &Message) -> bool {

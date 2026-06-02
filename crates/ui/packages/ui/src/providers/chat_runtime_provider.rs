@@ -11,7 +11,8 @@ use dioxus::prelude::ServerFnError;
 use crate::blocks::{
     activate_chat_session, append_agent_stream, append_chat_bot_text,
     append_outgoing_message_pair, append_streaming_bot_slot, ChatActionContext, ChatContext,
-    ChatMessageAction, ComposerImageAttachment, FinalizeConversationDay, SendConversationMessage,
+    ChatMessageAction, ComposerImageAttachment, DEFAULT_STREAM_IDLE_TIMEOUT,
+    FinalizeConversationDay, IMAGE_STREAM_IDLE_TIMEOUT, SendConversationMessage,
 };
 
 use super::current_user_id;
@@ -120,7 +121,14 @@ async fn finalize_conversation_day(
     let bot_id = append_streaming_bot_slot(chat_state, session_id.clone());
     match meal::finalize_and_summarize_meal_day(request_user_id, session_id.clone()).await {
         Ok(stream) => {
-            append_agent_stream(chat_state, stream, bot_id, session_id).await;
+            append_agent_stream(
+                chat_state,
+                stream,
+                bot_id,
+                session_id,
+                DEFAULT_STREAM_IDLE_TIMEOUT,
+            )
+            .await;
         }
         Err(err) => {
             append_chat_bot_text(chat_state, session_id, format!("生成今日总结失败：{err}"));
@@ -202,6 +210,11 @@ async fn send_conversation_message(
         text: content,
         attachments: uploaded_attachments,
     };
+    let idle_timeout = if send_input.attachments.is_empty() {
+        DEFAULT_STREAM_IDLE_TIMEOUT
+    } else {
+        IMAGE_STREAM_IDLE_TIMEOUT
+    };
     match echo_stream_with_timeout(
         request_user_id.clone(),
         send_input.clone(),
@@ -210,7 +223,7 @@ async fn send_conversation_message(
     .await
     {
         Ok(stream) => {
-            append_agent_stream(chat_state, stream, bot_id, session_id.clone()).await;
+            append_agent_stream(chat_state, stream, bot_id, session_id.clone(), idle_timeout).await;
             if route_after_stream {
                 navigator().replace(format!("/{session_id}"));
             }

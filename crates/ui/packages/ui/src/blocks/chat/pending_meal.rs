@@ -5,7 +5,10 @@ use crate::components::ui::input::Input;
 use crate::providers::current_user_id;
 
 use super::state::ChatContext;
-use super::stream::{active_session_id, append_agent_stream, append_bot_text, append_streaming_bot_slot};
+use super::stream::{
+    active_session_id, append_agent_stream, append_bot_text, append_streaming_bot_slot,
+    DEFAULT_STREAM_IDLE_TIMEOUT,
+};
 use api::meal;
 
 #[component]
@@ -69,7 +72,14 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                 {
                     Ok(stream) => {
                         confirmed.set(true);
-                        append_agent_stream(chat_state, stream, bot_id, request_session_id).await;
+                        append_agent_stream(
+                            chat_state,
+                            stream,
+                            bot_id,
+                            request_session_id,
+                            DEFAULT_STREAM_IDLE_TIMEOUT,
+                        )
+                        .await;
                     }
                     Err(err) => append_bot_text(
                         chat_state,
@@ -101,7 +111,14 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                 {
                     Ok(stream) => {
                         rejected.set(true);
-                        append_agent_stream(chat_state, stream, bot_id, request_session_id).await;
+                        append_agent_stream(
+                            chat_state,
+                            stream,
+                            bot_id,
+                            request_session_id,
+                            DEFAULT_STREAM_IDLE_TIMEOUT,
+                        )
+                        .await;
                     }
                     Err(err) => append_bot_text(
                         chat_state,

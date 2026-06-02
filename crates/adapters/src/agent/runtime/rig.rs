@@ -2,8 +2,9 @@ use std::sync::Arc;
 
 use app::app_error::{AppError, AppResult};
 use app::conversation::{
-    ChatMessageRepositoryPort, ConversationReplyStream, ConversationUserInput, EphemeralImageData,
-    EphemeralImageStorePort, SaveMessageImageAttachment, SendUserMessageResult,
+    AgentStatusKind, ChatMessageRepositoryPort, ConversationReplyStream, ConversationStreamEvent,
+    ConversationUserInput, EphemeralImageData, EphemeralImageStorePort, SaveMessageImageAttachment,
+    SendUserMessageResult,
 };
 use app::meal::MealCommandHandler;
 use app::user::{ResolvedAIModelConfig, UserAIConfigQueryHandler, UserDietaryContextQueryHandler};
@@ -13,14 +14,15 @@ use futures_util::StreamExt;
 use rig::agent::MultiTurnStreamItem;
 use rig::agent::StreamingError;
 use rig::client::CompletionClient;
+use rig::completion::Message;
 use rig::completion::Prompt;
 use rig::message::ToolChoice;
-use rig::completion::Message;
 use rig::message::{ImageDetail, ImageMediaType, MimeType, UserContent};
 use rig::providers::{deepseek, openai};
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 use rig::OneOrMany;
-use serde_json::json;
+use serde_json::{to_value, Value};
+use tokio::sync::mpsc;
 
 use crate::agent::config::AgentModelConfig;
 use crate::agent::interaction::{AgentInteractionRequest, AgentInteractionSink};
@@ -29,7 +31,7 @@ use crate::agent::memory::long_term::facts::LongTermFactsMemory as FactsMemory;
 use crate::agent::memory::long_term::rag::{build_rag_index, RagConfig};
 use crate::agent::memory::LongTermFactsMemory;
 use crate::agent::memory::SessionConversationMemory;
-use crate::agent::runtime::hook::{GuardrailHook, WarmmyPromptHook};
+use crate::agent::runtime::hook::{AgentStatusSink, GuardrailHook, WarmmyPromptHook};
 use crate::agent::tool;
 use domain::{AICapability, UserId};
 
@@ -65,6 +67,12 @@ const WARMMY_PREAMBLE: &str = r#"你是 warmmy，一个温暖、专业的对话�
 ## 语言
 - 始终使用中文回复"#;
 
+enum AgentStreamStep<T> {
+    Raw(Option<T>),
+    Status(Option<ConversationStreamEvent>),
+}
+
+#[derive(Clone)]
 pub struct RigConversationRuntime {
     repo: Arc<dyn ChatMessageRepositoryPort>,
     image_store: Arc<dyn EphemeralImageStorePort>,
@@ -308,12 +316,55 @@ impl RigConversationRuntime {
         input: ConversationUserInput,
     ) -> AppResult<ConversationReplyStream> {
         let chat = self.resolve_conversation_model(user_id, &input).await?;
+        let runtime = self.clone();
+        let user_id = user_id.clone();
+        let session_id = session_id.to_string();
+        let has_images = input.has_images();
+
+        Ok(Box::pin(stream! {
+            yield Ok(stream_event(ConversationStreamEvent::RunStarted {
+                run_id: format!("{user_id}:{session_id}"),
+            }));
+            if has_images {
+                yield Ok(status_event(
+                    AgentStatusKind::ReadingInput,
+                    "我在认真看看这张图片。",
+                ));
+            } else {
+                yield Ok(status_event(
+                    AgentStatusKind::Thinking,
+                    "我在准备这次对话的上下文。",
+                ));
+            }
+
+            match runtime
+                .open_stream_with_model(&user_id, &session_id, input, chat)
+                .await
+            {
+                Ok(mut reply_stream) => {
+                    while let Some(item) = reply_stream.next().await {
+                        yield item;
+                    }
+                }
+                Err(err) => yield Err(err),
+            }
+        }))
+    }
+
+    async fn open_stream_with_model(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        input: ConversationUserInput,
+        chat: ResolvedAIModelConfig,
+    ) -> AppResult<ConversationReplyStream> {
         let rag = self.resolve_rag(user_id).await?;
         let facts = self.profile_facts(user_id).await;
         let preamble = self.runtime_preamble(&facts, rag.is_some());
         let model = chat.model.as_str();
         let interaction_sink = AgentInteractionSink::default();
         let user_input = input.visible_text();
+        let has_images = input.has_images();
         let prompt = self.build_prompt_message(&input).await?;
         self.persist_user_image_message(user_id, session_id, &input, &user_input)
             .await;
@@ -326,6 +377,8 @@ impl RigConversationRuntime {
         let chat_for_memory = chat.clone();
         let rag_for_memory = rag.clone();
         let ai_configs = self.ai_configs.clone();
+        let (status_tx, status_rx) = mpsc::unbounded_channel();
+        let status_sink = AgentStatusSink::new(status_tx);
 
         match chat.provider.as_str() {
             "openai" => {
@@ -334,7 +387,8 @@ impl RigConversationRuntime {
                     .base_url(&chat.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
-                let hook = WarmmyPromptHook::new(self.guardrail.clone());
+                let hook =
+                    WarmmyPromptHook::with_status_sink(self.guardrail.clone(), status_sink.clone());
                 let raw = if let Some(rag) = rag.clone() {
                     let rag_index = build_rag_index(&rag).await?;
                     client
@@ -377,6 +431,7 @@ impl RigConversationRuntime {
                 Ok(Self::wrap_stream(
                     raw,
                     interaction_sink,
+                    has_images,
                     user_id_for_memory,
                     user_input,
                     repo_for_history,
@@ -385,6 +440,7 @@ impl RigConversationRuntime {
                     chat_for_memory,
                     rag_for_memory,
                     ai_configs,
+                    status_rx,
                 ))
             }
             "openai_compatible" | "siliconflow" => {
@@ -394,7 +450,8 @@ impl RigConversationRuntime {
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?
                     .completions_api();
-                let hook = WarmmyPromptHook::new(self.guardrail.clone());
+                let hook =
+                    WarmmyPromptHook::with_status_sink(self.guardrail.clone(), status_sink.clone());
                 let raw = if let Some(rag) = rag.clone() {
                     let rag_index = build_rag_index(&rag).await?;
                     client
@@ -437,6 +494,7 @@ impl RigConversationRuntime {
                 Ok(Self::wrap_stream(
                     raw,
                     interaction_sink,
+                    has_images,
                     user_id_for_memory,
                     user_input,
                     repo_for_history,
@@ -445,6 +503,7 @@ impl RigConversationRuntime {
                     chat_for_memory,
                     rag_for_memory,
                     ai_configs,
+                    status_rx,
                 ))
             }
             "deepseek" => {
@@ -453,7 +512,8 @@ impl RigConversationRuntime {
                     .base_url(&chat.base_url)
                     .build()
                     .map_err(|e| AppError::upstream(e.to_string()))?;
-                let hook = WarmmyPromptHook::new(self.guardrail.clone());
+                let hook =
+                    WarmmyPromptHook::with_status_sink(self.guardrail.clone(), status_sink.clone());
                 let raw = if let Some(rag) = rag.clone() {
                     let rag_index = build_rag_index(&rag).await?;
                     client
@@ -496,6 +556,7 @@ impl RigConversationRuntime {
                 Ok(Self::wrap_stream(
                     raw,
                     interaction_sink,
+                    has_images,
                     user_id_for_memory,
                     user_input,
                     repo_for_history,
@@ -504,6 +565,7 @@ impl RigConversationRuntime {
                     chat_for_memory,
                     rag_for_memory,
                     ai_configs,
+                    status_rx,
                 ))
             }
             p => Err(AppError::internal(format!("unsupported provider: {p}"))),
@@ -518,7 +580,10 @@ impl RigConversationRuntime {
         visible_text: &str,
     ) -> AppResult<()> {
         let visible_text = visible_text.trim();
-        if visible_text.is_empty() || input.has_images() || is_internal_conversation_input(visible_text) {
+        if visible_text.is_empty()
+            || input.has_images()
+            || is_internal_conversation_input(visible_text)
+        {
             return Ok(());
         }
 
@@ -558,10 +623,7 @@ impl RigConversationRuntime {
 
         for image in images {
             let media_type = ImageMediaType::from_mime_type(&image.mime_type).ok_or_else(|| {
-                AppError::validation(format!(
-                    "unsupported image mime type: {}",
-                    image.mime_type
-                ))
+                AppError::validation(format!("unsupported image mime type: {}", image.mime_type))
             })?;
             let encoded = base64::engine::general_purpose::STANDARD.encode(image.bytes);
             content.push(UserContent::image_base64(
@@ -626,6 +688,7 @@ impl RigConversationRuntime {
     fn wrap_stream<S, R>(
         mut raw: S,
         interaction_sink: AgentInteractionSink,
+        has_images: bool,
         user_id_for_memory: UserId,
         user_input: String,
         repo_for_history: Arc<dyn ChatMessageRepositoryPort>,
@@ -634,6 +697,7 @@ impl RigConversationRuntime {
         chat_for_memory: ResolvedAIModelConfig,
         rag_for_memory: Option<RagConfig>,
         ai_configs: UserAIConfigQueryHandler,
+        mut status_rx: mpsc::UnboundedReceiver<ConversationStreamEvent>,
     ) -> ConversationReplyStream
     where
         S: futures_core::Stream<Item = Result<MultiTurnStreamItem<R>, StreamingError>>
@@ -643,28 +707,67 @@ impl RigConversationRuntime {
         R: Clone + Send + 'static,
     {
         let s = stream! {
+            yield Ok(status_event(
+                AgentStatusKind::CallingModel,
+                if has_images {
+                    "我看完图片了，正在组织回复。"
+                } else {
+                    "我在组织回复。"
+                },
+            ));
             let mut has_text_delta = false;
             let mut assistant_output = String::new();
             let mut output_len = 0usize;
-            while let Some(item) = raw.next().await {
+            let mut status_open = true;
+            loop {
+                let step = if status_open {
+                    tokio::select! {
+                        event = status_rx.recv() => AgentStreamStep::Status(event),
+                        item = raw.next() => AgentStreamStep::Raw(item),
+                    }
+                } else {
+                    AgentStreamStep::Raw(raw.next().await)
+                };
+
+                let item = match step {
+                    AgentStreamStep::Status(Some(event)) => {
+                        yield Ok(stream_event(event));
+                        continue;
+                    }
+                    AgentStreamStep::Status(None) => {
+                        status_open = false;
+                        continue;
+                    }
+                    AgentStreamStep::Raw(Some(item)) => item,
+                    AgentStreamStep::Raw(None) => break,
+                };
+
                 match item {
                     Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
                         if !text.text.is_empty() {
                             has_text_delta = true;
                             output_len += text.text.len();
                             assistant_output.push_str(&text.text);
-                            yield Ok(chat_text_event(&text.text));
+                            yield Ok(stream_event(ConversationStreamEvent::TextDelta {
+                                text: text.text,
+                            }));
                         }
                     }
                     Ok(MultiTurnStreamItem::FinalResponse(r)) => {
                         if !has_text_delta && !r.response().is_empty() {
                             output_len += r.response().len();
                             assistant_output.push_str(r.response());
-                            yield Ok(chat_text_event(r.response()));
+                            yield Ok(stream_event(ConversationStreamEvent::TextDelta {
+                                text: r.response().to_string(),
+                            }));
                         }
                         for interaction in interaction_sink.drain() {
                             yield Ok(interaction_event(interaction));
                         }
+                        yield Ok(status_event(
+                            AgentStatusKind::Persisting,
+                            "我在保存这次对话。",
+                        ));
                         if let Err(err) = persist_assistant_visible_message(
                             &repo_for_history,
                             &user_id_for_history,
@@ -676,6 +779,12 @@ impl RigConversationRuntime {
                             yield Err(err);
                             break;
                         }
+                        if rag_for_memory.is_some() {
+                            yield Ok(status_event(
+                                AgentStatusKind::SavingMemory,
+                                "我在把重要线索放进记忆里。",
+                            ));
+                        }
                         extract_memory_if_enabled(
                             &ai_configs,
                             &user_id_for_memory,
@@ -684,6 +793,10 @@ impl RigConversationRuntime {
                             rag_for_memory.clone(),
                         )
                         .await;
+                        while let Ok(event) = status_rx.try_recv() {
+                            yield Ok(stream_event(event));
+                        }
+                        yield Ok(stream_event(ConversationStreamEvent::Done));
                         tracing::info!(output.len = output_len, "agent stream finished");
                     }
                     Ok(_) => {}
@@ -770,22 +883,26 @@ async fn extract_memory_if_enabled(
     }
 }
 
-fn chat_text_event(text: &str) -> String {
-    json!({
-        "type": "text_delta",
-        "text": text,
+fn status_event(kind: AgentStatusKind, label: &str) -> String {
+    stream_event(ConversationStreamEvent::Status {
+        kind,
+        label: label.to_string(),
     })
-    .to_string()
-        + "\n"
 }
 
 fn interaction_event(interaction: AgentInteractionRequest) -> String {
-    json!({
-        "type": "interaction_requested",
-        "interaction": interaction,
-    })
-    .to_string()
-        + "\n"
+    let interaction = to_value(interaction).unwrap_or(Value::Null);
+    stream_event(ConversationStreamEvent::InteractionRequested { interaction })
+}
+
+fn stream_event(event: ConversationStreamEvent) -> String {
+    match serde_json::to_string(&event) {
+        Ok(line) => line + "\n",
+        Err(err) => {
+            tracing::warn!(error = %err, "failed to serialize conversation stream event");
+            String::new()
+        }
+    }
 }
 
 async fn persist_assistant_visible_message(

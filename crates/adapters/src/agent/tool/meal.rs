@@ -5,6 +5,7 @@ use app::meal::{
 };
 
 use crate::agent::interaction::{AgentInteractionRequest, AgentInteractionSink};
+use crate::agent::tool::names;
 use domain::{FoodItem, UserId};
 use rig::completion::ToolDefinition;
 use rig::tool::Tool;
@@ -121,7 +122,7 @@ pub struct RejectMealLogOutput {
 }
 
 impl Tool for ProposeMealLogTool {
-    const NAME: &'static str = "propose_meal_log";
+    const NAME: &'static str = names::PROPOSE_MEAL_LOG;
 
     type Error = ToolError;
     type Args = MealLogArgs;
@@ -215,7 +216,7 @@ impl Tool for ProposeMealLogTool {
 }
 
 impl Tool for ConfirmMealLogTool {
-    const NAME: &'static str = "confirm_meal_log";
+    const NAME: &'static str = names::CONFIRM_MEAL_LOG;
 
     type Error = ToolError;
     type Args = ConfirmMealLogArgs;
@@ -264,7 +265,7 @@ impl Tool for ConfirmMealLogTool {
 }
 
 impl Tool for RejectMealLogTool {
-    const NAME: &'static str = "reject_meal_log";
+    const NAME: &'static str = names::REJECT_MEAL_LOG;
 
     type Error = ToolError;
     type Args = RejectMealLogArgs;

@@ -135,6 +135,50 @@ pub enum AgentInteractionContinuation {
     },
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentStatusKind {
+    Thinking,
+    ReadingInput,
+    CallingModel,
+    UsingTool,
+    SavingMemory,
+    Persisting,
+    WaitingUser,
+    Cancelling,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ConversationStreamEvent {
+    RunStarted {
+        run_id: String,
+    },
+    Status {
+        kind: AgentStatusKind,
+        label: String,
+    },
+    ToolStarted {
+        tool_name: String,
+        label: String,
+    },
+    ToolFinished {
+        tool_name: String,
+    },
+    ToolError {
+        tool_name: String,
+        label: String,
+    },
+    TextDelta {
+        text: String,
+    },
+    InteractionRequested {
+        interaction: serde_json::Value,
+    },
+    Cancelled,
+    Done,
+}
+
 pub type ConversationReplyStream = Pin<Box<dyn Stream<Item = Result<String, AppError>> + Send>>;
 
 #[derive(Clone)]

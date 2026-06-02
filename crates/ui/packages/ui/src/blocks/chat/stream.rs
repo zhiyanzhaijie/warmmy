@@ -5,19 +5,57 @@ use serde_json::Value;
 use std::time::Duration;
 
 use super::state::{
-    ChatMessage, ChatMessageAttachment, ChatContext, ComposerImageAttachment,
+    ChatActivity, ChatActivityKind, ChatMessage, ChatMessageAttachment, ChatContext,
+    ComposerImageAttachment,
 };
 use api::meal;
 
-const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+pub const IMAGE_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(serde::Deserialize)]
 #[serde(tag = "type")]
 enum ChatStreamWireEvent {
+    #[serde(rename = "run_started")]
+    RunStarted { run_id: String },
+    #[serde(rename = "status")]
+    Status {
+        kind: ChatActivityWireKind,
+        label: String,
+    },
+    #[serde(rename = "tool_started")]
+    ToolStarted {
+        tool_name: String,
+        label: String,
+    },
+    #[serde(rename = "tool_finished")]
+    ToolFinished { tool_name: String },
+    #[serde(rename = "tool_error")]
+    ToolError {
+        tool_name: String,
+        label: String,
+    },
     #[serde(rename = "text_delta")]
     TextDelta { text: String },
     #[serde(rename = "interaction_requested")]
     InteractionRequested { interaction: AgentInteractionDTO },
+    #[serde(rename = "cancelled")]
+    Cancelled,
+    #[serde(rename = "done")]
+    Done,
+}
+
+#[derive(Clone, Debug, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ChatActivityWireKind {
+    Thinking,
+    ReadingInput,
+    CallingModel,
+    UsingTool,
+    SavingMemory,
+    Persisting,
+    WaitingUser,
+    Cancelling,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -28,6 +66,9 @@ struct AgentInteractionDTO {
 }
 
 enum ChatStreamEvent {
+    RunStarted,
+    Activity(ChatActivity),
+    ClearActivity,
     TextDelta(String),
     InteractionRequested(AgentInteractionDTO),
 }
@@ -49,17 +90,69 @@ impl ChatStreamParser {
                 continue;
             }
             match serde_json::from_str::<ChatStreamWireEvent>(&line) {
+                Ok(ChatStreamWireEvent::RunStarted { run_id }) => {
+                    let _ = run_id;
+                    events.push(ChatStreamEvent::RunStarted);
+                }
+                Ok(ChatStreamWireEvent::Status { kind, label }) => {
+                    events.push(ChatStreamEvent::Activity(ChatActivity {
+                        kind: kind.into(),
+                        label,
+                        tool_name: None,
+                    }));
+                }
+                Ok(ChatStreamWireEvent::ToolStarted { tool_name, label }) => {
+                    events.push(ChatStreamEvent::Activity(ChatActivity {
+                        kind: ChatActivityKind::UsingTool,
+                        label,
+                        tool_name: Some(tool_name),
+                    }));
+                }
+                Ok(ChatStreamWireEvent::ToolFinished { tool_name }) => {
+                    let _ = tool_name;
+                    events.push(ChatStreamEvent::Activity(ChatActivity {
+                        kind: ChatActivityKind::Thinking,
+                        label: "我在整理刚才的结果。".to_string(),
+                        tool_name: None,
+                    }));
+                }
+                Ok(ChatStreamWireEvent::ToolError { tool_name, label }) => {
+                    events.push(ChatStreamEvent::Activity(ChatActivity {
+                        kind: ChatActivityKind::UsingTool,
+                        label,
+                        tool_name: Some(tool_name),
+                    }));
+                }
                 Ok(ChatStreamWireEvent::TextDelta { text }) => {
                     events.push(ChatStreamEvent::TextDelta(text));
                 }
                 Ok(ChatStreamWireEvent::InteractionRequested { interaction }) => {
                     events.push(ChatStreamEvent::InteractionRequested(interaction));
                 }
+                Ok(ChatStreamWireEvent::Cancelled | ChatStreamWireEvent::Done) => {
+                    events.push(ChatStreamEvent::ClearActivity);
+                }
+                Err(_) if line.starts_with('{') => {}
                 Err(_) => events.push(ChatStreamEvent::TextDelta(line)),
             }
         }
 
         events
+    }
+}
+
+impl From<ChatActivityWireKind> for ChatActivityKind {
+    fn from(kind: ChatActivityWireKind) -> Self {
+        match kind {
+            ChatActivityWireKind::Thinking => Self::Thinking,
+            ChatActivityWireKind::ReadingInput => Self::ReadingInput,
+            ChatActivityWireKind::CallingModel => Self::CallingModel,
+            ChatActivityWireKind::UsingTool => Self::UsingTool,
+            ChatActivityWireKind::SavingMemory => Self::SavingMemory,
+            ChatActivityWireKind::Persisting => Self::Persisting,
+            ChatActivityWireKind::WaitingUser => Self::WaitingUser,
+            ChatActivityWireKind::Cancelling => Self::Cancelling,
+        }
     }
 }
 
@@ -249,12 +342,13 @@ pub async fn append_agent_stream(
     mut stream: dioxus::fullstack::payloads::TextStream,
     bot_id: u64,
     session_id: String,
+    idle_timeout: Duration,
 ) {
     let mut first = true;
     let mut parser = ChatStreamParser::default();
     loop {
         let next_chunk = stream.next();
-        let timeout = sleep(STREAM_IDLE_TIMEOUT);
+        let timeout = sleep(idle_timeout);
         futures_util::pin_mut!(next_chunk);
         futures_util::pin_mut!(timeout);
 
@@ -267,7 +361,7 @@ pub async fn append_agent_stream(
                     bot_id,
                     format!(
                         "模型响应超时（{} 秒没有收到新内容）。请检查手机网络、API base URL、模型名称，或尝试关闭流式输出/更换模型。",
-                        STREAM_IDLE_TIMEOUT.as_secs()
+                        idle_timeout.as_secs()
                     ),
                 );
                 return;
@@ -285,6 +379,13 @@ pub async fn append_agent_stream(
                 }
                 for event in parser.parse(&text) {
                     match event {
+                        ChatStreamEvent::RunStarted => {}
+                        ChatStreamEvent::Activity(activity) => {
+                            set_session_activity(chat_state, session_id.clone(), activity);
+                        }
+                        ChatStreamEvent::ClearActivity => {
+                            clear_session_activity(chat_state, &session_id);
+                        }
                         ChatStreamEvent::TextDelta(delta) => {
                             let mut all_sessions = chat_state.session_messages.write();
                             let all = all_sessions.entry(session_id.clone()).or_default();
@@ -299,6 +400,15 @@ pub async fn append_agent_stream(
                             sync_visible_session(chat_state, &session_id);
                         }
                         ChatStreamEvent::InteractionRequested(interaction) => {
+                            set_session_activity(
+                                chat_state,
+                                session_id.clone(),
+                                ChatActivity {
+                                    kind: ChatActivityKind::WaitingUser,
+                                    label: "我整理好了一条需要你确认的记录。".to_string(),
+                                    tool_name: None,
+                                },
+                            );
                             handle_interaction_requested(chat_state, session_id.clone(), interaction);
                         }
                     }
@@ -316,6 +426,7 @@ pub async fn append_agent_stream(
         }
     }
 
+    clear_session_activity(chat_state, &session_id);
     let mut all_sessions = chat_state.session_messages.write();
     let all = all_sessions.entry(session_id.clone()).or_default();
     if let Some(bot_msg) = all.iter_mut().find(|msg| msg.id == bot_id) {
@@ -335,6 +446,7 @@ fn stop_stream_with_text(
     bot_id: u64,
     text: String,
 ) {
+    clear_session_activity(chat_state, session_id);
     let mut all_sessions = chat_state.session_messages.write();
     let all = all_sessions.entry(session_id.to_string()).or_default();
     let bot_index = ensure_streaming_bot_slot(all, bot_id);
@@ -348,6 +460,21 @@ fn stop_stream_with_text(
     }
     drop(all_sessions);
     sync_visible_session(chat_state, session_id);
+}
+
+pub fn set_session_activity(
+    mut chat_state: ChatContext,
+    session_id: String,
+    activity: ChatActivity,
+) {
+    chat_state
+        .session_activities
+        .write()
+        .insert(session_id, activity);
+}
+
+pub fn clear_session_activity(mut chat_state: ChatContext, session_id: &str) {
+    chat_state.session_activities.write().remove(session_id);
 }
 
 fn ensure_streaming_bot_slot(messages: &mut Vec<ChatMessage>, bot_id: u64) -> usize {

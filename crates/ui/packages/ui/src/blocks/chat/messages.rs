@@ -6,7 +6,10 @@ use crate::components::common::MarkdownContent;
 use crate::components::ui::skeleton::Skeleton;
 
 use super::pending_meal::PendingMealCard;
-use super::state::{ChatContext, ChatMessage, ChatMessageAction, ChatMessageAttachment};
+use super::state::{
+    ChatActivity, ChatActivityKind, ChatContext, ChatMessage, ChatMessageAction,
+    ChatMessageAttachment,
+};
 
 #[component]
 pub(super) fn ChatMessageList(has_pending_transition: bool) -> Element {
@@ -37,6 +40,8 @@ pub(super) fn ChatMessageList(has_pending_transition: bool) -> Element {
         );
     });
 
+    let activity = current_activity(chat_state);
+
     rsx! {
         div {
             id: "chat-message-viewport",
@@ -48,12 +53,26 @@ pub(super) fn ChatMessageList(has_pending_transition: bool) -> Element {
                     ChatMessageBubble {
                         key: "{msg.id}",
                         message: msg.clone(),
+                        activity: if msg.is_bot && (msg.is_streaming || msg.is_skeleton) {
+                            activity.clone()
+                        } else {
+                            None
+                        },
                     }
                 }
             }
             div { id: "chat-message-bottom", class: "h-px w-full" }
         }
     }
+}
+
+fn current_activity(chat_state: ChatContext) -> Option<ChatActivity> {
+    let session_id = chat_state.active_session_id.read().clone()?;
+    chat_state
+        .session_activities
+        .read()
+        .get(&session_id)
+        .cloned()
 }
 
 #[component]
@@ -67,7 +86,7 @@ fn PendingChatPlaceholder() -> Element {
 }
 
 #[component]
-fn ChatMessageBubble(message: ChatMessage) -> Element {
+fn ChatMessageBubble(message: ChatMessage, activity: Option<ChatActivity>) -> Element {
     if let Some(pending_meal) = message.pending_meal {
         return rsx! {
             div { class: "max-w-[92%] md:max-w-[78%]",
@@ -81,6 +100,9 @@ fn ChatMessageBubble(message: ChatMessage) -> Element {
         rsx! {
             div {
                 class: "max-w-[92%] rounded-[1.5rem] rounded-tl-sm bg-card/80 p-4 text-[15px] font-medium leading-relaxed text-foreground shadow-none md:max-w-[76%]",
+                if let Some(activity) = activity {
+                    ChatActivityBlock { activity }
+                }
                 StreamMessage {
                     text: message.text,
                     is_skeleton: message.is_skeleton,
@@ -99,6 +121,32 @@ fn ChatMessageBubble(message: ChatMessage) -> Element {
                 if !message.text.trim().is_empty() {
                     div { class: "mt-3 first:mt-0", "{message.text}" }
                 }
+            }
+        }
+    }
+}
+
+#[component]
+fn ChatActivityBlock(activity: ChatActivity) -> Element {
+    let tone = match activity.kind {
+        ChatActivityKind::ReadingInput => "bg-sky-500",
+        ChatActivityKind::UsingTool => "bg-amber-500",
+        ChatActivityKind::SavingMemory => "bg-emerald-500",
+        ChatActivityKind::Persisting => "bg-zinc-500",
+        ChatActivityKind::WaitingUser => "bg-violet-500",
+        ChatActivityKind::Cancelling => "bg-rose-500",
+        ChatActivityKind::Thinking | ChatActivityKind::CallingModel => "bg-foreground",
+    };
+
+    rsx! {
+        div {
+            class: "mb-3 border-l-2 border-border bg-background/55 px-3 py-2 text-xs font-medium leading-relaxed text-muted-foreground",
+            div { class: "flex min-w-0 items-center gap-2",
+                span { class: "relative flex h-2 w-2 shrink-0",
+                    span { class: "absolute inline-flex h-full w-full animate-ping rounded-full opacity-50 {tone}" }
+                    span { class: "relative inline-flex h-2 w-2 rounded-full {tone}" }
+                }
+                span { class: "min-w-0 truncate", "{activity.label}" }
             }
         }
     }

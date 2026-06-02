@@ -8,6 +8,12 @@ use domain::UserId;
 
 mod meal;
 
+pub mod names {
+    pub const PROPOSE_MEAL_LOG: &str = "propose_meal_log";
+    pub const CONFIRM_MEAL_LOG: &str = "confirm_meal_log";
+    pub const REJECT_MEAL_LOG: &str = "reject_meal_log";
+}
+
 pub fn tools(
     user_id: &UserId,
     session_id: &str,

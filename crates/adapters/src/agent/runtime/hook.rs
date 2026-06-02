@@ -1,17 +1,37 @@
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use app::conversation::ConversationStreamEvent;
 use rig::agent::{HookAction, PromptHook, ToolCallHookAction};
 use rig::completion::{CompletionModel, CompletionResponse};
 use rig::message::Message;
+use tokio::sync::mpsc::UnboundedSender;
+
+use crate::agent::tool::names;
 
 #[derive(Clone)]
 pub struct WarmmyPromptHook<M> {
     guardrail: Arc<GuardrailHook>,
+    status_sink: Option<AgentStatusSink>,
     _model: PhantomData<fn() -> M>,
 }
 
 pub struct GuardrailHook;
+
+#[derive(Clone)]
+pub struct AgentStatusSink {
+    tx: UnboundedSender<ConversationStreamEvent>,
+}
+
+impl AgentStatusSink {
+    pub fn new(tx: UnboundedSender<ConversationStreamEvent>) -> Self {
+        Self { tx }
+    }
+
+    pub fn emit(&self, event: ConversationStreamEvent) {
+        let _ = self.tx.send(event);
+    }
+}
 
 impl GuardrailHook {
     pub fn check_input(&self, _input: &str) -> GuardrailDecision {
@@ -33,6 +53,15 @@ impl<M> WarmmyPromptHook<M> {
     pub fn new(guardrail: Arc<GuardrailHook>) -> Self {
         Self {
             guardrail,
+            status_sink: None,
+            _model: PhantomData,
+        }
+    }
+
+    pub fn with_status_sink(guardrail: Arc<GuardrailHook>, status_sink: AgentStatusSink) -> Self {
+        Self {
+            guardrail,
+            status_sink: Some(status_sink),
             _model: PhantomData,
         }
     }
@@ -82,6 +111,12 @@ where
             tool.args = args,
             "agent tool call"
         );
+        if let Some(status_sink) = &self.status_sink {
+            status_sink.emit(ConversationStreamEvent::ToolStarted {
+                tool_name: tool_name.to_string(),
+                label: tool_status_label(tool_name),
+            });
+        }
 
         ToolCallHookAction::cont()
     }
@@ -102,6 +137,11 @@ where
             tool.result = result,
             "agent tool result"
         );
+        if let Some(status_sink) = &self.status_sink {
+            status_sink.emit(ConversationStreamEvent::ToolFinished {
+                tool_name: tool_name.to_string(),
+            });
+        }
 
         HookAction::cont()
     }
@@ -109,6 +149,16 @@ where
     async fn on_text_delta(&self, _text_delta: &str, _aggregated_text: &str) -> HookAction {
         HookAction::cont()
     }
+}
+
+fn tool_status_label(tool_name: &str) -> String {
+    match tool_name {
+        names::PROPOSE_MEAL_LOG => "我在整理这顿饭的待确认记录。",
+        names::CONFIRM_MEAL_LOG => "我在把这顿饭正式记下来。",
+        names::REJECT_MEAL_LOG => "我在收起这条待确认记录。",
+        _ => "我在调用工具处理这件事。",
+    }
+    .to_string()
 }
 
 fn user_text(message: &Message) -> Option<&str> {

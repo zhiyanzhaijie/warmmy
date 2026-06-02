@@ -37,6 +37,25 @@ pub struct ChatMessageAttachment {
 }
 
 #[derive(Clone, PartialEq, Debug)]
+pub enum ChatActivityKind {
+    Thinking,
+    ReadingInput,
+    CallingModel,
+    UsingTool,
+    SavingMemory,
+    Persisting,
+    WaitingUser,
+    Cancelling,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct ChatActivity {
+    pub kind: ChatActivityKind,
+    pub label: String,
+    pub tool_name: Option<String>,
+}
+
+#[derive(Clone, PartialEq, Debug)]
 pub struct ComposerImageAttachment {
     pub id: u64,
     pub name: String,
@@ -50,6 +69,7 @@ pub struct ComposerImageAttachment {
 pub struct ChatContext {
     pub messages: Signal<Vec<ChatMessage>>,
     pub session_messages: Signal<HashMap<String, Vec<ChatMessage>>>,
+    pub session_activities: Signal<HashMap<String, ChatActivity>>,
     pub active_session_id: Signal<Option<String>>,
     pub input: Signal<String>,
     pub next_id: Signal<u64>,

@@ -16,6 +16,7 @@ pub fn ChatStateProvider(chat: ChatContext, children: Element) -> Element {
 pub fn use_chat_context_value() -> ChatContext {
     let messages = use_signal(Vec::<ChatMessage>::new);
     let session_messages = use_signal(HashMap::<String, Vec<ChatMessage>>::new);
+    let session_activities = use_signal(HashMap::new);
     let active_session_id = use_signal(|| None);
     let input = use_signal(String::new);
     let next_id = use_signal(|| 1_u64);
@@ -26,6 +27,7 @@ pub fn use_chat_context_value() -> ChatContext {
     ChatContext {
         messages,
         session_messages,
+        session_activities,
         active_session_id,
         input,
         next_id,
