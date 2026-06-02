@@ -3,11 +3,12 @@ use dioxus::prelude::*;
 use dioxus_icons::lucide::CalendarDays;
 use std::collections::HashSet;
 
+use crate::hooks::use_IO;
 use crate::today_session_id;
 
 #[component]
 pub(super) fn SessionStrip(user_id: String, active_session_id: String) -> Element {
-    let sessions = use_resource(move || {
+    let sessions = use_IO(move || {
         let request_user_id = user_id.clone();
         async move {
             api::conversation::list_user_sessions(request_user_id)

@@ -1,6 +1,4 @@
-use crate::blocks::{
-    ChatBlock, ChatStateContext, ConversationTransitionContext, PendingConversationMessage,
-};
+use crate::blocks::ChatActionContext;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::textarea::{Textarea, TextareaVariant};
 use crate::today_session_id;
@@ -11,11 +9,11 @@ use dioxus_icons::lucide::{Send, Sparkles};
 #[component]
 pub fn HomeView() -> Element {
     let mut input = use_signal(String::new);
-    let mut transition = use_context::<ConversationTransitionContext>();
-    let mut chat_state = use_context::<ChatStateContext>();
+    let chat_actions = use_context::<ChatActionContext>();
+    let nav = navigator();
     let today_index = Local::now().weekday().num_days_from_monday() as usize;
 
-    let mut start_chat_with_msg = move || {
+    let start_chat_with_msg = move || {
         let content = input().trim().to_string();
         if content.is_empty() {
             return;
@@ -23,28 +21,13 @@ pub fn HomeView() -> Element {
 
         input.set(String::new());
         let session_id = today_session_id();
-
-        chat_state.active_session_id.set(Some(session_id.clone()));
-        chat_state.messages.write().clear();
-        chat_state.session_messages.write().remove(&session_id);
-        chat_state.input.set(String::new());
-        chat_state.next_id.set(1);
-
-        transition.pending.set(Some(PendingConversationMessage {
-            session_id,
-            content,
-            started: false,
-        }));
+        chat_actions
+            .send_message
+            .call(session_id.clone(), content, Vec::new(), false);
+        nav.push(format!("/{session_id}"));
     };
-
-    if (transition.pending)().is_some() {
-        return rsx! {
-            main {
-                class: "h-full min-h-0 overflow-hidden",
-                ChatBlock { session_id: None }
-            }
-        };
-    }
+    let mut start_chat_keydown = start_chat_with_msg.clone();
+    let mut start_chat_click = start_chat_with_msg.clone();
 
     rsx! {
         div { class: "relative h-full min-h-0 overflow-hidden",
@@ -84,7 +67,7 @@ pub fn HomeView() -> Element {
                                 },
                                 onkeydown: move |e: KeyboardEvent| {
                                     if e.key() == Key::Enter && !e.modifiers().shift() {
-                                        start_chat_with_msg();
+                                        start_chat_keydown();
                                     }
                                 }
                             }
@@ -92,7 +75,7 @@ pub fn HomeView() -> Element {
                                 variant: ButtonVariant::Ghost,
                                 size: ButtonSize::Icon,
                                 class: "mb-1 rounded-full bg-foreground p-3 text-background shadow-sm hover:opacity-90",
-                                onclick: move |_| start_chat_with_msg(),
+                                onclick: move |_| start_chat_click(),
                                 Send { size: 20, class: "ml-0.5" }
                             }
                         }

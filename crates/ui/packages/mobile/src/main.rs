@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use ui::providers::AppProviders;
+use ui::providers::{use_chat_context_value, AppProviders};
 use ui::views::{
     ChatDetailView, HomeView, MeCompanionsView, MeDietPreferenceView, MeHealthExpectationView,
     MeProfileEditView, MeView, TravelDetailView, TravelView, WarmmyView,
@@ -38,16 +38,19 @@ enum Route {
 }
 
 fn main() {
+    let _ = dioxus::logger::init(dioxus::logger::tracing::Level::INFO);
     platform::init();
     dioxus::launch(App);
 }
 
 #[component]
 fn App() -> Element {
+    let chat = use_chat_context_value();
+
     rsx! {
         document::Stylesheet { href: MOBILE_CSS }
         document::Stylesheet { href: CHAT_MARKDOWN_CSS }
-        AppProviders {
+        AppProviders { chat,
             Router::<Route> {}
         }
     }

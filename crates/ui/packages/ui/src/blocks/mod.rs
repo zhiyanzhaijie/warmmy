@@ -3,10 +3,13 @@ mod me;
 mod travel;
 mod warmmy;
 
-pub use chat::{ChatBlock, ChatMessage, ConversationTransitionContext, PendingConversationMessage};
+pub use chat::{
+    ChatActionContext, ChatBlock, ChatContext, ChatMessage, ChatMessageAction,
+    FinalizeConversationDay,
+};
 pub(crate) use chat::{
     activate_chat_session, append_agent_stream, append_chat_bot_text,
-    append_outgoing_message_pair, ChatRuntimeContext, ChatStateContext, ComposerImageAttachment,
+    append_outgoing_message_pair, append_streaming_bot_slot, ComposerImageAttachment,
     SendConversationMessage,
 };
 pub use me::{

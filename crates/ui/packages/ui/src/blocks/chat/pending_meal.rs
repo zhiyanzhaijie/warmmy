@@ -4,13 +4,13 @@ use crate::components::ui::button::{Button, ButtonVariant};
 use crate::components::ui::input::Input;
 use crate::providers::current_user_id;
 
-use super::state::ChatStateContext;
+use super::state::ChatContext;
 use super::stream::{active_session_id, append_agent_stream, append_bot_text, append_streaming_bot_slot};
 use api::meal;
 
 #[component]
 pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element {
-    let chat_state = use_context::<ChatStateContext>();
+    let chat_state = use_context::<ChatContext>();
     let user_id = current_user_id();
     let session_id = active_session_id(chat_state);
     let confirm_session_id = session_id.clone();

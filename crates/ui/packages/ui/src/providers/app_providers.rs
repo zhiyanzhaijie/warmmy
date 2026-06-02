@@ -1,20 +1,18 @@
 use dioxus::prelude::*;
 
 use super::{
-    ChatRuntimeProvider, ChatStateProvider, ConversationTransitionProvider, PreferenceProvider,
-    UserProvider,
+    ChatRuntimeProvider, ChatStateProvider, PreferenceProvider, UserProvider,
 };
+use crate::blocks::ChatContext;
 
 #[component]
-pub fn AppProviders(children: Element) -> Element {
+pub fn AppProviders(chat: ChatContext, children: Element) -> Element {
     rsx! {
-        ConversationTransitionProvider {
-            ChatStateProvider {
-                UserProvider {
-                    PreferenceProvider {
-                        ChatRuntimeProvider {
-                            {children}
-                        }
+        ChatStateProvider { chat,
+            UserProvider {
+                PreferenceProvider {
+                    ChatRuntimeProvider {
+                        {children}
                     }
                 }
             }

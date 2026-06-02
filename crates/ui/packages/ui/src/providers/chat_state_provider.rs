@@ -2,10 +2,18 @@ use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
-use crate::blocks::{ChatMessage, ChatStateContext, ComposerImageAttachment};
+use crate::blocks::{ChatMessage, ChatContext, ComposerImageAttachment};
 
 #[component]
-pub fn ChatStateProvider(children: Element) -> Element {
+pub fn ChatStateProvider(chat: ChatContext, children: Element) -> Element {
+    use_context_provider(|| chat);
+
+    rsx! {
+        {children}
+    }
+}
+
+pub fn use_chat_context_value() -> ChatContext {
     let messages = use_signal(Vec::<ChatMessage>::new);
     let session_messages = use_signal(HashMap::<String, Vec<ChatMessage>>::new);
     let active_session_id = use_signal(|| None);
@@ -13,8 +21,9 @@ pub fn ChatStateProvider(children: Element) -> Element {
     let next_id = use_signal(|| 1_u64);
     let composer_attachments = use_signal(Vec::<ComposerImageAttachment>::new);
     let attachment_next_id = use_signal(|| 1_u64);
+    let finalizing_day = use_signal(|| false);
 
-    use_context_provider(|| ChatStateContext {
+    ChatContext {
         messages,
         session_messages,
         active_session_id,
@@ -22,9 +31,6 @@ pub fn ChatStateProvider(children: Element) -> Element {
         next_id,
         composer_attachments,
         attachment_next_id,
-    });
-
-    rsx! {
-        {children}
+        finalizing_day,
     }
 }

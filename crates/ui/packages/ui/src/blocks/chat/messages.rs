@@ -6,11 +6,11 @@ use crate::components::common::MarkdownContent;
 use crate::components::ui::skeleton::Skeleton;
 
 use super::pending_meal::PendingMealCard;
-use super::state::{ChatMessage, ChatMessageAttachment, ChatStateContext};
+use super::state::{ChatContext, ChatMessage, ChatMessageAction, ChatMessageAttachment};
 
 #[component]
 pub(super) fn ChatMessageList(has_pending_transition: bool) -> Element {
-    let chat_state = use_context::<ChatStateContext>();
+    let chat_state = use_context::<ChatContext>();
     let scroll_signature = use_memo(move || {
         let messages = chat_state.messages.read();
         let last = messages.last();
@@ -77,6 +77,7 @@ fn ChatMessageBubble(message: ChatMessage) -> Element {
     }
 
     if message.is_bot {
+        let action = message.action.clone();
         rsx! {
             div {
                 class: "max-w-[92%] rounded-[1.5rem] rounded-tl-sm bg-card/80 p-4 text-[15px] font-medium leading-relaxed text-foreground shadow-none md:max-w-[76%]",
@@ -84,6 +85,9 @@ fn ChatMessageBubble(message: ChatMessage) -> Element {
                     text: message.text,
                     is_skeleton: message.is_skeleton,
                     is_streaming: message.is_streaming,
+                }
+                if let Some(action) = action {
+                    ChatMessageActionButton { action }
                 }
             }
         }
@@ -96,6 +100,23 @@ fn ChatMessageBubble(message: ChatMessage) -> Element {
                     div { class: "mt-3 first:mt-0", "{message.text}" }
                 }
             }
+        }
+    }
+}
+
+#[component]
+fn ChatMessageActionButton(action: ChatMessageAction) -> Element {
+    let nav = navigator();
+    let route = action.route.clone();
+
+    rsx! {
+        button {
+            r#type: "button",
+            class: "mt-3 inline-flex items-center rounded-full border border-border bg-background px-3.5 py-2 text-xs font-semibold text-foreground shadow-sm transition-colors hover:border-foreground/30 hover:bg-muted active:scale-[0.98]",
+            onclick: move |_| {
+                nav.push(route.clone());
+            },
+            "{action.label}"
         }
     }
 }

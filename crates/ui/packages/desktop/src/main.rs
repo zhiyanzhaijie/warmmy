@@ -1,5 +1,5 @@
 use dioxus::prelude::*;
-use ui::providers::AppProviders;
+use ui::providers::{use_chat_context_value, AppProviders};
 use ui::views::{ChatDetailView, HomeView, MeView};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
@@ -25,8 +25,10 @@ fn main() {
 
 #[component]
 fn App() -> Element {
+    let chat = use_chat_context_value();
+
     rsx! {
-        AppProviders {
+        AppProviders { chat,
             Router::<Route> {}
         }
     }

@@ -7,9 +7,8 @@ mod stream;
 
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ArrowLeft, Check};
-use std::rc::Rc;
-
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
+use crate::hooks::use_IO;
 use crate::providers::current_user_id;
 use crate::today_session_id;
 
@@ -20,49 +19,47 @@ use composer::{ChatComposer, SendChatMessage};
 use messages::ChatMessageList;
 use sessions::SessionStrip;
 use stream::{
-    activate_session, append_bot_text, append_pending_meal_messages, append_streaming_bot_slot,
-    set_active_session_messages,
+    activate_session, append_pending_meal_messages, set_active_session_messages,
 };
 
 pub use state::{
-    ChatMessage, ChatRuntimeContext, ChatStateContext, ConversationTransitionContext,
-    PendingConversationMessage, SendConversationMessage,
+    ChatActionContext, ChatContext, ChatMessage, ChatMessageAction, FinalizeConversationDay,
+    SendConversationMessage,
 };
 
 pub(crate) use state::ComposerImageAttachment;
 pub(crate) use stream::{
     activate_session as activate_chat_session, append_agent_stream,
     append_bot_text as append_chat_bot_text, append_outgoing_message_pair,
+    append_streaming_bot_slot,
 };
+
+#[derive(Clone, PartialEq)]
+struct LoadedSessionHistory {
+    session_id: String,
+    is_detail_route: bool,
+    history: Option<Vec<ChatMessage>>,
+    pending_meals: Vec<meal::PendingMealLogDTO>,
+}
 
 #[component]
 pub fn ChatBlock(session_id: Option<String>) -> Element {
-    let transition = try_consume_context::<ConversationTransitionContext>();
-    let chat_state = use_context::<ChatStateContext>();
+    let chat_state = use_context::<ChatContext>();
+    let chat_actions = use_context::<ChatActionContext>();
     let user_id = current_user_id();
     let current_session_id = session_id.clone().unwrap_or_else(today_session_id);
     let send_session_id = current_session_id.clone();
     let header_session_id = current_session_id.clone();
     let should_route_after_stream = session_id.is_none();
-    let runtime = use_context::<ChatRuntimeContext>();
-    let has_pending_transition = transition
-        .map(|ctx| (ctx.pending)().is_some())
-        .unwrap_or(false);
+    let has_pending_transition = false;
 
-    let execute_send = Rc::new(
+    let execute_send = std::rc::Rc::new(
         move |content: String, attachments: Vec<ComposerImageAttachment>| {
             let sid = send_session_id.clone();
-            if let Some(sender) = runtime.send_message.read().clone() {
-                sender.call(sid, content, attachments, should_route_after_stream);
-            }
+            chat_actions
+                .send_message
+                .call(sid, content, attachments, should_route_after_stream);
         },
-    );
-
-    start_pending_transition(
-        current_session_id.clone(),
-        chat_state,
-        transition,
-        execute_send.clone(),
     );
 
     load_session_history(
@@ -70,8 +67,6 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
         current_session_id.clone(),
         session_id.is_some(),
         chat_state,
-        transition,
-        execute_send.clone(),
     );
 
     let is_streaming = use_memo(move || {
@@ -82,31 +77,16 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
             .any(|msg| msg.is_streaming || msg.is_skeleton)
     });
 
-    let mut finalizing_day = use_signal(|| false);
     let finalize_user_id = user_id.clone();
     let finalize_session_id = current_session_id.clone();
     let finalize_today = move |_| {
-        if finalizing_day() || is_streaming() {
+        if (chat_state.finalizing_day)() || is_streaming() {
             return;
         }
 
-        let request_user_id = finalize_user_id.clone();
-        let request_session_id = finalize_session_id.clone();
-        dioxus::core::spawn_forever(async move {
-            finalizing_day.set(true);
-            let bot_id = append_streaming_bot_slot(chat_state, request_session_id.clone());
-            match meal::finalize_and_summarize_meal_day(request_user_id, request_session_id.clone())
-                .await
-            {
-                Ok(stream) => {
-                    append_agent_stream(chat_state, stream, bot_id, request_session_id).await;
-                }
-                Err(err) => {
-                    append_bot_text(chat_state, request_session_id, format!("生成今日总结失败：{err}"));
-                }
-            }
-            finalizing_day.set(false);
-        });
+        chat_actions
+            .finalize_day
+            .call(finalize_user_id.clone(), finalize_session_id.clone());
     };
 
     rsx! {
@@ -119,7 +99,7 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
                     session_id: session_id.clone(),
                     active_session_id: header_session_id,
                     is_streaming: is_streaming(),
-                    finalizing_day: finalizing_day(),
+                    finalizing_day: (chat_state.finalizing_day)(),
                     on_finalize: finalize_today,
                 }
                 ChatMessageList { has_pending_transition }
@@ -283,65 +263,34 @@ fn load_session_history(
     history_user_id: String,
     history_session_id: String,
     history_is_detail_route: bool,
-    chat_state: ChatStateContext,
-    transition: Option<ConversationTransitionContext>,
-    execute_send_after_history: Rc<dyn Fn(String, Vec<ComposerImageAttachment>)>,
+    chat_state: ChatContext,
 ) {
-    let _history_loader = use_resource(use_reactive(
+    let history_loader = use_IO(use_reactive(
         (
             &history_user_id,
             &history_session_id,
             &history_is_detail_route,
         ),
         move |(request_user_id, sid, is_detail_route)| {
-            let transition = transition;
-            let execute_send_after_history = execute_send_after_history.clone();
             async move {
                 if sid.is_empty() {
-                    return;
+                    return None;
                 }
-
-                activate_session(chat_state, sid.clone());
-                let pending_message = transition
-                    .and_then(|ctx| ctx.pending.peek().clone())
-                    .filter(|pending| pending.session_id == sid);
-                let has_pending = pending_message.is_some();
 
                 let pending_meals = meal::list_pending_meals(request_user_id.clone(), sid.clone())
                     .await
                     .unwrap_or_default();
 
-                match conversation::get_session_history(request_user_id.clone(), sid.clone()).await
-                {
-                    Ok(history) => {
-                        if history.is_empty() {
-                            if is_detail_route && !has_pending {
-                                set_active_session_messages(
-                                    chat_state,
-                                    sid.clone(),
-                                    vec![ChatMessage {
-                                        id: 0,
-                                        text: "嗨！我是 warmmy，你的对话饮食助理。今天有什么想记录的，或者关于饮食健康的疑问吗？🍎".to_string(),
-                                        is_bot: true,
-                                        is_skeleton: false,
-                                        is_streaming: false,
-                                        attachments: Vec::new(),
-                                        pending_meal: None,
-                                    }],
-                                    1,
-                                );
-                            } else {
-                                append_pending_meal_messages(chat_state, sid.clone(), pending_meals, 1);
-                            }
-                        } else {
-                            if !is_detail_route && !has_pending {
-                                navigator().replace(format!("/{}", sid));
-                            }
-                            let mut loaded_msgs = Vec::new();
-                            let mut current_next_id = 1_u64;
-                            for msg in history {
-                                loaded_msgs.push(ChatMessage {
-                                    id: current_next_id,
+                let history =
+                    match conversation::get_session_history(request_user_id.clone(), sid.clone())
+                        .await
+                    {
+                        Ok(history) => Some(
+                            history
+                                .into_iter()
+                                .enumerate()
+                                .map(|(index, msg)| ChatMessage {
+                                    id: index as u64 + 1,
                                     text: msg.content,
                                     is_bot: msg.role != "user",
                                     is_skeleton: false,
@@ -360,100 +309,121 @@ fn load_session_history(
                                             status: attachment.status,
                                         })
                                         .collect(),
+                                    action: None,
                                     pending_meal: None,
-                                });
-                                current_next_id += 1;
-                            }
-                            for pending_meal in pending_meals {
-                                loaded_msgs.push(ChatMessage {
-                                    id: current_next_id,
-                                    text: String::new(),
-                                    is_bot: true,
-                                    is_skeleton: false,
-                                    is_streaming: false,
-                                    attachments: Vec::new(),
-                                    pending_meal: Some(pending_meal),
-                                });
-                                current_next_id += 1;
-                            }
-                            set_active_session_messages(
-                                chat_state,
-                                sid.clone(),
-                                loaded_msgs,
-                                current_next_id,
-                            );
-                        }
+                                })
+                                .collect::<Vec<_>>(),
+                        ),
+                        Err(_) => None,
+                    };
 
-                        send_pending_transition(
-                            pending_message,
-                            transition,
-                            execute_send_after_history,
-                        );
-                    }
-                    Err(_) => {
-                        if !has_pending {
-                            set_active_session_messages(
-                                chat_state,
-                                sid.clone(),
-                                vec![ChatMessage {
-                                    id: 0,
-                                    text: "嗨！今天想吃点什么呢？".to_string(),
-                                    is_bot: true,
-                                    is_skeleton: false,
-                                    is_streaming: false,
-                                    attachments: Vec::new(),
-                                    pending_meal: None,
-                                }],
-                                1,
-                            );
-                            append_pending_meal_messages(chat_state, sid.clone(), pending_meals, 1);
-                        } else {
-                            append_pending_meal_messages(chat_state, sid.clone(), pending_meals, 1);
-                            send_pending_transition(
-                                pending_message,
-                                transition,
-                                execute_send_after_history,
-                            );
-                        }
-                    }
-                }
+                Some(LoadedSessionHistory {
+                    session_id: sid,
+                    is_detail_route,
+                    history,
+                    pending_meals,
+                })
             }
         },
     ));
-}
 
-fn start_pending_transition(
-    current_session_id: String,
-    chat_state: ChatStateContext,
-    transition: Option<ConversationTransitionContext>,
-    execute_send_after_history: Rc<dyn Fn(String, Vec<ComposerImageAttachment>)>,
-) {
-    let pending_message = transition
-        .and_then(|ctx| ctx.pending.peek().clone())
-        .filter(|pending| pending.session_id == current_session_id);
-    send_pending_transition(pending_message, transition, execute_send_after_history);
-    let _ = chat_state;
-}
+    use_effect(move || {
+        let Some(Some(loaded)) = history_loader.read().clone() else {
+            return;
+        };
 
-fn send_pending_transition(
-    pending_message: Option<PendingConversationMessage>,
-    transition: Option<ConversationTransitionContext>,
-    execute_send_after_history: Rc<dyn Fn(String, Vec<ComposerImageAttachment>)>,
-) {
-    if let Some(pending) = pending_message {
-        if !pending.started {
-            if let Some(mut transition) = transition {
-                transition.pending.with_mut(|current| {
-                    if let Some(current) = current {
-                        if current.session_id == pending.session_id
-                            && current.content == pending.content
-                        {
-                            current.started = true;
-                        }
-                    }
-                });
-            }
-            execute_send_after_history(pending.content, Vec::new());
+        activate_session(chat_state, loaded.session_id.clone());
+        let has_streaming = chat_state
+            .session_messages
+            .peek()
+            .get(&loaded.session_id)
+            .map(|messages| {
+                messages
+                    .iter()
+                    .any(|message| message.is_streaming || message.is_skeleton)
+            })
+            .unwrap_or(false);
+
+        if has_streaming {
+            append_pending_meal_messages(
+                chat_state,
+                loaded.session_id.clone(),
+                loaded.pending_meals,
+                1,
+            );
+            return;
         }
-    }
+
+        match loaded.history {
+            Some(history) if history.is_empty() && loaded.is_detail_route => {
+                set_active_session_messages(
+                    chat_state,
+                    loaded.session_id,
+                    vec![ChatMessage {
+                        id: 0,
+                        text: "嗨！我是 warmmy，你的对话饮食助理。今天有什么想记录的，或者关于饮食健康的疑问吗？🍎"
+                            .to_string(),
+                        is_bot: true,
+                        is_skeleton: false,
+                        is_streaming: false,
+                        attachments: Vec::new(),
+                        action: None,
+                        pending_meal: None,
+                    }],
+                    1,
+                );
+            }
+            Some(history) if history.is_empty() => {
+                append_pending_meal_messages(
+                    chat_state,
+                    loaded.session_id,
+                    loaded.pending_meals,
+                    1,
+                );
+            }
+            Some(mut history) => {
+                if !loaded.is_detail_route {
+                    navigator().replace(format!("/{}", loaded.session_id));
+                }
+                let mut current_next_id = history.len() as u64 + 1;
+                for pending_meal in loaded.pending_meals {
+                    history.push(ChatMessage {
+                        id: current_next_id,
+                        text: String::new(),
+                        is_bot: true,
+                        is_skeleton: false,
+                        is_streaming: false,
+                        attachments: Vec::new(),
+                        action: None,
+                        pending_meal: Some(pending_meal),
+                    });
+                    current_next_id += 1;
+                }
+                set_active_session_messages(
+                    chat_state,
+                    loaded.session_id,
+                    history,
+                    current_next_id,
+                );
+            }
+            None => {
+                set_active_session_messages(
+                    chat_state,
+                    loaded.session_id.clone(),
+                    vec![ChatMessage {
+                        id: 0,
+                        text: "嗨！今天想吃点什么呢？".to_string(),
+                        is_bot: true,
+                        is_skeleton: false,
+                        is_streaming: false,
+                        attachments: Vec::new(),
+                        action: None,
+                        pending_meal: None,
+                    }],
+                    1,
+                );
+                append_pending_meal_messages(chat_state, loaded.session_id, loaded.pending_meals, 1);
+            }
+        }
+    });
 }

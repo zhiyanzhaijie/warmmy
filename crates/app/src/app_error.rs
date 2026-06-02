@@ -21,6 +21,49 @@ pub enum AppError {
 pub type AppResult<T> = Result<T, AppError>;
 
 impl AppError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Validation(message) if message == "AI capability is not configured: chat" => {
+                "ai.chat_not_configured"
+            }
+            Self::Validation(message) if message == "AI capability is not configured: vision" => {
+                "ai.vision_not_configured"
+            }
+            Self::Validation(message) if message.starts_with("AI capability is not configured: ") => {
+                "ai.capability_not_configured"
+            }
+            Self::Validation(message) if message.starts_with("unsupported image mime type: ") => {
+                "media.image_unsupported"
+            }
+            Self::Validation(message) if message == "empty conversation input" => {
+                "chat.empty_input"
+            }
+            Self::Validation(_) => "validation.invalid_input",
+            Self::Database(_) => "memory.database_unavailable",
+            Self::Upstream(_) => "model.upstream_unavailable",
+            Self::Domain(_) => "domain.invalid_state",
+            Self::NotFound(message)
+                if message.starts_with("ephemeral image not found: ")
+                    || message.starts_with("ephemeral image expired: ") =>
+            {
+                "media.image_unavailable"
+            }
+            Self::NotFound(_) => "resource.not_found",
+            Self::Internal(_) => "internal.error",
+        }
+    }
+
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Validation(_) => "validation",
+            Self::Database(_) => "database",
+            Self::Upstream(_) => "upstream",
+            Self::Domain(_) => "domain",
+            Self::NotFound(_) => "not_found",
+            Self::Internal(_) => "internal",
+        }
+    }
+
     pub fn validation(err: impl ToString) -> Self {
         Self::Validation(err.to_string())
     }

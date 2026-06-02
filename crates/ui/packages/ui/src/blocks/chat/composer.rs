@@ -8,7 +8,7 @@ use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::textarea::{Textarea, TextareaVariant};
 
 use super::state::{
-    ChatStateContext, ComposerImageAttachment,
+    ChatContext, ComposerImageAttachment,
 };
 use super::stream::{active_session_id, append_bot_text};
 
@@ -52,7 +52,7 @@ impl PartialEq for SendChatMessage {
 
 #[component]
 pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Element {
-    let mut chat_state = use_context::<ChatStateContext>();
+    let mut chat_state = use_context::<ChatContext>();
     let send_message = {
         let on_send = on_send.clone();
         move || {
@@ -157,7 +157,7 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
     }
 }
 
-fn pick_images(chat_state: ChatStateContext) {
+fn pick_images(chat_state: ChatContext) {
     #[cfg(target_os = "android")]
     {
         document::eval(
@@ -205,7 +205,7 @@ fn decode_data_url(data_url: &str) -> Result<Vec<u8>, String> {
         .map_err(|err| err.to_string())
 }
 
-fn append_picked_images(mut chat_state: ChatStateContext, picked: PickedImages) {
+fn append_picked_images(mut chat_state: ChatContext, picked: PickedImages) {
     if let Some(err) = picked.error {
         append_bot_text(
             chat_state,
@@ -268,7 +268,7 @@ fn append_picked_images(mut chat_state: ChatStateContext, picked: PickedImages) 
 
 #[component]
 fn AttachmentPreviewStrip() -> Element {
-    let mut chat_state = use_context::<ChatStateContext>();
+    let mut chat_state = use_context::<ChatContext>();
     let mut remove_attachment = move |id: u64| {
         chat_state
             .composer_attachments

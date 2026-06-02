@@ -13,7 +13,15 @@ pub struct ChatMessage {
     pub is_streaming: bool,
     #[serde(default)]
     pub attachments: Vec<ChatMessageAttachment>,
+    #[serde(default)]
+    pub action: Option<ChatMessageAction>,
     pub pending_meal: Option<meal::PendingMealLogDTO>,
+}
+
+#[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
+pub struct ChatMessageAction {
+    pub label: String,
+    pub route: String,
 }
 
 #[derive(Clone, PartialEq, Debug, serde::Serialize, serde::Deserialize)]
@@ -38,20 +46,8 @@ pub struct ComposerImageAttachment {
     pub preview_data_url: String,
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub struct PendingConversationMessage {
-    pub session_id: String,
-    pub content: String,
-    pub started: bool,
-}
-
-#[derive(Clone, Copy)]
-pub struct ConversationTransitionContext {
-    pub pending: Signal<Option<PendingConversationMessage>>,
-}
-
-#[derive(Clone, Copy)]
-pub struct ChatStateContext {
+#[derive(Clone, Copy, PartialEq)]
+pub struct ChatContext {
     pub messages: Signal<Vec<ChatMessage>>,
     pub session_messages: Signal<HashMap<String, Vec<ChatMessage>>>,
     pub active_session_id: Signal<Option<String>>,
@@ -59,11 +55,33 @@ pub struct ChatStateContext {
     pub next_id: Signal<u64>,
     pub composer_attachments: Signal<Vec<ComposerImageAttachment>>,
     pub attachment_next_id: Signal<u64>,
+    pub finalizing_day: Signal<bool>,
 }
 
 #[derive(Clone)]
 pub struct SendConversationMessage {
     handler: Rc<dyn Fn(String, String, Vec<ComposerImageAttachment>, bool)>,
+}
+
+#[derive(Clone)]
+pub struct FinalizeConversationDay {
+    handler: Rc<dyn Fn(String, String)>,
+}
+
+impl FinalizeConversationDay {
+    pub fn new(handler: Rc<dyn Fn(String, String)>) -> Self {
+        Self { handler }
+    }
+
+    pub fn call(&self, user_id: String, session_id: String) {
+        (self.handler)(user_id, session_id);
+    }
+}
+
+impl PartialEq for FinalizeConversationDay {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.handler, &other.handler)
+    }
 }
 
 impl SendConversationMessage {
@@ -90,7 +108,8 @@ impl PartialEq for SendConversationMessage {
     }
 }
 
-#[derive(Clone, Copy)]
-pub struct ChatRuntimeContext {
-    pub send_message: Signal<Option<SendConversationMessage>>,
+#[derive(Clone, PartialEq)]
+pub struct ChatActionContext {
+    pub send_message: SendConversationMessage,
+    pub finalize_day: FinalizeConversationDay,
 }

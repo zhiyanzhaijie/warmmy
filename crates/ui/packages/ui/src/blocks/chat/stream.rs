@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::time::Duration;
 
 use super::state::{
-    ChatMessage, ChatMessageAttachment, ChatStateContext, ComposerImageAttachment,
+    ChatMessage, ChatMessageAttachment, ChatContext, ComposerImageAttachment,
 };
 use api::meal;
 
@@ -63,10 +63,10 @@ impl ChatStreamParser {
     }
 }
 
-pub fn next_chat_id(chat_state: ChatStateContext) -> u64 {
+pub fn next_chat_id(chat_state: ChatContext) -> u64 {
     chat_state
         .messages
-        .read()
+        .peek()
         .iter()
         .map(|message| message.id)
         .max()
@@ -74,7 +74,7 @@ pub fn next_chat_id(chat_state: ChatStateContext) -> u64 {
         .saturating_add(1)
 }
 
-pub fn active_session_id(chat_state: ChatStateContext) -> String {
+pub fn active_session_id(chat_state: ChatContext) -> String {
     chat_state
         .active_session_id
         .read()
@@ -82,20 +82,20 @@ pub fn active_session_id(chat_state: ChatStateContext) -> String {
         .unwrap_or_else(crate::today_session_id)
 }
 
-pub fn is_active_session(chat_state: ChatStateContext, session_id: &str) -> bool {
+pub fn is_active_session(chat_state: ChatContext, session_id: &str) -> bool {
     chat_state
         .active_session_id
-        .read()
+        .peek()
         .as_ref()
         .map(|active| active == session_id)
         .unwrap_or(false)
 }
 
-pub fn activate_session(mut chat_state: ChatStateContext, session_id: String) {
+pub fn activate_session(mut chat_state: ChatContext, session_id: String) {
     chat_state.active_session_id.set(Some(session_id.clone()));
     let messages = chat_state
         .session_messages
-        .read()
+        .peek()
         .get(&session_id)
         .cloned()
         .unwrap_or_default();
@@ -103,17 +103,17 @@ pub fn activate_session(mut chat_state: ChatStateContext, session_id: String) {
     chat_state.next_id.set(next_chat_id(chat_state).max(1));
 }
 
-pub fn visible_session_messages(chat_state: ChatStateContext, session_id: &str) -> Vec<ChatMessage> {
+pub fn visible_session_messages(chat_state: ChatContext, session_id: &str) -> Vec<ChatMessage> {
     chat_state
         .session_messages
-        .read()
+        .peek()
         .get(session_id)
         .cloned()
         .unwrap_or_default()
 }
 
 pub fn set_active_session_messages(
-    mut chat_state: ChatStateContext,
+    mut chat_state: ChatContext,
     session_id: String,
     messages: Vec<ChatMessage>,
     next_id: u64,
@@ -127,7 +127,7 @@ pub fn set_active_session_messages(
     chat_state.next_id.set(next_id.max(1));
 }
 
-fn sync_visible_session(mut chat_state: ChatStateContext, session_id: &str) {
+fn sync_visible_session(mut chat_state: ChatContext, session_id: &str) {
     if is_active_session(chat_state, session_id) {
         let messages = visible_session_messages(chat_state, session_id);
         chat_state.messages.set(messages);
@@ -136,7 +136,7 @@ fn sync_visible_session(mut chat_state: ChatStateContext, session_id: &str) {
 }
 
 pub fn append_pending_meal_messages(
-    mut chat_state: ChatStateContext,
+    mut chat_state: ChatContext,
     session_id: String,
     pending_meals: Vec<meal::PendingMealLogDTO>,
     start_id: u64,
@@ -162,6 +162,7 @@ pub fn append_pending_meal_messages(
             is_skeleton: false,
             is_streaming: false,
             attachments: Vec::new(),
+            action: None,
             pending_meal: Some(pending_meal),
         });
         next_id += 1;
@@ -171,7 +172,7 @@ pub fn append_pending_meal_messages(
 }
 
 pub fn append_outgoing_message_pair(
-    mut chat_state: ChatStateContext,
+    mut chat_state: ChatContext,
     session_id: String,
     content: String,
     attachments: Vec<ComposerImageAttachment>,
@@ -188,6 +189,7 @@ pub fn append_outgoing_message_pair(
         is_skeleton: false,
         is_streaming: false,
         attachments: composer_attachments_to_message_attachments(attachments),
+        action: None,
         pending_meal: None,
     });
     all.push(ChatMessage {
@@ -197,6 +199,7 @@ pub fn append_outgoing_message_pair(
         is_skeleton: true,
         is_streaming: true,
         attachments: Vec::new(),
+        action: None,
         pending_meal: None,
     });
     drop(all_sessions);
@@ -204,7 +207,7 @@ pub fn append_outgoing_message_pair(
     bot_id
 }
 
-pub fn append_bot_text(mut chat_state: ChatStateContext, session_id: String, text: String) {
+pub fn append_bot_text(mut chat_state: ChatContext, session_id: String, text: String) {
     let mut all_sessions = chat_state.session_messages.write();
     let all = all_sessions.entry(session_id.clone()).or_default();
     let id = all.iter().map(|message| message.id).max().unwrap_or(0).saturating_add(1);
@@ -215,13 +218,14 @@ pub fn append_bot_text(mut chat_state: ChatStateContext, session_id: String, tex
         is_skeleton: false,
         is_streaming: false,
         attachments: Vec::new(),
+        action: None,
         pending_meal: None,
     });
     drop(all_sessions);
     sync_visible_session(chat_state, &session_id);
 }
 
-pub fn append_streaming_bot_slot(mut chat_state: ChatStateContext, session_id: String) -> u64 {
+pub fn append_streaming_bot_slot(mut chat_state: ChatContext, session_id: String) -> u64 {
     let mut all_sessions = chat_state.session_messages.write();
     let all = all_sessions.entry(session_id.clone()).or_default();
     let id = all.iter().map(|message| message.id).max().unwrap_or(0).saturating_add(1);
@@ -232,6 +236,7 @@ pub fn append_streaming_bot_slot(mut chat_state: ChatStateContext, session_id: S
         is_skeleton: true,
         is_streaming: true,
         attachments: Vec::new(),
+        action: None,
         pending_meal: None,
     });
     drop(all_sessions);
@@ -240,7 +245,7 @@ pub fn append_streaming_bot_slot(mut chat_state: ChatStateContext, session_id: S
 }
 
 pub async fn append_agent_stream(
-    mut chat_state: ChatStateContext,
+    mut chat_state: ChatContext,
     mut stream: dioxus::fullstack::payloads::TextStream,
     bot_id: u64,
     session_id: String,
@@ -325,7 +330,7 @@ pub async fn append_agent_stream(
 }
 
 fn stop_stream_with_text(
-    mut chat_state: ChatStateContext,
+    mut chat_state: ChatContext,
     session_id: &str,
     bot_id: u64,
     text: String,
@@ -356,13 +361,14 @@ fn ensure_streaming_bot_slot(messages: &mut Vec<ChatMessage>, bot_id: u64) -> us
         is_skeleton: true,
         is_streaming: true,
         attachments: Vec::new(),
+        action: None,
         pending_meal: None,
     });
     messages.len().saturating_sub(1)
 }
 
 fn handle_interaction_requested(
-    chat_state: ChatStateContext,
+    chat_state: ChatContext,
     session_id: String,
     interaction: AgentInteractionDTO,
 ) {
@@ -385,7 +391,7 @@ fn handle_interaction_requested(
 }
 
 fn push_pending_meal_message(
-    mut chat_state: ChatStateContext,
+    mut chat_state: ChatContext,
     session_id: String,
     pending_meal: meal::PendingMealLogDTO,
 ) {
@@ -405,6 +411,7 @@ fn push_pending_meal_message(
         is_skeleton: false,
         is_streaming: false,
         attachments: Vec::new(),
+        action: None,
         pending_meal: Some(pending_meal),
     });
     drop(all_sessions);

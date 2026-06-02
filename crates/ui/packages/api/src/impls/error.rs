@@ -12,6 +12,9 @@ pub fn api_error(err: AppError) -> ServerFnError {
     ServerFnError::ServerError {
         message: err.to_string(),
         code: status.as_u16(),
-        details: None,
+        details: Some(serde_json::json!({
+            "code": err.code(),
+            "kind": err.kind(),
+        })),
     }
 }
