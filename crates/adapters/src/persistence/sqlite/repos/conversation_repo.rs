@@ -4,11 +4,14 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use app::conversation::{
-    ChatMessage, ChatMessageAttachment, ChatMessageRepositoryPort, SaveMessageImageAttachment,
+    ChatMessage, ChatMessageAttachment, ChatMessageRepositoryPort, ConversationSummary,
+    SaveMessageImageAttachment,
 };
 use domain::UserId;
 
-use crate::persistence::sqlite::models::{ChatMessageAttachmentRow, ChatMessageRow};
+use crate::persistence::sqlite::models::{
+    ChatMessageAttachmentRow, ChatMessageRow, ChatSummaryRow,
+};
 
 const RIG_MEMORY_ROLE: &str = "rig_memory";
 
@@ -156,25 +159,8 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
         user_id: &UserId,
         session_id: &str,
     ) -> Result<Vec<String>, String> {
-        let mut db = self.db.lock().await;
-        let rows = ChatMessageRow::filter(
-            ChatMessageRow::fields()
-                .user_id()
-                .eq(user_id.as_str())
-                .and(ChatMessageRow::fields().session_id().eq(session_id))
-                .and(ChatMessageRow::fields().role().eq(RIG_MEMORY_ROLE)),
-        )
-        .exec(&mut *db)
-        .await
-        .map_err(|err| err.to_string())?;
-
-        let mut messages: Vec<_> = rows
-            .into_iter()
-            .map(|row| (row.created_at, row.id, row.content))
-            .collect();
-        messages.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-
-        Ok(messages.into_iter().map(|row| row.2).collect())
+        let _ = (user_id, session_id);
+        Ok(Vec::new())
     }
 
     async fn save_memory_message(
@@ -183,14 +169,72 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
         session_id: &str,
         content: &str,
     ) -> Result<(), String> {
+        let _ = (user_id, session_id, content);
+        Ok(())
+    }
+
+    async fn find_conversation_summary(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+    ) -> Result<Option<ConversationSummary>, String> {
         let mut db = self.db.lock().await;
-        let created_at = Utc::now().to_rfc3339();
-        let _ = toasty::create!(ChatMessageRow {
+        let rows = ChatSummaryRow::filter(
+            ChatSummaryRow::fields()
+                .user_id()
+                .eq(user_id.as_str())
+                .and(ChatSummaryRow::fields().session_id().eq(session_id)),
+        )
+        .exec(&mut *db)
+        .await
+        .map_err(|err| err.to_string())?;
+
+        Ok(rows.into_iter().next().map(|row| ConversationSummary {
+            summary: row.summary,
+            summarized_until_message_id: row.summarized_until_message_id,
+            summarized_until_index: row.summarized_until_index,
+        }))
+    }
+
+    async fn save_conversation_summary(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        summary: &ConversationSummary,
+    ) -> Result<(), String> {
+        let mut db = self.db.lock().await;
+        let now = Utc::now().to_rfc3339();
+        let rows = ChatSummaryRow::filter(
+            ChatSummaryRow::fields()
+                .user_id()
+                .eq(user_id.as_str())
+                .and(ChatSummaryRow::fields().session_id().eq(session_id)),
+        )
+        .exec(&mut *db)
+        .await
+        .map_err(|err| err.to_string())?;
+
+        if let Some(mut row) = rows.into_iter().next() {
+            row.update()
+                .summary(summary.summary.clone())
+                .summarized_until_message_id(summary.summarized_until_message_id.clone())
+                .summarized_until_index(summary.summarized_until_index)
+                .updated_at(now)
+                .exec(&mut *db)
+                .await
+                .map_err(|err| err.to_string())?;
+            return Ok(());
+        }
+
+        toasty::create!(ChatSummaryRow {
+            id: chat_summary_id(user_id, session_id),
             user_id: user_id.as_str().to_string(),
             session_id: session_id.to_string(),
-            role: RIG_MEMORY_ROLE.to_string(),
-            content: content.to_string(),
-            created_at,
+            summary: summary.summary.clone(),
+            summarized_until_message_id: summary.summarized_until_message_id.clone(),
+            summarized_until_index: summary.summarized_until_index,
+            created_at: now.clone(),
+            updated_at: now,
         })
         .exec(&mut *db)
         .await
@@ -225,6 +269,10 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
 
         Ok(unique_sessions)
     }
+}
+
+fn chat_summary_id(user_id: &UserId, session_id: &str) -> String {
+    format!("{}:{session_id}", user_id.as_str())
 }
 
 fn is_internal_conversation_message(role: &str, content: &str) -> bool {

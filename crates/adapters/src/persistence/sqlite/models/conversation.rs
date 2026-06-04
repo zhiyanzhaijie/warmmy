@@ -31,3 +31,18 @@ pub struct ChatMessageAttachmentRow {
     pub status: String,
     pub created_at: String,
 }
+
+#[derive(Debug, Clone, toasty::Model)]
+pub struct ChatSummaryRow {
+    #[key]
+    pub id: String,
+    #[index]
+    pub user_id: String,
+    #[index]
+    pub session_id: String,
+    pub summary: String,
+    pub summarized_until_message_id: Option<String>,
+    pub summarized_until_index: i32,
+    pub created_at: String,
+    pub updated_at: String,
+}

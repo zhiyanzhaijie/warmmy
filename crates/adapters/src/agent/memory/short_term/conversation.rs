@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use app::conversation::ChatMessageRepositoryPort;
+use app::conversation::{ChatMessage, ChatMessageRepositoryPort};
 use domain::UserId;
 use rig::memory::{ConversationMemory, MemoryError};
-use rig::message::{AssistantContent, Message, UserContent};
+use rig::message::Message;
 use rig::wasm_compat::WasmBoxedFuture;
 
-const INTERNAL_CONVERSATION_MARKER: &str = "[warmmy:internal-continuation]";
+const CONVERSATION_SUMMARY_PREFIX: &str = "Conversation summary for earlier messages in this session:";
 
 #[derive(Clone)]
 pub struct SessionConversationMemory {
@@ -35,19 +35,32 @@ impl ConversationMemory for SessionConversationMemory {
         conversation_id: &'a str,
     ) -> WasmBoxedFuture<'a, Result<Vec<Message>, MemoryError>> {
         Box::pin(async move {
-            let memory_messages = self
+            let summary = self
                 .repo
-                .find_memory_messages(&self.user_id, conversation_id)
+                .find_conversation_summary(&self.user_id, conversation_id)
                 .await
                 .map_err(|err| MemoryError::Policy(err.to_string()))?;
 
-            let mut history = memory_messages
-                .into_iter()
-                .filter_map(|content| serde_json::from_str::<Message>(&content).ok())
-                .filter(is_safe_memory_message)
-                .collect();
+            let visible_messages = self
+                .repo
+                .find_by_session(&self.user_id, conversation_id)
+                .await
+                .map_err(|err| MemoryError::Policy(err.to_string()))?;
 
-            apply_recent_window(&mut history, self.max_recent_messages);
+            let mut history = Vec::new();
+            if let Some(summary) = summary {
+                if !summary.summary.trim().is_empty() {
+                    history.push(Message::System {
+                        content: format!("{CONVERSATION_SUMMARY_PREFIX}\n{}", summary.summary),
+                    });
+                }
+            }
+
+            history.extend(
+                recent_visible_messages(visible_messages, self.max_recent_messages)
+                    .into_iter()
+                    .filter_map(message_from_chat_message),
+            );
             Ok(history)
         })
     }
@@ -57,20 +70,8 @@ impl ConversationMemory for SessionConversationMemory {
         conversation_id: &'a str,
         messages: Vec<Message>,
     ) -> WasmBoxedFuture<'a, Result<(), MemoryError>> {
-        Box::pin(async move {
-            for message in messages {
-                if !is_internal_message(&message) && is_safe_memory_message(&message) {
-                    let raw = serde_json::to_string(&message)
-                        .map_err(|err| MemoryError::Policy(err.to_string()))?;
-                    self.repo
-                        .save_memory_message(&self.user_id, conversation_id, &raw)
-                        .await
-                        .map_err(|err| MemoryError::Policy(err.to_string()))?;
-                }
-            }
-
-            Ok(())
-        })
+        let _ = (conversation_id, messages);
+        Box::pin(async move { Ok(()) })
     }
 
     fn clear<'a>(
@@ -81,42 +82,24 @@ impl ConversationMemory for SessionConversationMemory {
     }
 }
 
-fn apply_recent_window(history: &mut Vec<Message>, max_recent_messages: usize) {
-    if max_recent_messages == 0 || history.len() <= max_recent_messages {
-        return;
+fn recent_visible_messages(
+    mut messages: Vec<ChatMessage>,
+    max_recent_messages: usize,
+) -> Vec<ChatMessage> {
+    if max_recent_messages == 0 || messages.len() <= max_recent_messages {
+        return messages;
     }
-
-    let keep_from = history.len() - max_recent_messages;
-    history.drain(0..keep_from);
+    messages.split_off(messages.len() - max_recent_messages)
 }
 
-fn is_safe_memory_message(message: &Message) -> bool {
-    match message {
-        Message::System { .. } => false,
-        Message::User { content } => content
-            .iter()
-            .all(|item| matches!(item, UserContent::Text(_))),
-        Message::Assistant { content, .. } => content
-            .iter()
-            .all(|item| matches!(item, AssistantContent::Text(_))),
+fn message_from_chat_message(message: ChatMessage) -> Option<Message> {
+    if !message.attachments.is_empty() || message.content.trim().is_empty() {
+        return None;
     }
-}
 
-fn is_internal_message(message: &Message) -> bool {
-    match message {
-        Message::User { content } => content.iter().any(|item| {
-            if let UserContent::Text(text) = item {
-                is_internal_continuation(&text.text)
-            } else {
-                false
-            }
-        }),
-        _ => false,
+    match message.role.as_str() {
+        "user" => Some(Message::user(message.content)),
+        "assistant" => Some(Message::assistant(message.content)),
+        _ => None,
     }
-}
-
-fn is_internal_continuation(text: &str) -> bool {
-    text.trim_start().starts_with(INTERNAL_CONVERSATION_MARKER)
-        || text.starts_with("用户已在界面确认一条待确认用餐记录。")
-        || text.starts_with("用户已在界面取消一条待确认用餐记录。")
 }

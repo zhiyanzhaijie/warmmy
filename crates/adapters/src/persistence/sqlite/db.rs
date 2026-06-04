@@ -1,10 +1,10 @@
 use toasty::Db;
 
 use super::models::{
-    ChatMessageAttachmentRow, ChatMessageRow, DiningCompanionRow, FoodNutritionReferenceRow,
-    MealDayFinalizationRow, MealDaySummaryRow, MealRecordRow, MemoryRecordRow, PendingMealLogRow,
-    UserAIProviderRow, UserAIRouteRow, UserHealthExpectationRow, UserPreferencesRow,
-    UserProfileRow, UserSecretRow,
+    ChatMessageAttachmentRow, ChatMessageRow, ChatSummaryRow, DiningCompanionRow,
+    FoodNutritionReferenceRow, MealDayFinalizationRow, MealDaySummaryRow, MealRecordRow,
+    MemoryRecordRow, PendingMealLogRow, UserAIProviderRow, UserAIRouteRow,
+    UserHealthExpectationRow, UserPreferencesRow, UserProfileRow, UserSecretRow,
 };
 
 pub async fn connect_sqlite(database_url: &str) -> toasty::Result<Db> {
@@ -24,6 +24,7 @@ pub async fn connect_sqlite(database_url: &str) -> toasty::Result<Db> {
             FoodNutritionReferenceRow,
             ChatMessageRow,
             ChatMessageAttachmentRow,
+            ChatSummaryRow,
             MemoryRecordRow
         ))
         .connect(database_url)
@@ -205,6 +206,23 @@ fn ensure_user_extension_tables(database_url: &str) -> Result<(), rusqlite::Erro
             ON pending_meal_log_rows (user_id);
         CREATE INDEX IF NOT EXISTS idx_pending_meal_log_rows_session_id
             ON pending_meal_log_rows (session_id);
+
+        CREATE TABLE IF NOT EXISTS chat_summary_rows (
+            id TEXT PRIMARY KEY NOT NULL,
+            user_id TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            summarized_until_message_id TEXT,
+            summarized_until_index INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_summary_rows_user_session
+            ON chat_summary_rows (user_id, session_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_summary_rows_user_id
+            ON chat_summary_rows (user_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_summary_rows_session_id
+            ON chat_summary_rows (session_id);
 
         CREATE TABLE IF NOT EXISTS memory_record_rows (
             id TEXT PRIMARY KEY NOT NULL,

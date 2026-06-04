@@ -8,6 +8,13 @@ use crate::conversation::{
     StoreEphemeralImageInput, StoredEphemeralImage,
 };
 
+#[derive(Clone, Debug)]
+pub struct ConversationSummary {
+    pub summary: String,
+    pub summarized_until_message_id: Option<String>,
+    pub summarized_until_index: i32,
+}
+
 #[async_trait]
 pub trait ConversationAgentPort: Send + Sync {
     async fn send_user_message(
@@ -58,6 +65,17 @@ pub trait ChatMessageRepositoryPort: Send + Sync {
         user_id: &UserId,
         session_id: &str,
         content: &str,
+    ) -> Result<(), String>;
+    async fn find_conversation_summary(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+    ) -> Result<Option<ConversationSummary>, String>;
+    async fn save_conversation_summary(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        summary: &ConversationSummary,
     ) -> Result<(), String>;
     async fn find_sessions(&self, user_id: &UserId) -> Result<Vec<String>, String>;
 }

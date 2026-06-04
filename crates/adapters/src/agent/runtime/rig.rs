@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use app::app_error::{AppError, AppResult};
 use app::conversation::{
-    AgentStatusKind, ChatMessageRepositoryPort, ConversationReplyStream, ConversationStreamEvent,
-    ConversationUserInput, EphemeralImageData, EphemeralImageStorePort, SaveMessageImageAttachment,
-    SendUserMessageResult,
+    AgentStatusKind, ChatMessage, ChatMessageRepositoryPort, ConversationReplyStream,
+    ConversationStreamEvent, ConversationSummary, ConversationUserInput, EphemeralImageData,
+    EphemeralImageStorePort, SaveMessageImageAttachment, SendUserMessageResult,
 };
 use app::meal::MealCommandHandler;
 use app::user::{ResolvedAIModelConfig, UserAIConfigQueryHandler, UserDietaryContextQueryHandler};
@@ -40,9 +40,20 @@ use crate::agent::tool;
 use domain::{AICapability, UserId};
 
 const DEFAULT_MAX_TURNS: usize = 4;
-const DEFAULT_HISTORY_WINDOW_MESSAGES: usize = 24;
+const DEFAULT_HISTORY_WINDOW_MESSAGES: usize = 16;
 const DEFAULT_EMBEDDING_NDIMS: usize = 1024;
 const INTERNAL_CONVERSATION_MARKER: &str = "[warmmy:internal-continuation]";
+const CONVERSATION_SUMMARY_PREAMBLE: &str = r#"你是 warmmy 的短期会话摘要器。
+
+你的任务是维护当前 session 的滚动摘要。摘要只服务于当前日期/当前会话的上下文压缩，不是长期记忆。
+
+要求：
+- 合并 previous summary 和本窗口对话，输出一份新的中文摘要
+- 保留用户目标、当前未完成事项、用户纠正、重要指代、当天上下文、待确认状态
+- 保留时间锚点、日期、餐次、人物、地点、身体状态的有效期
+- 不要把未确认的具体餐食说成已经正式记录
+- 不要加入聊天中没有出现的新事实
+- 不要输出 Markdown 标题，不要解释，只输出摘要正文"#;
 const WARMMY_PREAMBLE: &str = r#"你是 warmmy，一个温暖、专业的对话型饮食助理。
 
 ## 核心行为
@@ -309,6 +320,7 @@ impl RigConversationRuntime {
             .await?;
         self.observe_memory(user_id, session_id, &memory_input, &reply)
             .await;
+        self.spawn_conversation_summary_update(user_id, session_id);
 
         Ok(SendUserMessageResult {
             reply,
@@ -799,6 +811,10 @@ impl RigConversationRuntime {
                                     &assistant_output_for_memory,
                                 )
                                 .await;
+                            runtime_for_memory.spawn_conversation_summary_update(
+                                &user_id_for_memory,
+                                &session_id_for_memory,
+                            );
                         });
                         yield Ok(stream_event(ConversationStreamEvent::Done));
                         tracing::info!(output.len = output_len, "agent stream finished");
@@ -913,6 +929,131 @@ impl RigConversationRuntime {
         }
     }
 
+    fn spawn_conversation_summary_update(&self, user_id: &UserId, session_id: &str) {
+        let runtime = self.clone();
+        let user_id = user_id.clone();
+        let session_id = session_id.to_string();
+        tokio::spawn(async move {
+            if let Err(err) = runtime
+                .update_conversation_summary(&user_id, &session_id)
+                .await
+            {
+                tracing::warn!(error = %err, "failed to update conversation summary");
+            }
+        });
+    }
+
+    async fn update_conversation_summary(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+    ) -> AppResult<()> {
+        let summary = self
+            .repo
+            .find_conversation_summary(user_id, session_id)
+            .await
+            .map_err(AppError::database)?;
+        let messages = self
+            .repo
+            .find_by_session(user_id, session_id)
+            .await
+            .map_err(AppError::database)?;
+
+        let summarized_until = summary
+            .as_ref()
+            .map(|summary| summary.summarized_until_index.max(0) as usize)
+            .unwrap_or_default();
+        let window_end = summarized_until + DEFAULT_HISTORY_WINDOW_MESSAGES;
+        if messages.len() <= window_end {
+            return Ok(());
+        }
+
+        let window = &messages[summarized_until..window_end];
+        let Some(last_message) = window.last() else {
+            return Ok(());
+        };
+
+        let model = match self
+            .ai_configs
+            .resolve_optional(user_id, AICapability::Chat)
+            .await?
+        {
+            Some(model) => model,
+            None => return Ok(()),
+        };
+
+        let previous_summary = summary
+            .as_ref()
+            .map(|summary| summary.summary.as_str())
+            .unwrap_or_default();
+        let prompt = build_conversation_summary_prompt(previous_summary, window);
+        let next_summary = self.prompt_summary_model(&model, prompt).await?;
+        if next_summary.trim().is_empty() {
+            return Ok(());
+        }
+
+        self.repo
+            .save_conversation_summary(
+                user_id,
+                session_id,
+                &ConversationSummary {
+                    summary: next_summary.trim().to_string(),
+                    summarized_until_message_id: Some(last_message.id.clone()),
+                    summarized_until_index: window_end as i32,
+                },
+            )
+            .await
+            .map_err(AppError::database)?;
+
+        tracing::info!(
+            session.id = session_id,
+            summarized_until_index = window_end,
+            "conversation summary updated"
+        );
+        Ok(())
+    }
+
+    async fn prompt_summary_model(
+        &self,
+        model: &ResolvedAIModelConfig,
+        prompt: String,
+    ) -> AppResult<String> {
+        match model.provider.as_str() {
+            "openai" | "openai_compatible" | "siliconflow" => {
+                let client = openai::Client::builder()
+                    .api_key(&model.api_key)
+                    .base_url(&model.base_url)
+                    .build()
+                    .map_err(|e| AppError::upstream(e.to_string()))?
+                    .completions_api();
+                client
+                    .agent(model.model.as_str())
+                    .preamble(CONVERSATION_SUMMARY_PREAMBLE)
+                    .build()
+                    .prompt(prompt)
+                    .await
+                    .map_err(|e| AppError::upstream(e.to_string()))
+            }
+            "deepseek" => {
+                let client = deepseek::Client::builder()
+                    .api_key(&model.api_key)
+                    .base_url(&model.base_url)
+                    .build()
+                    .map_err(|e| AppError::upstream(e.to_string()))?;
+                client
+                    .agent(model.model.as_str())
+                    .preamble(CONVERSATION_SUMMARY_PREAMBLE)
+                    .build()
+                    .prompt(prompt)
+                    .await
+                    .map_err(|e| AppError::upstream(e.to_string()))
+            }
+            provider => Err(AppError::internal(format!(
+                "unsupported summary provider: {provider}"
+            ))),
+        }
+    }
+
     fn runtime_preamble(&self, context: &str, semantic_memory_enabled: bool) -> String {
         let semantic_status = if semantic_memory_enabled {
             "长期语义记忆/RAG 已启用。"
@@ -928,6 +1069,31 @@ fn status_event(kind: AgentStatusKind, label: &str) -> String {
         kind,
         label: label.to_string(),
     })
+}
+
+fn build_conversation_summary_prompt(previous_summary: &str, window: &[ChatMessage]) -> String {
+    let previous_summary = if previous_summary.trim().is_empty() {
+        "无".to_string()
+    } else {
+        previous_summary.trim().to_string()
+    };
+    let messages = window
+        .iter()
+        .enumerate()
+        .map(|(index, message)| {
+            format!(
+                "{}. {}: {}",
+                index + 1,
+                message.role,
+                message.content.trim()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "previous summary:\n{previous_summary}\n\nnew message window:\n{messages}\n\n请输出合并后的 rolling conversation summary。"
+    )
 }
 
 fn interaction_event(interaction: AgentInteractionRequest) -> String {
