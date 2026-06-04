@@ -126,6 +126,7 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
             meal_command,
             repos.chat_repo.clone(),
             repos.ephemeral_image_store.clone(),
+            repos.memory_store.clone(),
             user.dietary_context.clone(),
             user.ai_config_query.clone(),
             config.rag.lancedb_path.clone(),

@@ -20,6 +20,7 @@ use app::{
 use tokio::sync::Mutex;
 
 use app::conversation::{ChatMessageRepositoryPort, EphemeralImageStorePort};
+use crate::agent::memory::long_term::store::MemoryStore;
 
 pub struct DbRepos {
     pub db: Arc<Mutex<toasty::Db>>,
@@ -31,6 +32,7 @@ pub struct DbRepos {
     pub secret_store: Arc<dyn SecretStorePort>,
     pub chat_repo: Arc<dyn ChatMessageRepositoryPort>,
     pub ephemeral_image_store: Arc<dyn EphemeralImageStorePort>,
+    pub memory_store: Arc<dyn MemoryStore>,
     pub meal_repo: Arc<dyn MealRecordRepositoryPort>,
     pub pending_meal_repo: Arc<dyn PendingMealLogRepositoryPort>,
     pub meal_day_finalization_repo: Arc<dyn MealDayFinalizationRepositoryPort>,

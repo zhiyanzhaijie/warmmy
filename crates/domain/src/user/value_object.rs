@@ -171,7 +171,6 @@ pub enum AICapability {
     Chat,
     Embedding,
     Vision,
-    MemoryExtraction,
 }
 
 impl AICapability {
@@ -180,7 +179,6 @@ impl AICapability {
             Self::Chat => "chat",
             Self::Embedding => "embedding",
             Self::Vision => "vision",
-            Self::MemoryExtraction => "memory_extraction",
         }
     }
 
@@ -189,7 +187,6 @@ impl AICapability {
             "chat" => Some(Self::Chat),
             "embedding" => Some(Self::Embedding),
             "vision" => Some(Self::Vision),
-            "memory_extraction" => Some(Self::MemoryExtraction),
             _ => None,
         }
     }

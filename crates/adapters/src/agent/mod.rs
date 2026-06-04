@@ -1,4 +1,3 @@
-pub mod config;
 pub mod interaction;
 pub mod memory;
 pub mod runtime;

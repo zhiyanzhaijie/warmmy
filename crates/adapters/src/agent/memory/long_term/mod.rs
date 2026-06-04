@@ -1,3 +1,9 @@
 pub mod extractor;
-pub mod facts;
-pub mod rag;
+pub mod index;
+pub mod pipeline;
+pub mod policy;
+pub mod promotion;
+pub(crate) mod rag;
+pub mod retriever;
+pub mod service;
+pub mod store;

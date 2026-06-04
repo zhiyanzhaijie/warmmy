@@ -2,7 +2,7 @@ use toasty::Db;
 
 use super::models::{
     ChatMessageAttachmentRow, ChatMessageRow, DiningCompanionRow, FoodNutritionReferenceRow,
-    MealDayFinalizationRow, MealDaySummaryRow, MealRecordRow, PendingMealLogRow,
+    MealDayFinalizationRow, MealDaySummaryRow, MealRecordRow, MemoryRecordRow, PendingMealLogRow,
     UserAIProviderRow, UserAIRouteRow, UserHealthExpectationRow, UserPreferencesRow,
     UserProfileRow, UserSecretRow,
 };
@@ -23,7 +23,8 @@ pub async fn connect_sqlite(database_url: &str) -> toasty::Result<Db> {
             PendingMealLogRow,
             FoodNutritionReferenceRow,
             ChatMessageRow,
-            ChatMessageAttachmentRow
+            ChatMessageAttachmentRow,
+            MemoryRecordRow
         ))
         .connect(database_url)
         .await?;
@@ -204,6 +205,29 @@ fn ensure_user_extension_tables(database_url: &str) -> Result<(), rusqlite::Erro
             ON pending_meal_log_rows (user_id);
         CREATE INDEX IF NOT EXISTS idx_pending_meal_log_rows_session_id
             ON pending_meal_log_rows (session_id);
+
+        CREATE TABLE IF NOT EXISTS memory_record_rows (
+            id TEXT PRIMARY KEY NOT NULL,
+            user_id TEXT NOT NULL,
+            tier TEXT NOT NULL,
+            form TEXT,
+            scope_json TEXT NOT NULL,
+            source_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            index_policy TEXT NOT NULL,
+            content TEXT NOT NULL,
+            search_text TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 0,
+            claim_json TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_memory_record_rows_user_id
+            ON memory_record_rows (user_id);
+        CREATE INDEX IF NOT EXISTS idx_memory_record_rows_status
+            ON memory_record_rows (status);
+        CREATE INDEX IF NOT EXISTS idx_memory_record_rows_index_policy
+            ON memory_record_rows (index_policy);
         "#,
     )?;
 
@@ -238,6 +262,19 @@ fn ensure_user_extension_tables(database_url: &str) -> Result<(), rusqlite::Erro
         "food_nutrition_reference_rows",
         "labels_json",
         "TEXT NOT NULL DEFAULT '{}' ",
+    )?;
+
+    ensure_column(
+        &connection,
+        "memory_record_rows",
+        "confidence",
+        "REAL NOT NULL DEFAULT 0",
+    )?;
+    ensure_column(
+        &connection,
+        "memory_record_rows",
+        "claim_json",
+        "TEXT DEFAULT NULL",
     )?;
 
     Ok(())

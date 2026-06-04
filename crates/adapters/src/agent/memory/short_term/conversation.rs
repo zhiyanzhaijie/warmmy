@@ -41,29 +41,10 @@ impl ConversationMemory for SessionConversationMemory {
                 .await
                 .map_err(|err| MemoryError::Policy(err.to_string()))?;
 
-            if !memory_messages.is_empty() {
-                let mut history = memory_messages
-                    .into_iter()
-                    .filter_map(|content| serde_json::from_str::<Message>(&content).ok())
-                    .filter(is_safe_memory_message)
-                    .collect::<Vec<_>>();
-                apply_recent_window(&mut history, self.max_recent_messages);
-                return Ok(history);
-            }
-
-            let messages = self
-                .repo
-                .find_by_session(&self.user_id, conversation_id)
-                .await
-                .map_err(|err| MemoryError::Policy(err.to_string()))?;
-
-            let mut history: Vec<Message> = messages
+            let mut history = memory_messages
                 .into_iter()
-                .filter_map(|msg| match msg.role.as_str() {
-                    "user" => Some(Message::user(msg.content)),
-                    "assistant" => Some(Message::assistant(msg.content)),
-                    _ => None,
-                })
+                .filter_map(|content| serde_json::from_str::<Message>(&content).ok())
+                .filter(is_safe_memory_message)
                 .collect();
 
             apply_recent_window(&mut history, self.max_recent_messages);

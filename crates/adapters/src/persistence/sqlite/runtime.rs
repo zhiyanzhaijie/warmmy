@@ -19,7 +19,10 @@ use crate::crypto::argon2::Argon2SecretCipher;
 use crate::persistence::ephemeral_image_store::InMemoryEphemeralImageStore;
 use crate::persistence::{DbRepos, PersistenceBackend};
 
-use super::{connect_sqlite, db_err, SqliteChatMessageRepo, SqliteMealRepo, SqliteUserRepo};
+use super::{
+    connect_sqlite, db_err, SqliteChatMessageRepo, SqliteMealRepo, SqliteMemoryStore,
+    SqliteUserRepo,
+};
 
 pub struct SqliteBackend;
 
@@ -46,6 +49,7 @@ impl PersistenceBackend for SqliteBackend {
         let user_repo_impl = Arc::new(SqliteUserRepo::new(db.clone(), secret_cipher));
         let chat_repo_impl = Arc::new(SqliteChatMessageRepo::new(db.clone()));
         let ephemeral_image_store_impl = Arc::new(InMemoryEphemeralImageStore::new());
+        let memory_store = Arc::new(SqliteMemoryStore::new(db.clone()));
         let meal_repo_impl = Arc::new(SqliteMealRepo::new(db.clone()));
 
         let user_repo: Arc<dyn UserProfileRepositoryPort> = user_repo_impl.clone();
@@ -75,6 +79,7 @@ impl PersistenceBackend for SqliteBackend {
             secret_store,
             chat_repo,
             ephemeral_image_store,
+            memory_store,
             meal_repo,
             pending_meal_repo,
             meal_day_finalization_repo,

@@ -21,6 +21,8 @@ rusqlite = { version = "0.39", features = ["bundled"] }
 chrono = { version = "0.4", features = ["serde"] }
 rig = { version = "0.37.0", default-features = false, features = ["rustls"] }
 lancedb = { version = "0.27.2", default-features = false }
+lance = { version = "=4.0.0", default-features = false }
+lance-table = { version = "=4.0.0" }
 arrow-array = "57"
 argon2 = "0.5"
 base64 = "0.22"

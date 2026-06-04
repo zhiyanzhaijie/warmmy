@@ -24,12 +24,16 @@ use rig::OneOrMany;
 use serde_json::{to_value, Value};
 use tokio::sync::mpsc;
 
-use crate::agent::config::AgentModelConfig;
 use crate::agent::interaction::{AgentInteractionRequest, AgentInteractionSink};
-use crate::agent::memory::long_term::extractor::LongTermMemoryExtractor;
-use crate::agent::memory::long_term::facts::LongTermFactsMemory as FactsMemory;
-use crate::agent::memory::long_term::rag::{build_rag_index, RagConfig};
-use crate::agent::memory::LongTermFactsMemory;
+use crate::agent::memory::long_term::extractor::{MemoryObservation, ModelMemoryExtractor};
+use crate::agent::memory::long_term::index::NoopMemoryIndex;
+use crate::agent::memory::long_term::pipeline::MemoryPipeline;
+use crate::agent::memory::long_term::policy::MemoryPolicy;
+use crate::agent::memory::long_term::rag::{build_rag_index, LanceDbMemoryIndex, RagConfig};
+use crate::agent::memory::long_term::retriever::MemoryRetriever;
+use crate::agent::memory::long_term::service::MemoryService;
+use crate::agent::memory::long_term::store::MemoryStore;
+use crate::agent::memory::MemoryContextProvider;
 use crate::agent::memory::SessionConversationMemory;
 use crate::agent::runtime::hook::{AgentStatusSink, GuardrailHook, WarmmyPromptHook};
 use crate::agent::tool;
@@ -43,7 +47,7 @@ const WARMMY_PREAMBLE: &str = r#"你是 warmmy，一个温暖、专业的对话�
 
 ## 核心行为
 - 你可以自然聊天，回答营养健康相关问题
-- 你会优先使用 Current Facts 中的权威用户画像理解用户偏好、忌口、过敏原和健康期望
+- 你会优先使用 Current Context 理解用户偏好、忌口、过敏原和健康期望
 - 当用户明确表达自己吃了或喝了具体内容，或要求为某个具体餐食创建“确认/待确认记录/草稿/确认卡”时，调用 propose_meal_log 工具创建待确认用餐草稿
 - 待确认草稿不是正式 meal log；只有用户确认后，才能调用 confirm_meal_log 正式保存
 - 用户取消待确认草稿时，调用 reject_meal_log
@@ -76,8 +80,9 @@ enum AgentStreamStep<T> {
 pub struct RigConversationRuntime {
     repo: Arc<dyn ChatMessageRepositoryPort>,
     image_store: Arc<dyn EphemeralImageStorePort>,
+    memory_store: Arc<dyn MemoryStore>,
     meal_command: Arc<MealCommandHandler>,
-    long_term_facts: LongTermFactsMemory,
+    context_provider: MemoryContextProvider,
     ai_configs: UserAIConfigQueryHandler,
     lancedb_path: String,
     rag_top_k: usize,
@@ -89,6 +94,7 @@ impl RigConversationRuntime {
         meal_command: Arc<MealCommandHandler>,
         repo: Arc<dyn ChatMessageRepositoryPort>,
         image_store: Arc<dyn EphemeralImageStorePort>,
+        memory_store: Arc<dyn MemoryStore>,
         user_contexts: UserDietaryContextQueryHandler,
         ai_configs: UserAIConfigQueryHandler,
         lancedb_path: String,
@@ -97,8 +103,9 @@ impl RigConversationRuntime {
         Self {
             repo,
             image_store,
+            memory_store,
             meal_command,
-            long_term_facts: LongTermFactsMemory::new(user_contexts),
+            context_provider: MemoryContextProvider::new(user_contexts),
             ai_configs,
             lancedb_path,
             rag_top_k,
@@ -135,8 +142,8 @@ impl RigConversationRuntime {
     ) -> AppResult<SendUserMessageResult> {
         let chat = self.resolve_conversation_model(user_id, &input).await?;
         let rag = self.resolve_rag(user_id).await?;
-        let facts = self.profile_facts(user_id).await;
-        let preamble = self.runtime_preamble(&facts, rag.is_some());
+        let context = self.context_provider.load(user_id).await;
+        let preamble = self.runtime_preamble(&context, rag.is_some());
         let model = chat.model.as_str();
         let interaction_sink = AgentInteractionSink::default();
         let memory_input = input.visible_text();
@@ -155,7 +162,7 @@ impl RigConversationRuntime {
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
                 if let Some(rag) = rag.clone() {
-                    let rag_index = build_rag_index(&rag).await?;
+                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
                     client
                         .agent(model)
                         .preamble(&preamble)
@@ -205,7 +212,7 @@ impl RigConversationRuntime {
                     .completions_api();
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
                 if let Some(rag) = rag.clone() {
-                    let rag_index = build_rag_index(&rag).await?;
+                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
                     client
                         .agent(model)
                         .preamble(&preamble)
@@ -254,7 +261,7 @@ impl RigConversationRuntime {
                     .map_err(|e| AppError::upstream(e.to_string()))?;
                 let hook = WarmmyPromptHook::new(self.guardrail.clone());
                 if let Some(rag) = rag.clone() {
-                    let rag_index = build_rag_index(&rag).await?;
+                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
                     client
                         .agent(model)
                         .preamble(&preamble)
@@ -300,7 +307,7 @@ impl RigConversationRuntime {
 
         self.persist_assistant_visible_message(user_id, session_id, &reply)
             .await?;
-        self.extract_memory_if_enabled(user_id, &memory_input, chat, rag)
+        self.observe_memory(user_id, session_id, &memory_input, &reply)
             .await;
 
         Ok(SendUserMessageResult {
@@ -359,8 +366,8 @@ impl RigConversationRuntime {
         chat: ResolvedAIModelConfig,
     ) -> AppResult<ConversationReplyStream> {
         let rag = self.resolve_rag(user_id).await?;
-        let facts = self.profile_facts(user_id).await;
-        let preamble = self.runtime_preamble(&facts, rag.is_some());
+        let context = self.context_provider.load(user_id).await;
+        let preamble = self.runtime_preamble(&context, rag.is_some());
         let model = chat.model.as_str();
         let interaction_sink = AgentInteractionSink::default();
         let user_input = input.visible_text();
@@ -370,13 +377,13 @@ impl RigConversationRuntime {
             .await;
         self.persist_user_visible_message(user_id, session_id, &input, &user_input)
             .await?;
-        let user_id_for_memory = user_id.clone();
         let user_id_for_history = user_id.clone();
+        let user_id_for_memory = user_id.clone();
         let session_id_for_history = session_id.to_string();
+        let session_id_for_memory = session_id.to_string();
         let repo_for_history = self.repo.clone();
-        let chat_for_memory = chat.clone();
-        let rag_for_memory = rag.clone();
-        let ai_configs = self.ai_configs.clone();
+        let runtime_for_memory = self.clone();
+        let user_input_for_memory = user_input.clone();
         let (status_tx, status_rx) = mpsc::unbounded_channel();
         let status_sink = AgentStatusSink::new(status_tx);
 
@@ -390,7 +397,7 @@ impl RigConversationRuntime {
                 let hook =
                     WarmmyPromptHook::with_status_sink(self.guardrail.clone(), status_sink.clone());
                 let raw = if let Some(rag) = rag.clone() {
-                    let rag_index = build_rag_index(&rag).await?;
+                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
                     client
                         .agent(model)
                         .preamble(&preamble)
@@ -432,14 +439,13 @@ impl RigConversationRuntime {
                     raw,
                     interaction_sink,
                     has_images,
-                    user_id_for_memory,
-                    user_input,
-                    repo_for_history,
-                    user_id_for_history,
-                    session_id_for_history,
-                    chat_for_memory,
-                    rag_for_memory,
-                    ai_configs,
+                    repo_for_history.clone(),
+                    user_id_for_history.clone(),
+                    session_id_for_history.clone(),
+                    runtime_for_memory.clone(),
+                    user_id_for_memory.clone(),
+                    session_id_for_memory.clone(),
+                    user_input_for_memory.clone(),
                     status_rx,
                 ))
             }
@@ -453,7 +459,7 @@ impl RigConversationRuntime {
                 let hook =
                     WarmmyPromptHook::with_status_sink(self.guardrail.clone(), status_sink.clone());
                 let raw = if let Some(rag) = rag.clone() {
-                    let rag_index = build_rag_index(&rag).await?;
+                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
                     client
                         .agent(model)
                         .preamble(&preamble)
@@ -495,14 +501,13 @@ impl RigConversationRuntime {
                     raw,
                     interaction_sink,
                     has_images,
-                    user_id_for_memory,
-                    user_input,
-                    repo_for_history,
-                    user_id_for_history,
-                    session_id_for_history,
-                    chat_for_memory,
-                    rag_for_memory,
-                    ai_configs,
+                    repo_for_history.clone(),
+                    user_id_for_history.clone(),
+                    session_id_for_history.clone(),
+                    runtime_for_memory.clone(),
+                    user_id_for_memory.clone(),
+                    session_id_for_memory.clone(),
+                    user_input_for_memory.clone(),
                     status_rx,
                 ))
             }
@@ -515,7 +520,7 @@ impl RigConversationRuntime {
                 let hook =
                     WarmmyPromptHook::with_status_sink(self.guardrail.clone(), status_sink.clone());
                 let raw = if let Some(rag) = rag.clone() {
-                    let rag_index = build_rag_index(&rag).await?;
+                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
                     client
                         .agent(model)
                         .preamble(&preamble)
@@ -557,14 +562,13 @@ impl RigConversationRuntime {
                     raw,
                     interaction_sink,
                     has_images,
-                    user_id_for_memory,
-                    user_input,
                     repo_for_history,
                     user_id_for_history,
                     session_id_for_history,
-                    chat_for_memory,
-                    rag_for_memory,
-                    ai_configs,
+                    runtime_for_memory,
+                    user_id_for_memory,
+                    session_id_for_memory,
+                    user_input_for_memory,
                     status_rx,
                 ))
             }
@@ -689,14 +693,13 @@ impl RigConversationRuntime {
         mut raw: S,
         interaction_sink: AgentInteractionSink,
         has_images: bool,
-        user_id_for_memory: UserId,
-        user_input: String,
         repo_for_history: Arc<dyn ChatMessageRepositoryPort>,
         user_id_for_history: UserId,
         session_id_for_history: String,
-        chat_for_memory: ResolvedAIModelConfig,
-        rag_for_memory: Option<RagConfig>,
-        ai_configs: UserAIConfigQueryHandler,
+        runtime_for_memory: RigConversationRuntime,
+        user_id_for_memory: UserId,
+        session_id_for_memory: String,
+        user_input_for_memory: String,
         mut status_rx: mpsc::UnboundedReceiver<ConversationStreamEvent>,
     ) -> ConversationReplyStream
     where
@@ -779,23 +782,24 @@ impl RigConversationRuntime {
                             yield Err(err);
                             break;
                         }
-                        if rag_for_memory.is_some() {
-                            yield Ok(status_event(
-                                AgentStatusKind::SavingMemory,
-                                "我在把重要线索放进记忆里。",
-                            ));
-                        }
-                        extract_memory_if_enabled(
-                            &ai_configs,
-                            &user_id_for_memory,
-                            &user_input,
-                            chat_for_memory.clone(),
-                            rag_for_memory.clone(),
-                        )
-                        .await;
                         while let Ok(event) = status_rx.try_recv() {
                             yield Ok(stream_event(event));
                         }
+                        let runtime_for_memory = runtime_for_memory.clone();
+                        let user_id_for_memory = user_id_for_memory.clone();
+                        let session_id_for_memory = session_id_for_memory.clone();
+                        let user_input_for_memory = user_input_for_memory.clone();
+                        let assistant_output_for_memory = assistant_output.clone();
+                        tokio::spawn(async move {
+                            runtime_for_memory
+                                .observe_memory(
+                                    &user_id_for_memory,
+                                    &session_id_for_memory,
+                                    &user_input_for_memory,
+                                    &assistant_output_for_memory,
+                                )
+                                .await;
+                        });
                         yield Ok(stream_event(ConversationStreamEvent::Done));
                         tracing::info!(output.len = output_len, "agent stream finished");
                     }
@@ -825,7 +829,6 @@ impl RigConversationRuntime {
 
         Ok(Some(RagConfig {
             lancedb_path: self.lancedb_path.clone(),
-            embedding_provider: embedding.provider.as_str().to_string(),
             embedding_base_url: embedding.base_url,
             embedding_api_key: embedding.api_key,
             embedding_model: embedding.model,
@@ -834,52 +837,89 @@ impl RigConversationRuntime {
         }))
     }
 
-    async fn extract_memory_if_enabled(
+    async fn build_memory_retriever(
         &self,
         user_id: &UserId,
+        rag: &RagConfig,
+    ) -> AppResult<MemoryRetriever> {
+        let index = build_rag_index(rag).await?;
+        Ok(MemoryRetriever::new(
+            user_id.clone(),
+            self.memory_store.clone(),
+            index,
+        ))
+    }
+
+    async fn observe_memory(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
         user_input: &str,
-        chat: ResolvedAIModelConfig,
-        rag: Option<RagConfig>,
+        assistant_output: &str,
     ) {
-        extract_memory_if_enabled(&self.ai_configs, user_id, user_input, chat, rag).await;
+        if user_input.trim().is_empty() || is_internal_conversation_input(user_input) {
+            return;
+        }
+
+        let extractor_model = match self
+            .ai_configs
+            .resolve_optional(user_id, AICapability::Chat)
+            .await
+        {
+            Ok(Some(model)) => model,
+            Ok(None) => {
+                tracing::info!(
+                    user.id = user_id.as_str(),
+                    "memory observation skipped: chat model config missing"
+                );
+                return;
+            }
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to resolve chat model for memory observation");
+                return;
+            }
+        };
+
+        let memory_index: Arc<dyn crate::agent::memory::long_term::index::MemoryIndex> =
+            match self.resolve_rag(user_id).await {
+                Ok(Some(rag)) => Arc::new(LanceDbMemoryIndex::new(rag)),
+                Ok(None) => Arc::new(NoopMemoryIndex),
+                Err(err) => {
+                    tracing::warn!(error = %err, "failed to resolve memory index");
+                    Arc::new(NoopMemoryIndex)
+                }
+            };
+
+        let pipeline = MemoryPipeline::new(
+            Arc::new(ModelMemoryExtractor::new(extractor_model)),
+            MemoryService::new(
+                MemoryPolicy::new(),
+                self.memory_store.clone(),
+                memory_index,
+            ),
+        );
+
+        if let Err(err) = pipeline
+            .observe(MemoryObservation {
+                user_id: user_id.clone(),
+                session_id: session_id.to_string(),
+                reference_date: session_id.to_string(),
+                user_input: user_input.to_string(),
+                assistant_output: assistant_output.to_string(),
+            })
+            .await
+        {
+            tracing::warn!(error = %err, "failed to observe memory");
+        }
     }
 
-    async fn profile_facts(&self, user_id: &UserId) -> String {
-        let snapshot = self.long_term_facts.load_profile_snapshot(user_id).await;
-        FactsMemory::build_profile_context(snapshot.as_ref())
-    }
-
-    fn runtime_preamble(&self, facts: &str, semantic_memory_enabled: bool) -> String {
+    fn runtime_preamble(&self, context: &str, semantic_memory_enabled: bool) -> String {
         let semantic_status = if semantic_memory_enabled {
             "长期语义记忆/RAG 已启用。"
         } else {
-            "长期语义记忆/RAG 未启用：用户尚未配置 embedding 模型或 API key。只能使用当前会话记忆和 Current Facts。"
+            "长期语义记忆/RAG 未启用：用户尚未配置 embedding 模型或 API key。只能使用当前会话记忆和 Current Context。"
         };
-        format!("{WARMMY_PREAMBLE}\n\n## Capability Status\n{semantic_status}\n\n## Current Facts\n{facts}")
-    }
-}
-
-async fn extract_memory_if_enabled(
-    ai_configs: &UserAIConfigQueryHandler,
-    user_id: &UserId,
-    user_input: &str,
-    chat: ResolvedAIModelConfig,
-    rag: Option<RagConfig>,
-) {
-    let Some(rag) = rag else {
-        return;
-    };
-
-    let extractor_model = ai_configs
-        .resolve_optional(user_id, AICapability::MemoryExtraction)
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or(chat);
-
-    let extractor = LongTermMemoryExtractor::new(AgentModelConfig::from(extractor_model), rag);
-    if let Err(err) = extractor.extract_and_embed(user_id, user_input).await {
-        tracing::warn!(error = %err, "failed to extract long-term semantic memory");
+        format!("{WARMMY_PREAMBLE}\n\n## Capability Status\n{semantic_status}\n\n## Current Context\n{context}")
     }
 }
 

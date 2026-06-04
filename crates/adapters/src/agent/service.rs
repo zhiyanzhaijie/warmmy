@@ -10,6 +10,7 @@ use app::meal::MealCommandHandler;
 use app::user::{UserAIConfigQueryHandler, UserDietaryContextQueryHandler};
 use async_trait::async_trait;
 
+use crate::agent::memory::long_term::store::MemoryStore;
 use crate::agent::runtime::rig::RigConversationRuntime;
 
 pub struct ConversationAgentService {
@@ -21,6 +22,7 @@ impl ConversationAgentService {
         meal_command: Arc<MealCommandHandler>,
         repo: Arc<dyn ChatMessageRepositoryPort>,
         image_store: Arc<dyn EphemeralImageStorePort>,
+        memory_store: Arc<dyn MemoryStore>,
         user_contexts: UserDietaryContextQueryHandler,
         ai_configs: UserAIConfigQueryHandler,
         lancedb_path: String,
@@ -30,6 +32,7 @@ impl ConversationAgentService {
             meal_command,
             repo,
             image_store,
+            memory_store,
             user_contexts,
             ai_configs,
             lancedb_path,
@@ -87,7 +90,7 @@ fn interaction_continuation_prompt(interaction: AgentInteractionContinuation) ->
             finalized_at,
             meals_json,
         } => format!(
-            "{INTERNAL_CONTINUATION_MARKER} 用户已主动敲定今天的餐食记录，finalized_at: {finalized_at}。今天不再接受新的 meal log。请根据下面的正式 meal records、Current Facts 中的健康期望和饮食偏好，输出一份亲密、具体、简洁的今日饮食回顾。要求包含：1. 今日总体评价；2. 营养亮点；3. 可能的不足或明天调整建议；4. 一句鼓励。不要调用 meal log 工具，不要要求用户再确认。\n\n正式 meal records JSON:\n{meals_json}"
+            "{INTERNAL_CONTINUATION_MARKER} 用户已主动敲定今天的餐食记录，finalized_at: {finalized_at}。今天不再接受新的 meal log。请根据下面的正式 meal records、Current Context 中的健康期望和饮食偏好，输出一份亲密、具体、简洁的今日饮食回顾。要求包含：1. 今日总体评价；2. 营养亮点；3. 可能的不足或明天调整建议；4. 一句鼓励。不要调用 meal log 工具，不要要求用户再确认。\n\n正式 meal records JSON:\n{meals_json}"
         ),
     }
 }
