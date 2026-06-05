@@ -66,8 +66,7 @@ pub trait PendingMealLogRepositoryPort: Send + Sync {
 pub trait FoodNutritionReferenceRepositoryPort: Send + Sync {
     async fn upsert_reference(&self, reference: &FoodNutritionReference) -> Result<(), String>;
 
-    async fn find_reference_by_name(
-        &self,
-        name: &str,
-    ) -> Result<Option<FoodNutritionReference>, String>;
+    async fn get_reference(&self, id: &str) -> Result<Option<FoodNutritionReference>, String>;
+
+    async fn list_references(&self) -> Result<Vec<FoodNutritionReference>, String>;
 }

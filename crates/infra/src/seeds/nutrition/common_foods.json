@@ -1,11 +1,8 @@
 [
   {
     "id": "cooked_white_rice",
-    "labels": { "zh-CN": "米饭", "en-US": "Cooked white rice" },
-    "aliases": {
-      "zh-CN": ["白米饭", "熟米饭"],
-      "en-US": ["white rice", "steamed rice"]
-    },
+    "name": "米饭",
+    "terms": ["Cooked white rice", "白米饭", "熟米饭", "white rice", "steamed rice"],
     "basis_quantity": 100.0,
     "basis_unit": "g",
     "nutrition": {
@@ -30,11 +27,8 @@
   },
   {
     "id": "egg_whole",
-    "labels": { "zh-CN": "鸡蛋", "en-US": "Whole egg" },
-    "aliases": {
-      "zh-CN": ["全蛋", "煮鸡蛋"],
-      "en-US": ["egg", "boiled egg"]
-    },
+    "name": "鸡蛋",
+    "terms": ["Whole egg", "全蛋", "煮鸡蛋", "egg", "boiled egg"],
     "basis_quantity": 100.0,
     "basis_unit": "g",
     "nutrition": {
@@ -61,11 +55,8 @@
   },
   {
     "id": "beef_lean",
-    "labels": { "zh-CN": "牛肉", "en-US": "Lean beef" },
-    "aliases": {
-      "zh-CN": ["瘦牛肉"],
-      "en-US": ["beef", "lean beef"]
-    },
+    "name": "牛肉",
+    "terms": ["Lean beef", "瘦牛肉", "beef", "lean beef"],
     "basis_quantity": 100.0,
     "basis_unit": "g",
     "nutrition": {
@@ -87,11 +78,8 @@
   },
   {
     "id": "chicken_breast_skinless",
-    "labels": { "zh-CN": "鸡胸肉", "en-US": "Skinless chicken breast" },
-    "aliases": {
-      "zh-CN": ["鸡胸", "去皮鸡胸肉"],
-      "en-US": ["chicken breast"]
-    },
+    "name": "鸡胸肉",
+    "terms": ["Skinless chicken breast", "鸡胸", "去皮鸡胸肉", "chicken breast"],
     "basis_quantity": 100.0,
     "basis_unit": "g",
     "nutrition": {
@@ -113,11 +101,8 @@
   },
   {
     "id": "tofu_firm",
-    "labels": { "zh-CN": "豆腐", "en-US": "Firm tofu" },
-    "aliases": {
-      "zh-CN": ["北豆腐", "老豆腐"],
-      "en-US": ["tofu"]
-    },
+    "name": "豆腐",
+    "terms": ["Firm tofu", "北豆腐", "老豆腐", "tofu"],
     "basis_quantity": 100.0,
     "basis_unit": "g",
     "nutrition": {
@@ -139,11 +124,8 @@
   },
   {
     "id": "broccoli_raw",
-    "labels": { "zh-CN": "西兰花", "en-US": "Broccoli" },
-    "aliases": {
-      "zh-CN": ["青花菜"],
-      "en-US": ["broccoli"]
-    },
+    "name": "西兰花",
+    "terms": ["Broccoli", "青花菜", "broccoli"],
     "basis_quantity": 100.0,
     "basis_unit": "g",
     "nutrition": {

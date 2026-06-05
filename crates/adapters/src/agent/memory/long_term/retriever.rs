@@ -18,7 +18,11 @@ pub struct MemoryRetriever {
 }
 
 impl MemoryRetriever {
-    pub fn new(user_id: UserId, store: Arc<dyn MemoryStore>, index: OpenAiCompatibleRagIndex) -> Self {
+    pub fn new(
+        user_id: UserId,
+        store: Arc<dyn MemoryStore>,
+        index: OpenAiCompatibleRagIndex,
+    ) -> Self {
         Self {
             user_id,
             store,

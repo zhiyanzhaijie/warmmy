@@ -693,8 +693,8 @@
   .grid-cols-\[1\.15fr_1fr\] {
     grid-template-columns: 1.15fr 1fr;
   }
-  .grid-cols-\[1fr_80px_80px\] {
-    grid-template-columns: 1fr 80px 80px;
+  .grid-cols-\[minmax\(0\,1fr\)_104px_34px\] {
+    grid-template-columns: minmax(0,1fr) 104px 34px;
   }
   .flex-col {
     flex-direction: column;
@@ -1205,6 +1205,9 @@
   }
   .pr-1 {
     padding-right: calc(var(--spacing) * 1);
+  }
+  .pr-3 {
+    padding-right: calc(var(--spacing) * 3);
   }
   .pr-10 {
     padding-right: calc(var(--spacing) * 10);

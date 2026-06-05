@@ -81,7 +81,11 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
             ChatMessageAttachmentRow::fields()
                 .user_id()
                 .eq(user_id.as_str())
-                .and(ChatMessageAttachmentRow::fields().session_id().eq(session_id)),
+                .and(
+                    ChatMessageAttachmentRow::fields()
+                        .session_id()
+                        .eq(session_id),
+                ),
         )
         .exec(&mut *db)
         .await
@@ -130,7 +134,9 @@ impl ChatMessageRepositoryPort for SqliteChatMessageRepo {
         let created_at = Utc::now().to_rfc3339();
         for (index, attachment) in attachments.into_iter().enumerate() {
             let width = attachment.width.and_then(|value| i32::try_from(value).ok());
-            let height = attachment.height.and_then(|value| i32::try_from(value).ok());
+            let height = attachment
+                .height
+                .and_then(|value| i32::try_from(value).ok());
             let size_bytes = i64::try_from(attachment.size_bytes).unwrap_or(i64::MAX);
             toasty::create!(ChatMessageAttachmentRow {
                 id: format!("{message_id}:image:{index}"),

@@ -3,8 +3,9 @@ pub mod meal;
 pub mod user;
 
 pub use meal::{
-    DayCycle, DayCycleInvalidError, FoodItem, FoodNutritionReference, MealDayFinalization,
-    MealDaySummary, MealRecord, Nutrition, PendingMealLog, PendingMealLogId, PendingMealLogStatus,
+    DayCycle, DayCycleInvalidError, FoodItem, FoodNutritionReference,
+    FoodNutritionReferenceStatus, MealDayFinalization, MealDaySummary, MealRecord, Nutrition,
+    PendingMealLog, PendingMealLogId, PendingMealLogStatus,
 };
 pub use user::{
     AICapability, AIProviderKind, AppPreferences, AppTheme, CuisinePreference, DietaryPreferences,

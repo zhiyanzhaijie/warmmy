@@ -14,10 +14,11 @@ pub use conversation::{
     store_ephemeral_image,
 };
 pub use meal::{
-    confirm_pending_meal, finalize_and_summarize_meal_day, get_meal_day_summary,
-    list_meal_day_summaries, list_meal_logs, list_pending_meals, preview_pending_meal,
-    reject_pending_meal, ConfirmPendingMealInput, FoodItemDTO, MealDaySummaryDTO, MealRecordDTO,
-    NutritionDTO, PendingMealLogDTO,
+    confirm_pending_meal, discard_pending_meals, finalize_and_summarize_meal_day,
+    get_meal_day_summary, list_food_nutrition_references, list_meal_day_summaries,
+    list_meal_logs, list_pending_meals, preview_pending_meal, reject_pending_meal,
+    ConfirmPendingMealInput, DiscardPendingMealsOutput, FoodItemDTO, FoodNutritionReferenceDTO,
+    MealDaySummaryDTO, MealRecordDTO, NutritionDTO, PendingMealLogDTO,
 };
 pub use user::{
     confirm_health_expectation, create_user_profile, delete_dining_companion,

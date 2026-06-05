@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::app_error::{AppError, AppResult};
 use crate::meal::{
-    estimate_nutrition_from_foods_with_references, FoodNutritionReferenceRepositoryPort,
+    FoodNutritionReferenceRepositoryPort,
     MealDayFinalizationRepositoryPort, MealDaySummaryRepositoryPort, MealEventHandler,
     MealRecordRepositoryPort, PendingMealLogRepositoryPort,
 };
@@ -18,6 +18,7 @@ pub struct LogMealCommand {
     pub session_id: String,
     pub day_cycle: String,
     pub foods: Vec<domain::FoodItem>,
+    pub nutrition: Option<Nutrition>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +28,7 @@ pub struct ProposeMealLogCommand {
     pub session_id: String,
     pub day_cycle: String,
     pub foods: Vec<domain::FoodItem>,
+    pub nutrition: Option<Nutrition>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +37,7 @@ pub struct UpdatePendingMealLogCommand {
     pub pending_id: PendingMealLogId,
     pub day_cycle: String,
     pub foods: Vec<domain::FoodItem>,
+    pub nutrition: Option<Nutrition>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +50,12 @@ pub struct ConfirmMealLogCommand {
 pub struct RejectMealLogCommand {
     pub user_id: UserId,
     pub pending_id: PendingMealLogId,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscardPendingMealsCommand {
+    pub user_id: UserId,
+    pub session_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -83,6 +92,11 @@ pub struct FinalizeMealDayResult {
 #[derive(Debug, Clone)]
 pub struct SaveMealDaySummaryResult {
     pub summary: MealDaySummary,
+}
+
+#[derive(Debug, Clone)]
+pub struct DiscardPendingMealsResult {
+    pub discarded_ids: Vec<PendingMealLogId>,
 }
 
 #[derive(Clone)]
@@ -128,6 +142,12 @@ impl MealCommandHandler {
         self
     }
 
+    pub fn food_nutrition_references(
+        &self,
+    ) -> Option<Arc<dyn FoodNutritionReferenceRepositoryPort>> {
+        self.food_nutrition_references.clone()
+    }
+
     pub async fn handle_meal(&self, input: LogMealCommand) -> AppResult<LogMealResult> {
         let day_cycle = DayCycle::parse(&input.day_cycle)?;
         let context = self
@@ -145,11 +165,7 @@ impl MealCommandHandler {
             return Err(AppError::validation("meal contains no food items"));
         }
 
-        let nutrition = estimate_nutrition_from_foods_with_references(
-            &input.foods,
-            self.food_nutrition_references.clone(),
-        )
-        .await;
+        let nutrition = input.nutrition.unwrap_or_default();
         let calories = nutrition.calories;
         let meal = MealRecord {
             user_id: input.user_id.clone(),
@@ -210,11 +226,7 @@ impl MealCommandHandler {
             return Err(AppError::validation("pending meal contains no food items"));
         }
 
-        let nutrition = estimate_nutrition_from_foods_with_references(
-            &input.foods,
-            self.food_nutrition_references.clone(),
-        )
-        .await;
+        let nutrition = input.nutrition.unwrap_or_default();
         let now = chrono::Utc::now().to_rfc3339();
         let pending = PendingMealLog {
             id: input.id,
@@ -265,11 +277,9 @@ impl MealCommandHandler {
             return Err(AppError::validation("pending meal contains no food items"));
         }
 
-        let nutrition = estimate_nutrition_from_foods_with_references(
-            &input.foods,
-            self.food_nutrition_references.clone(),
-        )
-        .await;
+        let nutrition = input
+            .nutrition
+            .unwrap_or_else(|| existing.nutrition.clone());
 
         existing.day_cycle = day_cycle;
         existing.foods = input.foods;
@@ -282,6 +292,18 @@ impl MealCommandHandler {
             .map_err(AppError::upstream)?;
 
         Ok(existing)
+    }
+
+    pub async fn find_pending_meal(
+        &self,
+        user_id: &UserId,
+        pending_id: &PendingMealLogId,
+    ) -> AppResult<PendingMealLog> {
+        self.pending_meals
+            .find_pending_meal(user_id, pending_id)
+            .await
+            .map_err(AppError::upstream)?
+            .ok_or_else(|| AppError::NotFound("pending meal log".to_string()))
     }
 
     pub async fn confirm_meal(&self, input: ConfirmMealLogCommand) -> AppResult<LogMealResult> {
@@ -305,6 +327,7 @@ impl MealCommandHandler {
                 session_id: existing.session_id.clone(),
                 day_cycle: existing.day_cycle.to_string(),
                 foods: existing.foods.clone(),
+                nutrition: Some(existing.nutrition.clone()),
             })
             .await?;
 
@@ -332,6 +355,30 @@ impl MealCommandHandler {
             .delete_pending_meal(&input.user_id, &input.pending_id)
             .await
             .map_err(AppError::upstream)
+    }
+
+    pub async fn discard_pending_meals(
+        &self,
+        input: DiscardPendingMealsCommand,
+    ) -> AppResult<DiscardPendingMealsResult> {
+        let pending_meals = self
+            .pending_meals
+            .list_pending_meals(&input.user_id, &input.session_id)
+            .await
+            .map_err(AppError::upstream)?;
+        let mut discarded_ids = Vec::new();
+        for pending in pending_meals {
+            if pending.status != PendingMealLogStatus::Proposed {
+                continue;
+            }
+            self.pending_meals
+                .delete_pending_meal(&input.user_id, &pending.id)
+                .await
+                .map_err(AppError::upstream)?;
+            discarded_ids.push(pending.id);
+        }
+
+        Ok(DiscardPendingMealsResult { discarded_ids })
     }
 
     pub async fn list_pending_meals(

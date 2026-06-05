@@ -8,8 +8,8 @@ use app::meal::{
     MealDaySummaryRepositoryPort, MealRecordRepositoryPort, PendingMealLogRepositoryPort,
 };
 use domain::{
-    DayCycle, FoodNutritionReference, MealDayFinalization, MealDaySummary, MealRecord,
-    PendingMealLog, PendingMealLogId, PendingMealLogStatus, UserId,
+    DayCycle, FoodNutritionReference, FoodNutritionReferenceStatus, MealDayFinalization,
+    MealDaySummary, MealRecord, PendingMealLog, PendingMealLogId, PendingMealLogStatus, UserId,
 };
 
 use crate::persistence::sqlite::models::{
@@ -32,42 +32,43 @@ impl SqliteMealRepo {
         true
     }
 
-    async fn upsert_reference_id(
-        &self,
-        lookup_key: String,
-        reference: &FoodNutritionReference,
-    ) -> Result<(), String> {
-        let labels_json =
-            serde_json::to_string(&reference.labels).map_err(|err| err.to_string())?;
-        let aliases_json =
-            serde_json::to_string(&reference.aliases).map_err(|err| err.to_string())?;
+    async fn upsert_reference_row(&self, reference: &FoodNutritionReference) -> Result<(), String> {
+        let id = normalize_food_name(&reference.id);
+        if id.is_empty() {
+            return Ok(());
+        }
+        let terms_json = serde_json::to_string(&reference.terms).map_err(|err| err.to_string())?;
         let nutrition_json =
             serde_json::to_string(&reference.nutrition).map_err(|err| err.to_string())?;
         let mut db = self.db.lock().await;
 
-        match FoodNutritionReferenceRow::get_by_id(&mut *db, &lookup_key).await {
+        match FoodNutritionReferenceRow::get_by_id(&mut *db, &id).await {
             Ok(mut current) => {
                 current
                     .update()
-                    .reference_id(reference.id.clone())
-                    .labels_json(labels_json)
-                    .aliases_json(aliases_json)
+                    .name(reference.name.clone())
+                    .terms_json(terms_json)
                     .basis_quantity(reference.basis_quantity)
                     .basis_unit(reference.basis_unit.clone())
                     .nutrition_json(nutrition_json)
+                    .status(reference.status.as_str().to_string())
+                    .source(reference.source.clone())
+                    .confidence(reference.confidence)
                     .exec(&mut *db)
                     .await
                     .map_err(|err| err.to_string())?;
             }
             Err(err) if err.is_record_not_found() => {
                 toasty::create!(FoodNutritionReferenceRow {
-                    id: lookup_key,
-                    reference_id: reference.id.clone(),
-                    labels_json: labels_json,
-                    aliases_json: aliases_json,
+                    id: id,
+                    name: reference.name.clone(),
+                    terms_json: terms_json,
                     basis_quantity: reference.basis_quantity,
                     basis_unit: reference.basis_unit.clone(),
                     nutrition_json: nutrition_json,
+                    status: reference.status.as_str().to_string(),
+                    source: reference.source.clone(),
+                    confidence: reference.confidence,
                 })
                 .exec(&mut *db)
                 .await
@@ -81,12 +82,15 @@ impl SqliteMealRepo {
 
     fn row_to_reference(row: FoodNutritionReferenceRow) -> Result<FoodNutritionReference, String> {
         Ok(FoodNutritionReference {
-            id: row.reference_id,
-            labels: serde_json::from_str(&row.labels_json).map_err(|err| err.to_string())?,
-            aliases: serde_json::from_str(&row.aliases_json).map_err(|err| err.to_string())?,
+            id: row.id,
+            name: row.name,
+            terms: serde_json::from_str(&row.terms_json).map_err(|err| err.to_string())?,
             basis_quantity: row.basis_quantity,
             basis_unit: row.basis_unit,
             nutrition: serde_json::from_str(&row.nutrition_json).map_err(|err| err.to_string())?,
+            status: FoodNutritionReferenceStatus::parse(&row.status),
+            source: row.source,
+            confidence: row.confidence,
         })
     }
 
@@ -290,14 +294,11 @@ impl MealDaySummaryRepositoryPort for SqliteMealRepo {
 
     async fn list_summaries(&self, user_id: &UserId) -> Result<Vec<MealDaySummary>, String> {
         let mut db = self.db.lock().await;
-        let rows = MealDaySummaryRow::filter(
-            MealDaySummaryRow::fields()
-                .user_id()
-                .eq(user_id.as_str()),
-        )
-        .exec(&mut *db)
-        .await
-        .map_err(|err| err.to_string())?;
+        let rows =
+            MealDaySummaryRow::filter(MealDaySummaryRow::fields().user_id().eq(user_id.as_str()))
+                .exec(&mut *db)
+                .await
+                .map_err(|err| err.to_string())?;
 
         let mut summaries = rows
             .into_iter()
@@ -417,28 +418,11 @@ impl PendingMealLogRepositoryPort for SqliteMealRepo {
 #[async_trait]
 impl FoodNutritionReferenceRepositoryPort for SqliteMealRepo {
     async fn upsert_reference(&self, reference: &FoodNutritionReference) -> Result<(), String> {
-        let mut ids = reference
-            .search_terms()
-            .iter()
-            .map(|term| normalize_food_name(term))
-            .collect::<Vec<_>>();
-        ids.push(normalize_food_name(&reference.id));
-        ids.retain(|id| !id.is_empty());
-        ids.sort();
-        ids.dedup();
-
-        for id in ids {
-            self.upsert_reference_id(id, reference).await?;
-        }
-
-        Ok(())
+        self.upsert_reference_row(reference).await
     }
 
-    async fn find_reference_by_name(
-        &self,
-        name: &str,
-    ) -> Result<Option<FoodNutritionReference>, String> {
-        let id = normalize_food_name(name);
+    async fn get_reference(&self, id: &str) -> Result<Option<FoodNutritionReference>, String> {
+        let id = normalize_food_name(id);
         if id.is_empty() {
             return Ok(None);
         }
@@ -449,6 +433,17 @@ impl FoodNutritionReferenceRepositoryPort for SqliteMealRepo {
             Err(err) if err.is_record_not_found() => Ok(None),
             Err(err) => Err(err.to_string()),
         }
+    }
+
+    async fn list_references(&self) -> Result<Vec<FoodNutritionReference>, String> {
+        let mut db = self.db.lock().await;
+        let rows =
+            FoodNutritionReferenceRow::filter(FoodNutritionReferenceRow::fields().id().ne(""))
+                .exec(&mut *db)
+                .await
+                .map_err(|err| err.to_string())?;
+
+        rows.into_iter().map(Self::row_to_reference).collect()
     }
 }
 

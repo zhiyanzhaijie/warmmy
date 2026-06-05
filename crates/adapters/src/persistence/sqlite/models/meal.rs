@@ -32,12 +32,14 @@ pub struct PendingMealLogRow {
 pub struct FoodNutritionReferenceRow {
     #[key]
     pub id: String,
-    pub reference_id: String,
-    pub labels_json: String,
-    pub aliases_json: String,
+    pub name: String,
+    pub terms_json: String,
     pub basis_quantity: f32,
     pub basis_unit: String,
     pub nutrition_json: String,
+    pub status: String,
+    pub source: Option<String>,
+    pub confidence: Option<f32>,
 }
 
 #[derive(Debug, Clone, toasty::Model)]

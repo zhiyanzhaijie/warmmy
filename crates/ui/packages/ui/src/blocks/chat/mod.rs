@@ -31,7 +31,8 @@ pub(crate) use state::ComposerImageAttachment;
 pub(crate) use stream::{
     activate_session as activate_chat_session, append_agent_stream,
     append_bot_text as append_chat_bot_text, append_outgoing_message_pair,
-    append_streaming_bot_slot, DEFAULT_STREAM_IDLE_TIMEOUT, IMAGE_STREAM_IDLE_TIMEOUT,
+    append_streaming_bot_slot, remove_pending_meal_messages, DEFAULT_STREAM_IDLE_TIMEOUT,
+    IMAGE_STREAM_IDLE_TIMEOUT,
 };
 
 #[derive(Clone, PartialEq)]

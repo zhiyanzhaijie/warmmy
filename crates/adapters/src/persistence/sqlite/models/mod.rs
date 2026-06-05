@@ -1,9 +1,9 @@
 mod conversation;
-mod memory;
 mod meal;
+mod memory;
 mod user;
 
 pub use conversation::*;
-pub use memory::*;
 pub use meal::*;
+pub use memory::*;
 pub use user::*;

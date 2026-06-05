@@ -8,6 +8,10 @@ pub struct FoodItem {
     pub name: String,
     pub quantity: f32,
     pub unit: String,
+    #[serde(default)]
+    pub estimated_grams: Option<f32>,
+    #[serde(default)]
+    pub amount_confidence: Option<f32>,
 }
 
 impl FoodItem {
@@ -16,7 +20,19 @@ impl FoodItem {
             name: name.into(),
             quantity,
             unit: unit.into(),
+            estimated_grams: None,
+            amount_confidence: None,
         }
+    }
+
+    pub fn with_estimated_amount(
+        mut self,
+        estimated_grams: Option<f32>,
+        amount_confidence: Option<f32>,
+    ) -> Self {
+        self.estimated_grams = estimated_grams.filter(|value| *value > 0.0);
+        self.amount_confidence = amount_confidence.map(|value| value.clamp(0.0, 1.0));
+        self
     }
 }
 

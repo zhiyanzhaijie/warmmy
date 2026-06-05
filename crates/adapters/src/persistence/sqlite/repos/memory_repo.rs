@@ -191,16 +191,21 @@ fn row_from_record(record: &MemoryRecord) -> AppResult<StoredRecord> {
 }
 
 fn record_from_row(row: MemoryRecordRow) -> AppResult<MemoryRecord> {
-    let scope: StoredScope = serde_json::from_str(&row.scope_json)
-        .map_err(|err| AppError::database(err.to_string()))?;
+    let scope: StoredScope =
+        serde_json::from_str(&row.scope_json).map_err(|err| AppError::database(err.to_string()))?;
     let source: StoredSource = serde_json::from_str(&row.source_json)
         .map_err(|err| AppError::database(err.to_string()))?;
     Ok(MemoryRecord {
         id: row.id,
         user_id: domain::UserId::new_unchecked(row.user_id),
-        form: row.form.as_deref().map(form_from_str).transpose()?.ok_or_else(|| {
-            AppError::database("long-term memory record missing form".to_string())
-        })?,
+        form: row
+            .form
+            .as_deref()
+            .map(form_from_str)
+            .transpose()?
+            .ok_or_else(|| {
+                AppError::database("long-term memory record missing form".to_string())
+            })?,
         scope: scope_from_stored(scope),
         source: source_from_stored(source),
         status: status_from_str(&row.status)?,
@@ -220,7 +225,10 @@ fn record_from_row(row: MemoryRecordRow) -> AppResult<MemoryRecord> {
 }
 
 fn new_memory_id() -> String {
-    format!("mem_{}", Utc::now().timestamp_nanos_opt().unwrap_or_default())
+    format!(
+        "mem_{}",
+        Utc::now().timestamp_nanos_opt().unwrap_or_default()
+    )
 }
 
 fn scope_to_stored(scope: &MemoryScope) -> StoredScope {
@@ -298,7 +306,9 @@ fn status_from_str(value: &str) -> AppResult<MemoryStatus> {
         "superseded" => Ok(MemoryStatus::Superseded),
         "rejected" => Ok(MemoryStatus::Rejected),
         "expired" => Ok(MemoryStatus::Expired),
-        _ => Err(AppError::database(format!("unknown memory status: {value}"))),
+        _ => Err(AppError::database(format!(
+            "unknown memory status: {value}"
+        ))),
     }
 }
 

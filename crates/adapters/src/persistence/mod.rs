@@ -19,8 +19,8 @@ use app::{
 
 use tokio::sync::Mutex;
 
-use app::conversation::{ChatMessageRepositoryPort, EphemeralImageStorePort};
 use crate::agent::memory::long_term::store::MemoryStore;
+use app::conversation::{ChatMessageRepositoryPort, EphemeralImageStorePort};
 
 pub struct DbRepos {
     pub db: Arc<Mutex<toasty::Db>>,

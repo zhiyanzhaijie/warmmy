@@ -264,6 +264,29 @@ pub fn append_pending_meal_messages(
     sync_visible_session(chat_state, &session_id);
 }
 
+pub fn remove_pending_meal_messages(
+    mut chat_state: ChatContext,
+    session_id: String,
+    pending_ids: &[String],
+) {
+    if pending_ids.is_empty() {
+        return;
+    }
+
+    let mut all_sessions = chat_state.session_messages.write();
+    if let Some(all) = all_sessions.get_mut(&session_id) {
+        all.retain(|message| {
+            message
+                .pending_meal
+                .as_ref()
+                .map(|pending| !pending_ids.iter().any(|id| id == &pending.id))
+                .unwrap_or(true)
+        });
+    }
+    drop(all_sessions);
+    sync_visible_session(chat_state, &session_id);
+}
+
 pub fn append_outgoing_message_pair(
     mut chat_state: ChatContext,
     session_id: String,

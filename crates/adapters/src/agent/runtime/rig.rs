@@ -35,7 +35,14 @@ use crate::agent::memory::long_term::service::MemoryService;
 use crate::agent::memory::long_term::store::MemoryStore;
 use crate::agent::memory::MemoryContextProvider;
 use crate::agent::memory::SessionConversationMemory;
+use crate::agent::prompts::conversation_summary::CONVERSATION_SUMMARY_PREAMBLE;
+use crate::agent::routing::classifier::{classify_route, AgentRoute};
 use crate::agent::runtime::hook::{AgentStatusSink, GuardrailHook, WarmmyPromptHook};
+use crate::agent::services::nutrition::curator::{ModelNutritionCurator, NutritionCurator};
+use crate::agent::services::nutrition::retriever::{
+    LanceDbNutritionReferenceRetriever, NutritionReferenceRetriever,
+};
+use crate::agent::services::AgentServiceProgress;
 use crate::agent::tool;
 use domain::{AICapability, UserId};
 
@@ -43,41 +50,12 @@ const DEFAULT_MAX_TURNS: usize = 4;
 const DEFAULT_HISTORY_WINDOW_MESSAGES: usize = 16;
 const DEFAULT_EMBEDDING_NDIMS: usize = 1024;
 const INTERNAL_CONVERSATION_MARKER: &str = "[warmmy:internal-continuation]";
-const CONVERSATION_SUMMARY_PREAMBLE: &str = r#"你是 warmmy 的短期会话摘要器。
-
-你的任务是维护当前 session 的滚动摘要。摘要只服务于当前日期/当前会话的上下文压缩，不是长期记忆。
-
-要求：
-- 合并 previous summary 和本窗口对话，输出一份新的中文摘要
-- 保留用户目标、当前未完成事项、用户纠正、重要指代、当天上下文、待确认状态
-- 保留时间锚点、日期、餐次、人物、地点、身体状态的有效期
-- 不要把未确认的具体餐食说成已经正式记录
-- 不要加入聊天中没有出现的新事实
-- 不要输出 Markdown 标题，不要解释，只输出摘要正文"#;
 const WARMMY_PREAMBLE: &str = r#"你是 warmmy，一个温暖、专业的对话型饮食助理。
 
-## 核心行为
+## 自我认知
 - 你可以自然聊天，回答营养健康相关问题
 - 你会优先使用 Current Context 理解用户偏好、忌口、过敏原和健康期望
-- 当用户明确表达自己吃了或喝了具体内容，或要求为某个具体餐食创建“确认/待确认记录/草稿/确认卡”时，调用 propose_meal_log 工具创建待确认用餐草稿
-- 待确认草稿不是正式 meal log；只有用户确认后，才能调用 confirm_meal_log 正式保存
-- 用户取消待确认草稿时，调用 reject_meal_log
-- 如果某天已经被用户敲定收尾，你只能围绕该日记录做解释、回顾或建议，不要继续为该日创建或确认新的 meal log
-- 不要为了问候、普通聊天、泛泛咨询或没有具体食物的内容调用工具
 - 当用户的问题同时包含画像询问、饮食记录、分析或建议时，在同一次回答中完整处理，不要只回答其中一部分
-
-## 工具调用规范
-- 调用 propose_meal_log 时，从用户描述中提取结构化的食物列表（名称、数量、单位）；数量或单位缺失时，按常识推断为 1 份
-- 如果用户要求“创建确认/晚饭确认/待确认记录/确认卡”，这已经是创建待确认草稿的明确指令，必须调用 propose_meal_log；不要在工具调用前再问“是否确认/是否记录”
-- 如果你判断用户在记录一次真实用餐，必须先调用 propose_meal_log；不能只用自然语言让用户确认，也不能自己伪造待确认卡片或 pending_id
-- 待确认卡片只能由 propose_meal_log 的工具结果创建；如果没有调用工具，就不要说“请确认这条记录”
-- 如果工具返回当天已敲定不能记录的错误，直接向用户解释该日已收尾，建议用户切到正确日期或只继续追问细节
-- 合理推断餐次（breakfast/lunch/dinner/snack），不确定时使用 snack
-- propose_meal_log 执行后，只能说明“识别到待确认记录”，必须等待用户确认，不要声称已经正式记录
-- propose_meal_log 的工具结果如果包含 recorded=false 或 NOT_SAVED_REQUIRES_USER_CONFIRMATION，代表尚未保存；此时绝不能使用“已记录”“已保存”“记下了”等表达，只能请用户确认
-- 只有 confirm_meal_log 工具成功返回 status=saved 后，才可以说正式记录成功
-- 当收到用户确认待确认记录的 continuation 时，必须调用 confirm_meal_log，再基于工具结果给出最终回复
-- 当收到用户取消待确认记录的 continuation 时，必须调用 reject_meal_log，再基于工具结果给出最终回复
 
 ## 语言
 - 始终使用中文回复"#;
@@ -85,6 +63,19 @@ const WARMMY_PREAMBLE: &str = r#"你是 warmmy，一个温暖、专业的对话�
 enum AgentStreamStep<T> {
     Raw(Option<T>),
     Status(Option<ConversationStreamEvent>),
+}
+
+struct StreamAgentServiceProgress {
+    sink: AgentStatusSink,
+}
+
+impl AgentServiceProgress for StreamAgentServiceProgress {
+    fn status(&self, label: &'static str) {
+        self.sink.emit(ConversationStreamEvent::Status {
+            kind: AgentStatusKind::UsingTool,
+            label: label.to_string(),
+        });
+    }
 }
 
 #[derive(Clone)]
@@ -132,6 +123,30 @@ impl RigConversationRuntime {
         )
     }
 
+    fn nutrition_curator(&self, chat: &ResolvedAIModelConfig) -> Option<Arc<dyn NutritionCurator>> {
+        Some(Arc::new(ModelNutritionCurator::new(chat.clone())))
+    }
+
+    fn nutrition_retriever(
+        &self,
+        rag: Option<&RagConfig>,
+    ) -> Option<Arc<dyn NutritionReferenceRetriever>> {
+        let rag = rag?;
+        let references = self.meal_command.food_nutrition_references()?;
+        Some(Arc::new(LanceDbNutritionReferenceRetriever::new(
+            references,
+            rag.clone(),
+        )))
+    }
+
+    fn agent_service_progress(
+        &self,
+        status_sink: Option<AgentStatusSink>,
+    ) -> Option<Arc<dyn AgentServiceProgress>> {
+        status_sink
+            .map(|sink| Arc::new(StreamAgentServiceProgress { sink }) as Arc<dyn AgentServiceProgress>)
+    }
+
     async fn resolve_conversation_model(
         &self,
         user_id: &UserId,
@@ -153,11 +168,23 @@ impl RigConversationRuntime {
     ) -> AppResult<SendUserMessageResult> {
         let chat = self.resolve_conversation_model(user_id, &input).await?;
         let rag = self.resolve_rag(user_id).await?;
+        let nutrition_retriever = self.nutrition_retriever(rag.as_ref());
         let context = self.context_provider.load(user_id).await;
-        let preamble = self.runtime_preamble(&context, rag.is_some());
+        let preamble = self.runtime_preamble(&context, true, rag.is_some(), input.has_images());
         let model = chat.model.as_str();
         let interaction_sink = AgentInteractionSink::default();
         let memory_input = input.visible_text();
+        let route_decision = classify_route(&memory_input, input.has_images(), &chat).await?;
+        let route = route_decision.route;
+        let tool_choice = tool_choice_for_route(route, &memory_input);
+        tracing::info!(
+            agent.route = ?route,
+            route.source = ?route_decision.source,
+            route.reason = %route_decision.reason,
+            session.id = %session_id,
+            input.has_images = input.has_images(),
+            "agent route selected"
+        );
         let prompt = self.build_prompt_message(&input).await?;
         self.persist_user_image_message(user_id, session_id, &input, &memory_input)
             .await;
@@ -177,16 +204,20 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .dynamic_context(rag.top_k, rag_index)
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            None,
                         ))
                         .build()
                         .prompt(prompt.clone())
@@ -197,15 +228,19 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            None,
                         ))
                         .build()
                         .prompt(prompt)
@@ -227,16 +262,20 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .dynamic_context(rag.top_k, rag_index)
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            None,
                         ))
                         .build()
                         .prompt(prompt.clone())
@@ -247,15 +286,19 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            None,
                         ))
                         .build()
                         .prompt(prompt)
@@ -276,16 +319,20 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .dynamic_context(rag.top_k, rag_index)
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            None,
                         ))
                         .build()
                         .prompt(prompt)
@@ -296,15 +343,19 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            None,
                         ))
                         .build()
                         .prompt(prompt)
@@ -339,25 +390,26 @@ impl RigConversationRuntime {
         let user_id = user_id.clone();
         let session_id = session_id.to_string();
         let has_images = input.has_images();
+        let visible_text = input.visible_text();
+        let route_decision = classify_route(&visible_text, has_images, &chat).await?;
+        let route = route_decision.route;
+        tracing::info!(
+            agent.route = ?route,
+            route.source = ?route_decision.source,
+            route.reason = %route_decision.reason,
+            session.id = %session_id,
+            input.has_images = has_images,
+            "agent route selected"
+        );
 
         Ok(Box::pin(stream! {
             yield Ok(stream_event(ConversationStreamEvent::RunStarted {
                 run_id: format!("{user_id}:{session_id}"),
             }));
-            if has_images {
-                yield Ok(status_event(
-                    AgentStatusKind::ReadingInput,
-                    "我在认真看看这张图片。",
-                ));
-            } else {
-                yield Ok(status_event(
-                    AgentStatusKind::Thinking,
-                    "我在准备这次对话的上下文。",
-                ));
-            }
+            yield Ok(initial_route_status(route, has_images));
 
             match runtime
-                .open_stream_with_model(&user_id, &session_id, input, chat)
+                .open_stream_with_model(&user_id, &session_id, input, chat, route)
                 .await
             {
                 Ok(mut reply_stream) => {
@@ -376,14 +428,17 @@ impl RigConversationRuntime {
         session_id: &str,
         input: ConversationUserInput,
         chat: ResolvedAIModelConfig,
+        route: AgentRoute,
     ) -> AppResult<ConversationReplyStream> {
         let rag = self.resolve_rag(user_id).await?;
+        let nutrition_retriever = self.nutrition_retriever(rag.as_ref());
         let context = self.context_provider.load(user_id).await;
-        let preamble = self.runtime_preamble(&context, rag.is_some());
+        let preamble = self.runtime_preamble(&context, true, rag.is_some(), input.has_images());
         let model = chat.model.as_str();
         let interaction_sink = AgentInteractionSink::default();
         let user_input = input.visible_text();
         let has_images = input.has_images();
+        let tool_choice = tool_choice_for_route(route, &user_input);
         let prompt = self.build_prompt_message(&input).await?;
         self.persist_user_image_message(user_id, session_id, &input, &user_input)
             .await;
@@ -413,16 +468,20 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .dynamic_context(rag.top_k, rag_index)
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            self.agent_service_progress(Some(status_sink.clone())),
                         ))
                         .build()
                         .stream_prompt(prompt.clone())
@@ -432,15 +491,19 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            self.agent_service_progress(Some(status_sink.clone())),
                         ))
                         .build()
                         .stream_prompt(prompt.clone())
@@ -475,16 +538,20 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .dynamic_context(rag.top_k, rag_index)
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            self.agent_service_progress(Some(status_sink.clone())),
                         ))
                         .build()
                         .stream_prompt(prompt.clone())
@@ -494,15 +561,19 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            self.agent_service_progress(Some(status_sink.clone())),
                         ))
                         .build()
                         .stream_prompt(prompt.clone())
@@ -536,16 +607,20 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .dynamic_context(rag.top_k, rag_index)
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            self.agent_service_progress(Some(status_sink.clone())),
                         ))
                         .build()
                         .stream_prompt(prompt)
@@ -555,15 +630,19 @@ impl RigConversationRuntime {
                     client
                         .agent(model)
                         .preamble(&preamble)
-                        .tool_choice(ToolChoice::Auto)
+                        .tool_choice(tool_choice.clone())
                         .default_max_turns(DEFAULT_MAX_TURNS)
                         .memory(self.build_memory(user_id))
                         .hook(hook)
-                        .tools(tool::tools(
+                        .tools(tool::tools_for_route(
+                            route,
                             user_id,
                             session_id,
                             self.meal_command.clone(),
                             interaction_sink.clone(),
+                            self.nutrition_curator(&chat),
+                            nutrition_retriever.clone(),
+                            self.agent_service_progress(Some(status_sink.clone())),
                         ))
                         .build()
                         .stream_prompt(prompt)
@@ -777,6 +856,12 @@ impl RigConversationRuntime {
                             }));
                         }
                         for interaction in interaction_sink.drain() {
+                            tracing::info!(
+                                session.id = %session_id_for_history,
+                                interaction.id = %interaction.id,
+                                interaction.kind = %interaction.kind,
+                                "stream interaction emitted"
+                            );
                             yield Ok(interaction_event(interaction));
                         }
                         yield Ok(status_event(
@@ -908,11 +993,7 @@ impl RigConversationRuntime {
 
         let pipeline = MemoryPipeline::new(
             Arc::new(ModelMemoryExtractor::new(extractor_model)),
-            MemoryService::new(
-                MemoryPolicy::new(),
-                self.memory_store.clone(),
-                memory_index,
-            ),
+            MemoryService::new(MemoryPolicy::new(), self.memory_store.clone(), memory_index),
         );
 
         if let Err(err) = pipeline
@@ -1054,13 +1135,55 @@ impl RigConversationRuntime {
         }
     }
 
-    fn runtime_preamble(&self, context: &str, semantic_memory_enabled: bool) -> String {
+    fn runtime_preamble(
+        &self,
+        context: &str,
+        chat_enabled: bool,
+        semantic_memory_enabled: bool,
+        vision_enabled: bool,
+    ) -> String {
+        let chat_status = if chat_enabled {
+            "聊天功能已启用。"
+        } else {
+            "聊天功能未启用。"
+        };
         let semantic_status = if semantic_memory_enabled {
             "长期语义记忆/RAG 已启用。"
         } else {
             "长期语义记忆/RAG 未启用：用户尚未配置 embedding 模型或 API key。只能使用当前会话记忆和 Current Context。"
         };
-        format!("{WARMMY_PREAMBLE}\n\n## Capability Status\n{semantic_status}\n\n## Current Context\n{context}")
+        let vision_status = if vision_enabled {
+            "识图功能本轮已启用。"
+        } else {
+            "识图功能本轮未启用。"
+        };
+        format!(
+            "{WARMMY_PREAMBLE}\n\n## Capability Status\n- {chat_status}\n- {semantic_status}\n- {vision_status}\n\n## Current Context\n{context}"
+        )
+    }
+}
+
+fn initial_route_status(route: AgentRoute, has_images: bool) -> String {
+    match route {
+        AgentRoute::MealIntake => status_event(
+            AgentStatusKind::ReadingInput,
+            if has_images {
+                "我在整理图片里的用餐线索。"
+            } else {
+                "我在整理这次用餐线索。"
+            },
+        ),
+        AgentRoute::Chat if has_images => {
+            status_event(AgentStatusKind::ReadingInput, "我在认真看看这张图片。")
+        }
+        AgentRoute::Chat => status_event(AgentStatusKind::Thinking, "我在准备这次对话的上下文。"),
+    }
+}
+
+fn tool_choice_for_route(route: AgentRoute, _input: &str) -> ToolChoice {
+    match route {
+        AgentRoute::MealIntake => ToolChoice::Required,
+        AgentRoute::Chat => ToolChoice::Auto,
     }
 }
 

@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
+use dioxus_icons::lucide::{Plus, Trash2};
 
-use crate::components::ui::button::{Button, ButtonVariant};
+use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::input::Input;
 use crate::providers::current_user_id;
 
@@ -50,6 +51,22 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                 }
                 previewing.set(false);
             });
+        }
+    };
+
+    let add_food = {
+        let update_preview = update_preview.clone();
+        move |_| {
+            foods.with_mut(|items| {
+                items.push(meal::FoodItemDTO {
+                    name: String::new(),
+                    quantity: 100.0,
+                    unit: "g".to_string(),
+                    estimated_grams: Some(100.0),
+                    amount_confidence: Some(0.4),
+                });
+            });
+            update_preview();
         }
     };
 
@@ -140,11 +157,11 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                 }
                 span { class: "rounded-full border border-border px-3 py-1 text-xs text-muted-foreground", "{day_cycle}" }
             }
-            div { class: "mt-4 space-y-2",
+            div { class: "mt-4 space-y-2 overflow-hidden",
                 for (index, food) in foods().into_iter().enumerate() {
-                    div { key: "{pending_meal.id}:{index}", class: "grid grid-cols-[1fr_80px_80px] gap-2",
+                    div { key: "{pending_meal.id}:{index}", class: "grid min-w-0 grid-cols-[minmax(0,1fr)_104px_34px] items-center gap-2",
                         Input {
-                            class: "rounded-xl border border-border bg-card px-3 py-2 text-sm",
+                            class: "min-w-0 rounded-xl border border-border bg-card px-3 py-2 text-sm",
                             value: food.name.clone(),
                             oninput: {
                                 let update_preview = update_preview.clone();
@@ -158,37 +175,57 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                                 }
                             },
                         }
-                        Input {
-                            class: "rounded-xl border border-border bg-card px-3 py-2 text-sm",
-                            value: food.quantity.to_string(),
-                            oninput: {
-                                let update_preview = update_preview.clone();
-                                move |e: FormEvent| {
-                                    foods.with_mut(|items| {
-                                        if let Some(item) = items.get_mut(index) {
-                                            item.quantity = e.value().parse::<f32>().unwrap_or(item.quantity);
-                                        }
-                                    });
-                                    update_preview();
-                                }
-                            },
+                        div { class: "flex min-w-0 items-center rounded-xl border border-border bg-card",
+                            Input {
+                                class: "min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm",
+                                value: food_grams(&food).to_string(),
+                                oninput: {
+                                    let update_preview = update_preview.clone();
+                                    move |e: FormEvent| {
+                                        foods.with_mut(|items| {
+                                            if let Some(item) = items.get_mut(index) {
+                                                let grams = e.value().parse::<f32>().unwrap_or_else(|_| food_grams(item));
+                                                item.quantity = grams;
+                                                item.unit = "g".to_string();
+                                                item.estimated_grams = Some(grams);
+                                            }
+                                        });
+                                        update_preview();
+                                    }
+                                },
+                            }
+                            span { class: "shrink-0 pr-3 text-xs text-muted-foreground", "g" }
                         }
-                        Input {
-                            class: "rounded-xl border border-border bg-card px-3 py-2 text-sm",
-                            value: food.unit.clone(),
-                            oninput: {
+                        Button {
+                            variant: ButtonVariant::Ghost,
+                            size: ButtonSize::IconSm,
+                            class: "rounded-xl border border-border text-muted-foreground",
+                            disabled: saving() || confirmed() || rejected() || foods().len() <= 1,
+                            onclick: {
                                 let update_preview = update_preview.clone();
-                                move |e: FormEvent| {
+                                move |_| {
                                     foods.with_mut(|items| {
-                                        if let Some(item) = items.get_mut(index) {
-                                            item.unit = e.value();
+                                        if items.len() > 1 && index < items.len() {
+                                            items.remove(index);
                                         }
                                     });
                                     update_preview();
                                 }
                             },
+                            Trash2 { size: 15 }
                         }
                     }
+                }
+            }
+            div { class: "mt-3",
+                Button {
+                    variant: ButtonVariant::Ghost,
+                    size: ButtonSize::Sm,
+                    class: "rounded-xl border border-border px-3",
+                    disabled: saving() || confirmed() || rejected(),
+                    onclick: add_food,
+                    Plus { size: 15 }
+                    "新增食物"
                 }
             }
             div { class: "mt-4 rounded-xl border border-border bg-card px-3 py-2 text-xs leading-relaxed text-muted-foreground",
@@ -215,4 +252,8 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
             }
         }
     }
+}
+
+fn food_grams(food: &meal::FoodItemDTO) -> f32 {
+    food.estimated_grams.unwrap_or(food.quantity).max(0.0)
 }

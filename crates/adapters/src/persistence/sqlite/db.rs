@@ -133,12 +133,14 @@ fn ensure_user_extension_tables(database_url: &str) -> Result<(), rusqlite::Erro
 
         CREATE TABLE IF NOT EXISTS food_nutrition_reference_rows (
             id TEXT PRIMARY KEY NOT NULL,
-            reference_id TEXT NOT NULL,
-            labels_json TEXT NOT NULL,
-            aliases_json TEXT NOT NULL,
+            name TEXT NOT NULL,
+            terms_json TEXT NOT NULL,
             basis_quantity REAL NOT NULL,
             basis_unit TEXT NOT NULL,
-            nutrition_json TEXT NOT NULL
+            nutrition_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            source TEXT,
+            confidence REAL
         );
 
         CREATE TABLE IF NOT EXISTS chat_message_attachment_rows (
@@ -272,15 +274,34 @@ fn ensure_user_extension_tables(database_url: &str) -> Result<(), rusqlite::Erro
     ensure_column(
         &connection,
         "food_nutrition_reference_rows",
-        "reference_id",
+        "name",
         "TEXT NOT NULL DEFAULT ''",
     )?;
     ensure_column(
         &connection,
         "food_nutrition_reference_rows",
-        "labels_json",
-        "TEXT NOT NULL DEFAULT '{}' ",
+        "terms_json",
+        "TEXT NOT NULL DEFAULT '[]'",
     )?;
+    ensure_column(
+        &connection,
+        "food_nutrition_reference_rows",
+        "status",
+        "TEXT NOT NULL DEFAULT 'seed'",
+    )?;
+    ensure_column(
+        &connection,
+        "food_nutrition_reference_rows",
+        "source",
+        "TEXT DEFAULT NULL",
+    )?;
+    ensure_column(
+        &connection,
+        "food_nutrition_reference_rows",
+        "confidence",
+        "REAL DEFAULT NULL",
+    )?;
+    rebuild_food_nutrition_reference_table_if_legacy(&connection)?;
 
     ensure_column(
         &connection,
@@ -296,6 +317,79 @@ fn ensure_user_extension_tables(database_url: &str) -> Result<(), rusqlite::Erro
     )?;
 
     Ok(())
+}
+
+fn rebuild_food_nutrition_reference_table_if_legacy(
+    connection: &rusqlite::Connection,
+) -> Result<(), rusqlite::Error> {
+    let columns = table_columns(connection, "food_nutrition_reference_rows")?;
+    let has_legacy_columns = ["reference_id", "labels_json", "aliases_json"]
+        .iter()
+        .any(|column| columns.iter().any(|existing| existing == column));
+    if !has_legacy_columns {
+        return Ok(());
+    }
+
+    connection.execute_batch(
+        r#"
+        BEGIN IMMEDIATE;
+        CREATE TABLE IF NOT EXISTS food_nutrition_reference_rows_new (
+            id TEXT PRIMARY KEY NOT NULL,
+            name TEXT NOT NULL,
+            terms_json TEXT NOT NULL,
+            basis_quantity REAL NOT NULL,
+            basis_unit TEXT NOT NULL,
+            nutrition_json TEXT NOT NULL,
+            status TEXT NOT NULL,
+            source TEXT,
+            confidence REAL
+        );
+        INSERT OR REPLACE INTO food_nutrition_reference_rows_new (
+            id,
+            name,
+            terms_json,
+            basis_quantity,
+            basis_unit,
+            nutrition_json,
+            status,
+            source,
+            confidence
+        )
+        SELECT
+            id,
+            name,
+            terms_json,
+            basis_quantity,
+            basis_unit,
+            nutrition_json,
+            status,
+            source,
+            confidence
+        FROM food_nutrition_reference_rows
+        WHERE id <> ''
+          AND name <> ''
+          AND terms_json <> ''
+          AND nutrition_json <> '';
+        DROP TABLE food_nutrition_reference_rows;
+        ALTER TABLE food_nutrition_reference_rows_new RENAME TO food_nutrition_reference_rows;
+        COMMIT;
+        "#,
+    )?;
+
+    Ok(())
+}
+
+fn table_columns(
+    connection: &rusqlite::Connection,
+    table: &str,
+) -> Result<Vec<String>, rusqlite::Error> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let rows = statement.query_map([], |row| row.get::<_, String>(1))?;
+    let mut columns = Vec::new();
+    for row in rows {
+        columns.push(row?);
+    }
+    Ok(columns)
 }
 
 fn ensure_column(

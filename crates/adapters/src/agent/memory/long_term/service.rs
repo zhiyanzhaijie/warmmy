@@ -53,7 +53,10 @@ impl MemoryService {
         );
         if self.policy.indexes(&record) {
             self.index.put(&record).await?;
-            tracing::info!(memory.id = record.id.as_str(), "memory indexed after commit");
+            tracing::info!(
+                memory.id = record.id.as_str(),
+                "memory indexed after commit"
+            );
         }
         Ok(Some(record))
     }
@@ -104,7 +107,10 @@ impl MemoryService {
         }
         if self.policy.indexes(&record) {
             self.index.put(&record).await?;
-            tracing::info!(memory.id = record.id.as_str(), "memory indexed after promotion");
+            tracing::info!(
+                memory.id = record.id.as_str(),
+                "memory indexed after promotion"
+            );
         }
         Ok(Some(record))
     }

@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -201,19 +199,60 @@ impl Nutrition {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct FoodNutritionReference {
     pub id: String,
-    pub labels: BTreeMap<String, String>,
-    pub aliases: BTreeMap<String, Vec<String>>,
+    pub name: String,
+    #[serde(default)]
+    pub terms: Vec<String>,
     pub basis_quantity: f32,
     pub basis_unit: String,
     pub nutrition: Nutrition,
+    #[serde(default)]
+    pub status: FoodNutritionReferenceStatus,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub confidence: Option<f32>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum FoodNutritionReferenceStatus {
+    Seed,
+    Curated,
+    Verified,
+}
+
+impl Default for FoodNutritionReferenceStatus {
+    fn default() -> Self {
+        Self::Seed
+    }
+}
+
+impl FoodNutritionReferenceStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Seed => "seed",
+            Self::Curated => "curated",
+            Self::Verified => "verified",
+        }
+    }
+
+    pub fn parse(value: &str) -> Self {
+        match value.trim() {
+            "curated" => Self::Curated,
+            "verified" => Self::Verified,
+            _ => Self::Seed,
+        }
+    }
 }
 
 impl FoodNutritionReference {
-    pub fn search_terms(&self) -> Vec<String> {
-        let mut terms = self.labels.values().cloned().collect::<Vec<_>>();
-        for aliases in self.aliases.values() {
-            terms.extend(aliases.iter().cloned());
-        }
-        terms
+    pub fn search_texts(&self) -> Vec<String> {
+        let mut texts = Vec::with_capacity(self.terms.len() + 2);
+        texts.push(self.id.clone());
+        texts.push(self.name.clone());
+        texts.extend(self.terms.iter().cloned());
+        texts.retain(|term| !term.trim().is_empty());
+        texts.sort();
+        texts.dedup();
+        texts
     }
 }

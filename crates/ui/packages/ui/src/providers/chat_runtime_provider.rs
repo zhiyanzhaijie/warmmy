@@ -13,6 +13,7 @@ use crate::blocks::{
     append_outgoing_message_pair, append_streaming_bot_slot, ChatActionContext, ChatContext,
     ChatMessageAction, ComposerImageAttachment, DEFAULT_STREAM_IDLE_TIMEOUT,
     FinalizeConversationDay, IMAGE_STREAM_IDLE_TIMEOUT, SendConversationMessage,
+    remove_pending_meal_messages,
 };
 
 use super::current_user_id;
@@ -164,6 +165,13 @@ async fn send_conversation_message(
         activate_chat_session(chat_state, session_id.clone());
     }
 
+    discard_pending_meals_before_chat(
+        chat_state,
+        request_user_id.clone(),
+        session_id.clone(),
+    )
+    .await;
+
     let bot_id = append_outgoing_message_pair(
         chat_state,
         session_id.clone(),
@@ -247,6 +255,36 @@ async fn send_conversation_message(
                 navigator().replace(format!("/{session_id}"));
             }
         }
+    }
+}
+
+async fn discard_pending_meals_before_chat(
+    chat_state: ChatContext,
+    request_user_id: String,
+    session_id: String,
+) {
+    let pending_ids = chat_state
+        .session_messages
+        .peek()
+        .get(&session_id)
+        .map(|messages| {
+            messages
+                .iter()
+                .filter_map(|message| message.pending_meal.as_ref().map(|pending| pending.id.clone()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    if pending_ids.is_empty() {
+        return;
+    }
+
+    if let Ok(result) = meal::discard_pending_meals(request_user_id, session_id.clone()).await {
+        let ids = if result.discarded_ids.is_empty() {
+            pending_ids
+        } else {
+            result.discarded_ids
+        };
+        remove_pending_meal_messages(chat_state, session_id, &ids);
     }
 }
 

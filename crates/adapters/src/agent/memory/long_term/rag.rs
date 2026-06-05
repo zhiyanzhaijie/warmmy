@@ -323,9 +323,11 @@ async fn put_memory_record(
     let table = open_or_create_table(config).await?;
     let batch = rag_record_batch(config.embedding_ndims, record, embedding)
         .map_err(|e| AppError::database(e.to_string()))?;
-    let reader: Box<dyn arrow_array::RecordBatchReader + Send> = Box::new(
-        RecordBatchIterator::new(vec![Ok(batch)], Arc::new(rag_schema(config.embedding_ndims))),
-    );
+    let reader: Box<dyn arrow_array::RecordBatchReader + Send> =
+        Box::new(RecordBatchIterator::new(
+            vec![Ok(batch)],
+            Arc::new(rag_schema(config.embedding_ndims)),
+        ));
 
     table
         .add(reader)
@@ -514,7 +516,10 @@ where
             }
         }
 
-        tracing::info!(rag.result_count = results.len(), "memory rag search finished");
+        tracing::info!(
+            rag.result_count = results.len(),
+            "memory rag search finished"
+        );
         Ok(results)
     }
 

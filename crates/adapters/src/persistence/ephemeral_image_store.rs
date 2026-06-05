@@ -36,9 +36,9 @@ impl InMemoryEphemeralImageStore {
     fn next_asset_id() -> AppResult<String> {
         let random = SystemRandom::new();
         let mut bytes = [0_u8; 8];
-        random
-            .fill(&mut bytes)
-            .map_err(|err| AppError::internal(format!("failed to generate image asset id: {err}")))?;
+        random.fill(&mut bytes).map_err(|err| {
+            AppError::internal(format!("failed to generate image asset id: {err}"))
+        })?;
         let suffix = bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
         Ok(format!("img_{}_{}", Utc::now().timestamp_millis(), suffix))
     }
@@ -46,10 +46,7 @@ impl InMemoryEphemeralImageStore {
 
 #[async_trait]
 impl EphemeralImageStorePort for InMemoryEphemeralImageStore {
-    async fn put_image(
-        &self,
-        input: StoreEphemeralImageInput,
-    ) -> AppResult<StoredEphemeralImage> {
+    async fn put_image(&self, input: StoreEphemeralImageInput) -> AppResult<StoredEphemeralImage> {
         let asset_id = Self::next_asset_id()?;
         let size_bytes = input.bytes.len() as u64;
         let entry = ImageEntry {

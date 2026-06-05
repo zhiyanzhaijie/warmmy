@@ -6,7 +6,8 @@ use rig::memory::{ConversationMemory, MemoryError};
 use rig::message::Message;
 use rig::wasm_compat::WasmBoxedFuture;
 
-const CONVERSATION_SUMMARY_PREFIX: &str = "Conversation summary for earlier messages in this session:";
+const CONVERSATION_SUMMARY_PREFIX: &str =
+    "Conversation summary for earlier messages in this session:";
 
 #[derive(Clone)]
 pub struct SessionConversationMemory {

@@ -14,7 +14,10 @@ impl MemoryPolicy {
                 candidate.status,
                 MemoryStatus::Candidate | MemoryStatus::Confirmed
             )
-            && matches!(candidate.index_policy, IndexPolicy::None | IndexPolicy::Vector)
+            && matches!(
+                candidate.index_policy,
+                IndexPolicy::None | IndexPolicy::Vector
+            )
     }
 
     pub fn indexes(&self, record: &crate::agent::memory::types::MemoryRecord) -> bool {

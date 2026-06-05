@@ -119,12 +119,14 @@ fn contains_secret_like_content(content: &str) -> bool {
 }
 
 fn looks_like_meal_only(content: &str) -> bool {
-    let has_meal_word = ["早餐", "午餐", "晚餐", "早饭", "午饭", "晚饭", "吃了", "喝了"]
-        .iter()
-        .any(|word| content.contains(word));
+    let has_meal_word = [
+        "早餐", "午餐", "晚餐", "早饭", "午饭", "晚饭", "吃了", "喝了",
+    ]
+    .iter()
+    .any(|word| content.contains(word));
     let has_experience_word = [
-        "去了", "见了", "一起", "感觉", "舒服", "难受", "受伤", "咬到", "压力", "矛盾",
-        "姨妈", "朋友", "家人", "同事",
+        "去了", "见了", "一起", "感觉", "舒服", "难受", "受伤", "咬到", "压力", "矛盾", "姨妈",
+        "朋友", "家人", "同事",
     ]
     .iter()
     .any(|word| content.contains(word));

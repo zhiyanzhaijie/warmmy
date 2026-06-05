@@ -118,7 +118,10 @@ pub async fn init_app_container() -> AppResult<AppContainer> {
 
     let meal = MealState {
         command: meal_command.as_ref().clone(),
-        query: MealQueryHandler::new(repos.meal_repo.clone()),
+        query: MealQueryHandler::new(
+            repos.meal_repo.clone(),
+            repos.food_nutrition_reference_repo.clone(),
+        ),
     };
 
     let conversation = ConversationState {
