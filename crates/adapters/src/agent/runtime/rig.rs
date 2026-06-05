@@ -11,15 +11,14 @@ use app::user::{ResolvedAIModelConfig, UserAIConfigQueryHandler, UserDietaryCont
 use async_stream::stream;
 use base64::Engine;
 use futures_util::StreamExt;
-use rig::agent::MultiTurnStreamItem;
-use rig::agent::StreamingError;
+use rig::agent::{Agent, AgentBuilder, MultiTurnStreamItem, StreamingError};
 use rig::client::CompletionClient;
-use rig::completion::Message;
-use rig::completion::Prompt;
+use rig::completion::{CompletionModel, Message, Prompt};
 use rig::message::ToolChoice;
 use rig::message::{ImageDetail, ImageMediaType, MimeType, UserContent};
 use rig::providers::{deepseek, openai};
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
+use rig::tool::ToolDyn;
 use rig::OneOrMany;
 use serde_json::{to_value, Value};
 use tokio::sync::mpsc;
@@ -76,6 +75,90 @@ impl AgentServiceProgress for StreamAgentServiceProgress {
             label: label.to_string(),
         });
     }
+}
+
+struct RagAgentContext {
+    top_k: usize,
+    index: MemoryRetriever,
+}
+
+struct AgentSpec {
+    preamble: String,
+    tool_choice: ToolChoice,
+    memory: SessionConversationMemory,
+    tools: Vec<Box<dyn ToolDyn>>,
+    rag: Option<RagAgentContext>,
+    guardrail: Arc<GuardrailHook>,
+    status_sink: Option<AgentStatusSink>,
+}
+
+type OpenAiResponsesModel = openai::responses_api::ResponsesCompletionModel;
+type OpenAiCompletionsModel = openai::completion::CompletionModel;
+type DeepSeekModel = deepseek::CompletionModel;
+
+type WarmmyAgent<M> = Agent<M, WarmmyPromptHook<M>>;
+
+enum ConversationAgent {
+    OpenAiResponses(WarmmyAgent<OpenAiResponsesModel>),
+    OpenAiCompletions(WarmmyAgent<OpenAiCompletionsModel>),
+    DeepSeek(WarmmyAgent<DeepSeekModel>),
+}
+
+impl ConversationAgent {
+    async fn prompt(self, prompt: Message, conversation_id: &str) -> AppResult<String> {
+        match self {
+            Self::OpenAiResponses(agent) => agent
+                .prompt(prompt)
+                .conversation(conversation_id)
+                .await
+                .map_err(|e| AppError::upstream(e.to_string())),
+            Self::OpenAiCompletions(agent) => agent
+                .prompt(prompt)
+                .conversation(conversation_id)
+                .await
+                .map_err(|e| AppError::upstream(e.to_string())),
+            Self::DeepSeek(agent) => agent
+                .prompt(prompt)
+                .conversation(conversation_id)
+                .await
+                .map_err(|e| AppError::upstream(e.to_string())),
+        }
+    }
+}
+
+struct StreamWrapCtx {
+    interaction_sink: AgentInteractionSink,
+    has_images: bool,
+    repo_for_history: Arc<dyn ChatMessageRepositoryPort>,
+    user_id_for_history: UserId,
+    session_id_for_history: String,
+    runtime_for_memory: RigConversationRuntime,
+    user_id_for_memory: UserId,
+    session_id_for_memory: String,
+    user_input_for_memory: String,
+    status_rx: mpsc::UnboundedReceiver<ConversationStreamEvent>,
+}
+
+fn configure_agent<M>(builder: AgentBuilder<M>, spec: AgentSpec) -> WarmmyAgent<M>
+where
+    M: CompletionModel + 'static,
+{
+    let hook = match spec.status_sink {
+        Some(status_sink) => WarmmyPromptHook::with_status_sink(spec.guardrail, status_sink),
+        None => WarmmyPromptHook::new(spec.guardrail),
+    };
+
+    let mut builder = builder
+        .preamble(&spec.preamble)
+        .tool_choice(spec.tool_choice)
+        .default_max_turns(DEFAULT_MAX_TURNS)
+        .memory(spec.memory);
+
+    if let Some(rag) = spec.rag {
+        builder = builder.dynamic_context(rag.top_k, rag.index);
+    }
+
+    builder.hook(hook).tools(spec.tools).build()
 }
 
 #[derive(Clone)]
@@ -143,8 +226,107 @@ impl RigConversationRuntime {
         &self,
         status_sink: Option<AgentStatusSink>,
     ) -> Option<Arc<dyn AgentServiceProgress>> {
-        status_sink
-            .map(|sink| Arc::new(StreamAgentServiceProgress { sink }) as Arc<dyn AgentServiceProgress>)
+        status_sink.map(|sink| {
+            Arc::new(StreamAgentServiceProgress { sink }) as Arc<dyn AgentServiceProgress>
+        })
+    }
+
+    fn openai_client(config: &ResolvedAIModelConfig) -> AppResult<openai::Client> {
+        openai::Client::builder()
+            .api_key(&config.api_key)
+            .base_url(&config.base_url)
+            .build()
+            .map_err(|e| AppError::upstream(e.to_string()))
+    }
+
+    fn deepseek_client(config: &ResolvedAIModelConfig) -> AppResult<deepseek::Client> {
+        deepseek::Client::builder()
+            .api_key(&config.api_key)
+            .base_url(&config.base_url)
+            .build()
+            .map_err(|e| AppError::upstream(e.to_string()))
+    }
+
+    async fn build_rag_agent_context(
+        &self,
+        user_id: &UserId,
+        rag: Option<&RagConfig>,
+    ) -> AppResult<Option<RagAgentContext>> {
+        let Some(rag) = rag else {
+            return Ok(None);
+        };
+        let index = self.build_memory_retriever(user_id, rag).await?;
+        Ok(Some(RagAgentContext {
+            top_k: rag.top_k,
+            index,
+        }))
+    }
+
+    fn build_agent_spec(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        chat: &ResolvedAIModelConfig,
+        preamble: String,
+        route: AgentRoute,
+        tool_choice: ToolChoice,
+        interaction_sink: AgentInteractionSink,
+        nutrition_retriever: Option<Arc<dyn NutritionReferenceRetriever>>,
+        rag: Option<RagAgentContext>,
+        status_sink: Option<AgentStatusSink>,
+    ) -> AgentSpec {
+        AgentSpec {
+            preamble,
+            tool_choice,
+            memory: self.build_memory(user_id),
+            tools: tool::tools_for_route(
+                route,
+                user_id,
+                session_id,
+                self.meal_command.clone(),
+                interaction_sink,
+                self.nutrition_curator(chat),
+                nutrition_retriever,
+                self.agent_service_progress(status_sink.clone()),
+            ),
+            rag,
+            guardrail: self.guardrail.clone(),
+            status_sink,
+        }
+    }
+
+    fn build_conversation_agent(
+        &self,
+        chat: &ResolvedAIModelConfig,
+        spec: AgentSpec,
+    ) -> AppResult<ConversationAgent> {
+        let model = chat.model.as_str();
+        match chat.provider.as_str() {
+            "openai" => {
+                let client = Self::openai_client(chat)?;
+                Ok(ConversationAgent::OpenAiResponses(configure_agent(
+                    client.agent(model),
+                    spec,
+                )))
+            }
+            "openai_compatible" | "siliconflow" => {
+                let client = Self::openai_client(chat)?.completions_api();
+                Ok(ConversationAgent::OpenAiCompletions(configure_agent(
+                    client.agent(model),
+                    spec,
+                )))
+            }
+            "deepseek" => {
+                let client = Self::deepseek_client(chat)?;
+                Ok(ConversationAgent::DeepSeek(configure_agent(
+                    client.agent(model),
+                    spec,
+                )))
+            }
+            provider => Err(AppError::internal(format!(
+                "unsupported provider: {provider}"
+            ))),
+        }
     }
 
     async fn resolve_conversation_model(
@@ -171,7 +353,6 @@ impl RigConversationRuntime {
         let nutrition_retriever = self.nutrition_retriever(rag.as_ref());
         let context = self.context_provider.load(user_id).await;
         let preamble = self.runtime_preamble(&context, true, rag.is_some(), input.has_images());
-        let model = chat.model.as_str();
         let interaction_sink = AgentInteractionSink::default();
         let memory_input = input.visible_text();
         let route_decision = classify_route(&memory_input, input.has_images(), &chat).await?;
@@ -191,181 +372,23 @@ impl RigConversationRuntime {
         self.persist_user_visible_message(user_id, session_id, &input, &memory_input)
             .await?;
 
-        let reply = match chat.provider.as_str() {
-            "openai" => {
-                let client = openai::Client::builder()
-                    .api_key(&chat.api_key)
-                    .base_url(&chat.base_url)
-                    .build()
-                    .map_err(|e| AppError::upstream(e.to_string()))?;
-                let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                if let Some(rag) = rag.clone() {
-                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .dynamic_context(rag.top_k, rag_index)
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            None,
-                        ))
-                        .build()
-                        .prompt(prompt.clone())
-                        .conversation(session_id)
-                        .await
-                        .map_err(|e| AppError::upstream(e.to_string()))?
-                } else {
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            None,
-                        ))
-                        .build()
-                        .prompt(prompt)
-                        .conversation(session_id)
-                        .await
-                        .map_err(|e| AppError::upstream(e.to_string()))?
-                }
-            }
-            "openai_compatible" | "siliconflow" => {
-                let client = openai::Client::builder()
-                    .api_key(&chat.api_key)
-                    .base_url(&chat.base_url)
-                    .build()
-                    .map_err(|e| AppError::upstream(e.to_string()))?
-                    .completions_api();
-                let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                if let Some(rag) = rag.clone() {
-                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .dynamic_context(rag.top_k, rag_index)
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            None,
-                        ))
-                        .build()
-                        .prompt(prompt.clone())
-                        .conversation(session_id)
-                        .await
-                        .map_err(|e| AppError::upstream(e.to_string()))?
-                } else {
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            None,
-                        ))
-                        .build()
-                        .prompt(prompt)
-                        .conversation(session_id)
-                        .await
-                        .map_err(|e| AppError::upstream(e.to_string()))?
-                }
-            }
-            "deepseek" => {
-                let client = deepseek::Client::builder()
-                    .api_key(&chat.api_key)
-                    .base_url(&chat.base_url)
-                    .build()
-                    .map_err(|e| AppError::upstream(e.to_string()))?;
-                let hook = WarmmyPromptHook::new(self.guardrail.clone());
-                if let Some(rag) = rag.clone() {
-                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .dynamic_context(rag.top_k, rag_index)
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            None,
-                        ))
-                        .build()
-                        .prompt(prompt)
-                        .conversation(session_id)
-                        .await
-                        .map_err(|e| AppError::upstream(e.to_string()))?
-                } else {
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            None,
-                        ))
-                        .build()
-                        .prompt(prompt)
-                        .conversation(session_id)
-                        .await
-                        .map_err(|e| AppError::upstream(e.to_string()))?
-                }
-            }
-            p => return Err(AppError::internal(format!("unsupported provider: {p}"))),
-        };
+        let rag_context = self.build_rag_agent_context(user_id, rag.as_ref()).await?;
+        let spec = self.build_agent_spec(
+            user_id,
+            session_id,
+            &chat,
+            preamble,
+            route,
+            tool_choice,
+            interaction_sink,
+            nutrition_retriever,
+            rag_context,
+            None,
+        );
+        let reply = self
+            .build_conversation_agent(&chat, spec)?
+            .prompt(prompt, session_id)
+            .await?;
 
         self.persist_assistant_visible_message(user_id, session_id, &reply)
             .await?;
@@ -434,7 +457,6 @@ impl RigConversationRuntime {
         let nutrition_retriever = self.nutrition_retriever(rag.as_ref());
         let context = self.context_provider.load(user_id).await;
         let preamble = self.runtime_preamble(&context, true, rag.is_some(), input.has_images());
-        let model = chat.model.as_str();
         let interaction_sink = AgentInteractionSink::default();
         let user_input = input.visible_text();
         let has_images = input.has_images();
@@ -454,216 +476,55 @@ impl RigConversationRuntime {
         let (status_tx, status_rx) = mpsc::unbounded_channel();
         let status_sink = AgentStatusSink::new(status_tx);
 
-        match chat.provider.as_str() {
-            "openai" => {
-                let client = openai::Client::builder()
-                    .api_key(&chat.api_key)
-                    .base_url(&chat.base_url)
-                    .build()
-                    .map_err(|e| AppError::upstream(e.to_string()))?;
-                let hook =
-                    WarmmyPromptHook::with_status_sink(self.guardrail.clone(), status_sink.clone());
-                let raw = if let Some(rag) = rag.clone() {
-                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .dynamic_context(rag.top_k, rag_index)
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            self.agent_service_progress(Some(status_sink.clone())),
-                        ))
-                        .build()
-                        .stream_prompt(prompt.clone())
-                        .conversation(session_id.to_string())
-                        .await
-                } else {
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            self.agent_service_progress(Some(status_sink.clone())),
-                        ))
-                        .build()
-                        .stream_prompt(prompt.clone())
-                        .conversation(session_id.to_string())
-                        .await
-                };
-                Ok(Self::wrap_stream(
-                    raw,
-                    interaction_sink,
-                    has_images,
-                    repo_for_history.clone(),
-                    user_id_for_history.clone(),
-                    session_id_for_history.clone(),
-                    runtime_for_memory.clone(),
-                    user_id_for_memory.clone(),
-                    session_id_for_memory.clone(),
-                    user_input_for_memory.clone(),
-                    status_rx,
-                ))
+        let rag_context = self.build_rag_agent_context(user_id, rag.as_ref()).await?;
+        let spec = self.build_agent_spec(
+            user_id,
+            session_id,
+            &chat,
+            preamble,
+            route,
+            tool_choice,
+            interaction_sink.clone(),
+            nutrition_retriever,
+            rag_context,
+            Some(status_sink.clone()),
+        );
+        let agent = self.build_conversation_agent(&chat, spec)?;
+        let wrap_ctx = StreamWrapCtx {
+            interaction_sink,
+            has_images,
+            repo_for_history,
+            user_id_for_history,
+            session_id_for_history,
+            runtime_for_memory,
+            user_id_for_memory,
+            session_id_for_memory,
+            user_input_for_memory,
+            status_rx,
+        };
+
+        match agent {
+            ConversationAgent::OpenAiResponses(agent) => {
+                let raw = agent
+                    .stream_prompt(prompt)
+                    .conversation(session_id.to_string())
+                    .await;
+                Ok(Self::wrap_stream(raw, wrap_ctx))
             }
-            "openai_compatible" | "siliconflow" => {
-                let client = openai::Client::builder()
-                    .api_key(&chat.api_key)
-                    .base_url(&chat.base_url)
-                    .build()
-                    .map_err(|e| AppError::upstream(e.to_string()))?
-                    .completions_api();
-                let hook =
-                    WarmmyPromptHook::with_status_sink(self.guardrail.clone(), status_sink.clone());
-                let raw = if let Some(rag) = rag.clone() {
-                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .dynamic_context(rag.top_k, rag_index)
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            self.agent_service_progress(Some(status_sink.clone())),
-                        ))
-                        .build()
-                        .stream_prompt(prompt.clone())
-                        .conversation(session_id.to_string())
-                        .await
-                } else {
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            self.agent_service_progress(Some(status_sink.clone())),
-                        ))
-                        .build()
-                        .stream_prompt(prompt.clone())
-                        .conversation(session_id.to_string())
-                        .await
-                };
-                Ok(Self::wrap_stream(
-                    raw,
-                    interaction_sink,
-                    has_images,
-                    repo_for_history.clone(),
-                    user_id_for_history.clone(),
-                    session_id_for_history.clone(),
-                    runtime_for_memory.clone(),
-                    user_id_for_memory.clone(),
-                    session_id_for_memory.clone(),
-                    user_input_for_memory.clone(),
-                    status_rx,
-                ))
+            ConversationAgent::OpenAiCompletions(agent) => {
+                let raw = agent
+                    .stream_prompt(prompt)
+                    .conversation(session_id.to_string())
+                    .await;
+                Ok(Self::wrap_stream(raw, wrap_ctx))
             }
-            "deepseek" => {
-                let client = deepseek::Client::builder()
-                    .api_key(&chat.api_key)
-                    .base_url(&chat.base_url)
-                    .build()
-                    .map_err(|e| AppError::upstream(e.to_string()))?;
-                let hook =
-                    WarmmyPromptHook::with_status_sink(self.guardrail.clone(), status_sink.clone());
-                let raw = if let Some(rag) = rag.clone() {
-                    let rag_index = self.build_memory_retriever(user_id, &rag).await?;
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .dynamic_context(rag.top_k, rag_index)
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            self.agent_service_progress(Some(status_sink.clone())),
-                        ))
-                        .build()
-                        .stream_prompt(prompt)
-                        .conversation(session_id.to_string())
-                        .await
-                } else {
-                    client
-                        .agent(model)
-                        .preamble(&preamble)
-                        .tool_choice(tool_choice.clone())
-                        .default_max_turns(DEFAULT_MAX_TURNS)
-                        .memory(self.build_memory(user_id))
-                        .hook(hook)
-                        .tools(tool::tools_for_route(
-                            route,
-                            user_id,
-                            session_id,
-                            self.meal_command.clone(),
-                            interaction_sink.clone(),
-                            self.nutrition_curator(&chat),
-                            nutrition_retriever.clone(),
-                            self.agent_service_progress(Some(status_sink.clone())),
-                        ))
-                        .build()
-                        .stream_prompt(prompt)
-                        .conversation(session_id.to_string())
-                        .await
-                };
-                Ok(Self::wrap_stream(
-                    raw,
-                    interaction_sink,
-                    has_images,
-                    repo_for_history,
-                    user_id_for_history,
-                    session_id_for_history,
-                    runtime_for_memory,
-                    user_id_for_memory,
-                    session_id_for_memory,
-                    user_input_for_memory,
-                    status_rx,
-                ))
+            ConversationAgent::DeepSeek(agent) => {
+                let raw = agent
+                    .stream_prompt(prompt)
+                    .conversation(session_id.to_string())
+                    .await;
+                Ok(Self::wrap_stream(raw, wrap_ctx))
             }
-            p => Err(AppError::internal(format!("unsupported provider: {p}"))),
         }
     }
 
@@ -780,19 +641,7 @@ impl RigConversationRuntime {
         }
     }
 
-    fn wrap_stream<S, R>(
-        mut raw: S,
-        interaction_sink: AgentInteractionSink,
-        has_images: bool,
-        repo_for_history: Arc<dyn ChatMessageRepositoryPort>,
-        user_id_for_history: UserId,
-        session_id_for_history: String,
-        runtime_for_memory: RigConversationRuntime,
-        user_id_for_memory: UserId,
-        session_id_for_memory: String,
-        user_input_for_memory: String,
-        mut status_rx: mpsc::UnboundedReceiver<ConversationStreamEvent>,
-    ) -> ConversationReplyStream
+    fn wrap_stream<S, R>(mut raw: S, ctx: StreamWrapCtx) -> ConversationReplyStream
     where
         S: futures_core::Stream<Item = Result<MultiTurnStreamItem<R>, StreamingError>>
             + Send
@@ -800,6 +649,18 @@ impl RigConversationRuntime {
             + 'static,
         R: Clone + Send + 'static,
     {
+        let StreamWrapCtx {
+            interaction_sink,
+            has_images,
+            repo_for_history,
+            user_id_for_history,
+            session_id_for_history,
+            runtime_for_memory,
+            user_id_for_memory,
+            session_id_for_memory,
+            user_input_for_memory,
+            mut status_rx,
+        } = ctx;
         let s = stream! {
             yield Ok(status_event(
                 AgentStatusKind::CallingModel,
@@ -1101,12 +962,7 @@ impl RigConversationRuntime {
     ) -> AppResult<String> {
         match model.provider.as_str() {
             "openai" | "openai_compatible" | "siliconflow" => {
-                let client = openai::Client::builder()
-                    .api_key(&model.api_key)
-                    .base_url(&model.base_url)
-                    .build()
-                    .map_err(|e| AppError::upstream(e.to_string()))?
-                    .completions_api();
+                let client = Self::openai_client(model)?.completions_api();
                 client
                     .agent(model.model.as_str())
                     .preamble(CONVERSATION_SUMMARY_PREAMBLE)
@@ -1116,11 +972,7 @@ impl RigConversationRuntime {
                     .map_err(|e| AppError::upstream(e.to_string()))
             }
             "deepseek" => {
-                let client = deepseek::Client::builder()
-                    .api_key(&model.api_key)
-                    .base_url(&model.base_url)
-                    .build()
-                    .map_err(|e| AppError::upstream(e.to_string()))?;
+                let client = Self::deepseek_client(model)?;
                 client
                     .agent(model.model.as_str())
                     .preamble(CONVERSATION_SUMMARY_PREAMBLE)
