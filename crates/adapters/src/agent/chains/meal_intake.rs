@@ -93,10 +93,7 @@ impl MealIntakeChain {
             "meal intake chain stage completed"
         );
 
-        Ok(MealIntakeOutput {
-            result,
-            critiques,
-        })
+        Ok(MealIntakeOutput { result, critiques })
     }
 
     fn normalize_foods(&self, foods: Vec<MealIntakeFood>) -> AppResult<Vec<FoodItem>> {

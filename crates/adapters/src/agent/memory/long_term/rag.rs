@@ -10,7 +10,6 @@ use futures_util::TryStreamExt;
 use lancedb::arrow::arrow_schema::{DataType, Field, Fields, Schema};
 use lancedb::database::CreateTableMode;
 use lancedb::query::{ExecutableQuery, QueryBase};
-use lancedb::table::WriteOptions;
 use rig::client::EmbeddingsClient;
 use rig::embeddings::EmbeddingModel;
 use rig::providers::openai;
@@ -70,7 +69,7 @@ pub type OpenAiCompatibleRagIndex =
     WarmmyLanceDbVectorIndex<rig::providers::openai::EmbeddingModel>;
 
 pub struct WarmmyLanceDbVectorIndex<M: EmbeddingModel> {
-    table: Option<lancedb::Table>,
+    table: lancedb::Table,
     model: M,
 }
 
@@ -129,7 +128,7 @@ pub async fn build_rag_index(config: &RagConfig) -> AppResult<OpenAiCompatibleRa
     config.validate()?;
 
     let model = build_embedding_model(config)?;
-    let table = open_table_if_present(config).await?;
+    let table = open_or_create_table(config).await?;
 
     Ok(WarmmyLanceDbVectorIndex { table, model })
 }
@@ -147,74 +146,16 @@ fn build_embedding_model(config: &RagConfig) -> AppResult<rig::providers::openai
     Ok(client.embedding_model(&config.embedding_model))
 }
 
-async fn open_table_if_present(config: &RagConfig) -> AppResult<Option<lancedb::Table>> {
-    let db = lancedb::connect(&config.lancedb_path)
-        .execute()
-        .await
-        .map_err(|e| AppError::database(e.to_string()))?;
-
-    let tables = db
-        .table_names()
-        .execute()
-        .await
-        .map_err(|e| AppError::database(e.to_string()))?;
-
-    if !tables.iter().any(|name| name == TABLE_NAME) {
-        return Ok(None);
-    }
-
-    match db.open_table(TABLE_NAME).execute().await {
-        Ok(table) => {
-            if table_matches_schema(&table, config.embedding_ndims).await? {
-                Ok(Some(table))
-            } else {
-                tracing::warn!(
-                    table = TABLE_NAME,
-                    path = config.lancedb_path.as_str(),
-                    "dropping LanceDB table with stale memory index schema"
-                );
-                drop_table_if_present(&db).await?;
-                Ok(None)
-            }
-        }
-        Err(err) if is_lancedb_table_not_found(&err) => Ok(None),
-        Err(err) => Err(AppError::database(err.to_string())),
-    }
-}
-
 async fn open_or_create_table(config: &RagConfig) -> AppResult<lancedb::Table> {
     let db = lancedb::connect(&config.lancedb_path)
         .execute()
         .await
         .map_err(|e| AppError::database(e.to_string()))?;
-
-    let tables = db
-        .table_names()
-        .execute()
-        .await
-        .map_err(|e| AppError::database(e.to_string()))?;
-
-    if tables.iter().any(|name| name == TABLE_NAME) {
-        let table = match db.open_table(TABLE_NAME).execute().await {
-            Ok(table) => table,
-            Err(err) if is_lancedb_table_not_found(&err) => {
-                return create_empty_memory_table(&db, config).await;
-            }
-            Err(err) => return Err(AppError::database(err.to_string())),
-        };
-        if table_matches_schema(&table, config.embedding_ndims).await? {
-            return Ok(table);
-        }
-
-        tracing::warn!(
-            table = TABLE_NAME,
-            path = config.lancedb_path.as_str(),
-            "dropping LanceDB table with stale memory index schema"
-        );
-        drop_table_if_present(&db).await?;
+    match db.open_table(TABLE_NAME).execute().await {
+        Ok(table) => Ok(table),
+        Err(lancedb::Error::TableNotFound { .. }) => create_empty_memory_table(&db, config).await,
+        Err(err) => Err(AppError::database(err.to_string())),
     }
-
-    create_empty_memory_table(&db, config).await
 }
 
 async fn create_empty_memory_table(
@@ -223,30 +164,9 @@ async fn create_empty_memory_table(
 ) -> AppResult<lancedb::Table> {
     db.create_empty_table(TABLE_NAME, Arc::new(rag_schema(config.embedding_ndims)))
         .mode(CreateTableMode::Overwrite)
-        .write_options(memory_index_create_write_options())
         .execute()
         .await
         .map_err(|e| AppError::database(e.to_string()))
-}
-
-fn is_lancedb_table_not_found(err: &lancedb::Error) -> bool {
-    matches!(err, lancedb::Error::TableNotFound { .. })
-}
-
-async fn drop_table_if_present(db: &lancedb::Connection) -> AppResult<()> {
-    match db.drop_table(TABLE_NAME, &[]).await {
-        Ok(()) => Ok(()),
-        Err(err) if is_lancedb_table_not_found(&err) => Ok(()),
-        Err(err) => Err(AppError::database(err.to_string())),
-    }
-}
-
-async fn table_matches_schema(table: &lancedb::Table, dims: usize) -> AppResult<bool> {
-    let current = table
-        .schema()
-        .await
-        .map_err(|e| AppError::database(e.to_string()))?;
-    Ok(current.as_ref() == &rag_schema(dims))
 }
 
 #[async_trait::async_trait]
@@ -285,31 +205,12 @@ impl MemoryIndex for LanceDbMemoryIndex {
             )));
         }
 
-        let embedding = embedding.vec;
-        match put_memory_record(&self.config, record, embedding.clone()).await {
-            Ok(()) => {
-                tracing::info!(
-                    memory.id = record.id.as_str(),
-                    path = self.config.lancedb_path.as_str(),
-                    "memory embedding indexed"
-                );
-            }
-            Err(err) if is_lancedb_recoverable_error(&err) => {
-                tracing::warn!(
-                    error = %err,
-                    path = self.config.lancedb_path.as_str(),
-                    "resetting LanceDB derived index after write failure"
-                );
-                reset_lancedb_store(&self.config)?;
-                put_memory_record(&self.config, record, embedding).await?;
-                tracing::info!(
-                    memory.id = record.id.as_str(),
-                    path = self.config.lancedb_path.as_str(),
-                    "memory embedding indexed after reset"
-                );
-            }
-            Err(err) => return Err(err),
-        }
+        put_memory_record(&self.config, record, embedding.vec).await?;
+        tracing::info!(
+            memory.id = record.id.as_str(),
+            path = self.config.lancedb_path.as_str(),
+            "memory embedding indexed"
+        );
 
         Ok(())
     }
@@ -331,68 +232,10 @@ async fn put_memory_record(
 
     table
         .add(reader)
-        .write_options(memory_index_append_write_options())
         .execute()
         .await
         .map(|_| ())
         .map_err(|e| AppError::database(e.to_string()))
-}
-
-#[cfg(target_os = "android")]
-fn memory_index_create_write_options() -> WriteOptions {
-    use lance::dataset::{WriteMode, WriteParams};
-    use lance_table::io::commit::UnsafeCommitHandler;
-
-    WriteOptions {
-        lance_write_params: Some(WriteParams {
-            mode: WriteMode::Overwrite,
-            commit_handler: Some(Arc::new(UnsafeCommitHandler)),
-            ..Default::default()
-        }),
-    }
-}
-
-#[cfg(not(target_os = "android"))]
-fn memory_index_create_write_options() -> WriteOptions {
-    WriteOptions::default()
-}
-
-#[cfg(target_os = "android")]
-fn memory_index_append_write_options() -> WriteOptions {
-    use lance::dataset::{WriteMode, WriteParams};
-    use lance_table::io::commit::UnsafeCommitHandler;
-
-    WriteOptions {
-        lance_write_params: Some(WriteParams {
-            mode: WriteMode::Append,
-            commit_handler: Some(Arc::new(UnsafeCommitHandler)),
-            ..Default::default()
-        }),
-    }
-}
-
-#[cfg(not(target_os = "android"))]
-fn memory_index_append_write_options() -> WriteOptions {
-    WriteOptions::default()
-}
-
-fn reset_lancedb_store(config: &RagConfig) -> AppResult<()> {
-    let path = std::path::Path::new(&config.lancedb_path);
-    if path.exists() {
-        std::fs::remove_dir_all(path)
-            .map_err(|err| AppError::database(format!("failed to reset LanceDB store: {err}")))?;
-    }
-    std::fs::create_dir_all(path)
-        .map_err(|err| AppError::database(format!("failed to recreate LanceDB store: {err}")))
-}
-
-fn is_lancedb_recoverable_error(err: &AppError) -> bool {
-    let message = err.to_string();
-    message.contains("lance error")
-        || message.contains("LanceError")
-        || message.contains("Table '")
-        || message.contains("Unable to rename file")
-        || message.contains("Permission denied")
 }
 
 fn rag_schema(dims: usize) -> Schema {
@@ -460,10 +303,7 @@ where
         &self,
         req: VectorSearchRequest<Self::Filter>,
     ) -> Result<Vec<(f64, String, T)>, VectorStoreError> {
-        let Some(table) = self.table.as_ref() else {
-            tracing::info!("memory rag search skipped: index table not present");
-            return Ok(Vec::new());
-        };
+        let table = &self.table;
 
         tracing::info!(
             rag.samples = req.samples(),
@@ -485,18 +325,14 @@ where
         if let Some(filter) = req.filter().clone() {
             query = query.only_if(filter.into_inner()?);
         }
-
-        let stream = match query.execute().await {
-            Ok(stream) => stream,
-            Err(err) if is_lancedb_table_not_found(&err) => return Ok(Vec::new()),
-            Err(err) => return Err(lancedb_to_vector_store_error(err)),
-        };
-
-        let batches = match stream.try_collect::<Vec<_>>().await {
-            Ok(batches) => batches,
-            Err(err) if is_lancedb_table_not_found(&err) => return Ok(Vec::new()),
-            Err(err) => return Err(lancedb_to_vector_store_error(err)),
-        };
+        let stream = query
+            .execute()
+            .await
+            .map_err(lancedb_to_vector_store_error)?;
+        let batches = stream
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(lancedb_to_vector_store_error)?;
 
         let mut results = Vec::new();
         for batch in batches {

@@ -10,7 +10,6 @@ use futures_util::TryStreamExt;
 use lancedb::arrow::arrow_schema::{DataType, Field, Fields, Schema};
 use lancedb::database::CreateTableMode;
 use lancedb::query::{ExecutableQuery, QueryBase, Select};
-use lancedb::table::WriteOptions;
 use rig::client::EmbeddingsClient;
 use rig::embeddings::EmbeddingModel;
 use rig::providers::openai;
@@ -135,7 +134,7 @@ async fn search_reference_ids(config: &RagConfig, query: &str) -> AppResult<Vec<
         )));
     }
 
-    let stream = match table
+    let stream = table
         .vector_search(embedding.vec)
         .map_err(|err| AppError::database(err.to_string()))?
         .distance_type(lancedb::DistanceType::Cosine)
@@ -143,11 +142,7 @@ async fn search_reference_ids(config: &RagConfig, query: &str) -> AppResult<Vec<
         .limit(config.top_k)
         .execute()
         .await
-    {
-        Ok(stream) => stream,
-        Err(err) if is_lancedb_table_not_found(&err) => return Ok(Vec::new()),
-        Err(err) => return Err(AppError::database(err.to_string())),
-    };
+        .map_err(|err| AppError::database(err.to_string()))?;
 
     let batches = stream
         .try_collect::<Vec<_>>()
@@ -212,7 +207,6 @@ async fn put_reference(config: &RagConfig, reference: &FoodNutritionReference) -
 
     table
         .add(reader)
-        .write_options(index_append_write_options())
         .execute()
         .await
         .map(|_| ())
@@ -221,16 +215,12 @@ async fn put_reference(config: &RagConfig, reference: &FoodNutritionReference) -
 
 async fn list_indexed_reference_ids(config: &RagConfig) -> AppResult<HashSet<String>> {
     let table = open_or_create_table(config).await?;
-    let stream = match table
+    let stream = table
         .query()
         .select(Select::columns(&[ID_FIELD]))
         .execute()
         .await
-    {
-        Ok(stream) => stream,
-        Err(err) if is_lancedb_table_not_found(&err) => return Ok(HashSet::new()),
-        Err(err) => return Err(AppError::database(err.to_string())),
-    };
+        .map_err(|err| AppError::database(err.to_string()))?;
 
     let batches = stream
         .try_collect::<Vec<_>>()
@@ -261,29 +251,11 @@ async fn open_or_create_table(config: &RagConfig) -> AppResult<lancedb::Table> {
         .execute()
         .await
         .map_err(|err| AppError::database(err.to_string()))?;
-    let tables = db
-        .table_names()
-        .execute()
-        .await
-        .map_err(|err| AppError::database(err.to_string()))?;
-
-    if tables.iter().any(|name| name == TABLE_NAME) {
-        let table = match db.open_table(TABLE_NAME).execute().await {
-            Ok(table) => table,
-            Err(err) if is_lancedb_table_not_found(&err) => {
-                return create_empty_table(&db, config).await;
-            }
-            Err(err) => return Err(AppError::database(err.to_string())),
-        };
-        if table_matches_schema(&table, config.embedding_ndims).await? {
-            return Ok(table);
-        }
-        db.drop_table(TABLE_NAME, &[])
-            .await
-            .map_err(|err| AppError::database(err.to_string()))?;
+    match db.open_table(TABLE_NAME).execute().await {
+        Ok(table) => Ok(table),
+        Err(lancedb::Error::TableNotFound { .. }) => create_empty_table(&db, config).await,
+        Err(err) => Err(AppError::database(err.to_string())),
     }
-
-    create_empty_table(&db, config).await
 }
 
 async fn create_empty_table(
@@ -295,18 +267,9 @@ async fn create_empty_table(
         Arc::new(reference_schema(config.embedding_ndims)),
     )
     .mode(CreateTableMode::Overwrite)
-    .write_options(index_create_write_options())
     .execute()
     .await
     .map_err(|err| AppError::database(err.to_string()))
-}
-
-async fn table_matches_schema(table: &lancedb::Table, dims: usize) -> AppResult<bool> {
-    let current = table
-        .schema()
-        .await
-        .map_err(|err| AppError::database(err.to_string()))?;
-    Ok(current.as_ref() == &reference_schema(dims))
 }
 
 fn build_embedding_model(config: &RagConfig) -> AppResult<rig::providers::openai::EmbeddingModel> {
@@ -402,46 +365,4 @@ fn string_value(batch: &RecordBatch, field: &str, row: usize) -> Option<String> 
 
 fn sql_string_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
-}
-
-fn is_lancedb_table_not_found(err: &lancedb::Error) -> bool {
-    matches!(err, lancedb::Error::TableNotFound { .. })
-}
-
-#[cfg(target_os = "android")]
-fn index_create_write_options() -> WriteOptions {
-    use lance::dataset::{WriteMode, WriteParams};
-    use lance_table::io::commit::UnsafeCommitHandler;
-
-    WriteOptions {
-        lance_write_params: Some(WriteParams {
-            mode: WriteMode::Overwrite,
-            commit_handler: Some(Arc::new(UnsafeCommitHandler)),
-            ..Default::default()
-        }),
-    }
-}
-
-#[cfg(not(target_os = "android"))]
-fn index_create_write_options() -> WriteOptions {
-    WriteOptions::default()
-}
-
-#[cfg(target_os = "android")]
-fn index_append_write_options() -> WriteOptions {
-    use lance::dataset::{WriteMode, WriteParams};
-    use lance_table::io::commit::UnsafeCommitHandler;
-
-    WriteOptions {
-        lance_write_params: Some(WriteParams {
-            mode: WriteMode::Append,
-            commit_handler: Some(Arc::new(UnsafeCommitHandler)),
-            ..Default::default()
-        }),
-    }
-}
-
-#[cfg(not(target_os = "android"))]
-fn index_append_write_options() -> WriteOptions {
-    WriteOptions::default()
 }

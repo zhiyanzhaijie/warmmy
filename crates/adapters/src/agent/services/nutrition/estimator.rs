@@ -272,12 +272,10 @@ fn unresolved_gaps(foods: &[ResolvedMealFood]) -> Vec<NutritionKnowledgeGap> {
     foods
         .iter()
         .filter_map(|food| {
-            food.reference
-                .is_none()
-                .then(|| NutritionKnowledgeGap {
-                    food_name: food.item.name.clone(),
-                    reason: NutritionKnowledgeGapReason::MissingReference,
-                })
+            food.reference.is_none().then(|| NutritionKnowledgeGap {
+                food_name: food.item.name.clone(),
+                reason: NutritionKnowledgeGapReason::MissingReference,
+            })
         })
         .collect()
 }
