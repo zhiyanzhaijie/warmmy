@@ -171,7 +171,7 @@ fn build_router_prompt(input: &str, has_images: bool) -> String {
 
 async fn prompt_route_model(model: &ResolvedAIModelConfig, prompt: String) -> AppResult<String> {
     match model.provider.as_str() {
-        "openai" | "openai_compatible" | "siliconflow" => {
+        "openai" | "openai_compatible" | "siliconflow" | "dashscope" => {
             let client = openai::Client::builder()
                 .api_key(&model.api_key)
                 .base_url(&model.base_url)

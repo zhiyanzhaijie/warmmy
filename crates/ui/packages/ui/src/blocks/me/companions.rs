@@ -40,16 +40,16 @@ pub fn CompanionsSummaryBlock(user_id: String) -> Element {
     });
 
     rsx! {
-        section { class: "rounded-[2rem] border border-border bg-card px-5 py-5 md:px-6 md:py-6",
-            div { class: "mb-5 flex items-start justify-between gap-3",
+        section { class: "rounded-2xl border border-border bg-card px-6 py-6",
+            div { class: "mb-6 flex items-start justify-between gap-3",
                 div {
-                    p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Table circle" }
-                    h2 { class: "mt-2 text-2xl font-semibold text-foreground", "常一起吃饭的人" }
-                    p { class: "mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground", "首页只展示关系网络摘要，完整新增、编辑和删除进入独立页面。" }
+                    p { class: "text-[11px] font-medium uppercase tracking-widest text-muted-foreground", "Table circle" }
+                    h2 { class: "mt-2 text-xl font-medium tracking-tight text-foreground", "常一起吃饭的人" }
+                    p { class: "mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground", "首页只展示关系网络摘要，完整新增、编辑和删除进入独立页面。" }
                 }
                 Button {
                     variant: ButtonVariant::Ghost,
-                    class: "rounded-full border border-border px-3",
+                    class: "rounded-full border border-border px-4 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                     onclick: move |_| {
                         nav.push("/me/companions");
                     },
@@ -59,19 +59,19 @@ pub fn CompanionsSummaryBlock(user_id: String) -> Element {
             }
             BlockMessage { message: message() }
             if loading() {
-                div { class: "rounded-[1.5rem] border border-border bg-background/70 px-4 py-6 text-sm text-muted-foreground", "加载中..." }
+                div { class: "rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground", "加载中..." }
             } else if companions().is_empty() {
                 button {
                     r#type: "button",
-                    class: "w-full rounded-[1.5rem] border border-dashed border-border bg-background/70 px-4 py-7 text-left transition hover:bg-muted/50",
+                    class: "group w-full rounded-2xl border border-dashed border-border bg-card px-6 py-8 text-left transition-all hover:border-foreground/30 hover:bg-card/80",
                     onclick: move |_| {
                         nav.push("/me/companions");
                     },
-                    div { class: "mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background",
-                        UserPlus { size: 18 }
+                    div { class: "mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors group-hover:border-foreground/20 group-hover:text-foreground",
+                        UserPlus { size: 20 }
                     }
-                    div { class: "font-medium text-foreground", "添加家人或朋友" }
-                    div { class: "mt-1 text-sm text-muted-foreground", "多人用餐时，agent 会把他们的偏好和健康备注一起考虑。" }
+                    div { class: "text-base font-medium tracking-tight text-foreground", "添加家人或朋友" }
+                    div { class: "mt-1.5 text-sm text-muted-foreground", "多人用餐时，agent 会把他们的偏好和健康备注一起考虑。" }
                 }
             } else {
                 div { class: "grid grid-cols-1 gap-3 md:grid-cols-3",
@@ -81,12 +81,12 @@ pub fn CompanionsSummaryBlock(user_id: String) -> Element {
                     if companions().len() > 3 {
                         button {
                             r#type: "button",
-                            class: "rounded-[1.5rem] border border-border bg-background/70 p-4 text-left transition hover:bg-muted/50",
+                            class: "rounded-2xl border border-border bg-card p-5 text-left transition-colors hover:border-foreground/20",
                             onclick: move |_| {
                                 nav.push("/me/companions");
                             },
-                            div { class: "text-3xl font-semibold text-foreground", "+{companions().len() - 3}" }
-                            div { class: "mt-2 text-sm text-muted-foreground", "查看全部关系人" }
+                            div { class: "text-3xl font-medium tracking-tight text-foreground", "+{companions().len() - 3}" }
+                            div { class: "mt-1.5 text-sm text-muted-foreground", "查看全部关系人" }
                         }
                     }
                 }
@@ -109,18 +109,18 @@ fn CompanionMiniCard(companion: user::DiningCompanionDTO) -> Element {
         .unwrap_or_else(|| "未设置偏好".to_string());
 
     rsx! {
-        div { class: "rounded-[1.5rem] border border-border bg-background/70 p-4",
+        div { class: "rounded-2xl border border-border bg-card p-5 transition-colors hover:border-foreground/20",
             div { class: "flex items-center gap-3",
-                div { class: "flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-foreground text-background",
+                div { class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow-xs",
                     HeartHandshake { size: 18 }
                 }
                 div { class: "min-w-0",
-                    div { class: "truncate font-semibold text-foreground", "{companion.display_name}" }
-                    div { class: "mt-0.5 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground", "{relationship}" }
+                    div { class: "truncate text-[15px] font-medium tracking-tight text-foreground", "{companion.display_name}" }
+                    div { class: "mt-0.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground", "{relationship}" }
                 }
             }
             p { class: "mt-4 line-clamp-2 min-h-10 text-sm leading-relaxed text-muted-foreground", "{companion.introduction}" }
-            div { class: "mt-3" }
+            div { class: "mt-4" }
             MiniTag { label: first_tag }
         }
     }
@@ -253,36 +253,36 @@ fn CompanionsEditor(user_id: String) -> Element {
 
     rsx! {
         div { class: "flex items-center justify-between gap-3",
-            Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3", onclick: move |_| {
+            Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", onclick: move |_| {
                 nav.push("/me");
             },
                 ArrowLeft { size: 16 }
                 "返回"
             }
-            p { class: "text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Companions" }
+            p { class: "text-xs font-medium uppercase tracking-widest text-muted-foreground", "Companions" }
         }
         div { class: "min-h-0 flex-1 overflow-y-auto pb-28 md:pb-12",
-            Card { class: "rounded-[2rem] border border-border bg-card px-0 py-0 shadow-none",
-                CardHeader { class: "gap-3 px-5 pb-0 pt-5 md:px-6 md:pt-6",
+            Card { class: "rounded-2xl border border-border bg-card px-0 py-0 shadow-none",
+                CardHeader { class: "gap-3 px-6 pb-0 pt-6",
                     div { class: "flex items-start justify-between gap-3",
                         div {
-                            CardTitle { class: "flex items-center gap-2 text-xl font-semibold tracking-[-0.3px]",
+                            CardTitle { class: "flex items-center gap-2 text-xl font-medium tracking-tight",
                                 HeartHandshake { size: 18 }
                                 "常一起吃饭的人"
                             }
                             p { class: "mt-2 text-sm leading-relaxed text-muted-foreground", "这些人不会切换成当前用户，只会在多人用餐建议时作为关系链约束。" }
                         }
-                        Button { size: ButtonSize::IconSm, class: "rounded-full bg-foreground text-background hover:opacity-90", onclick: start_new,
+                        Button { size: ButtonSize::IconSm, class: "rounded-full bg-foreground text-background shadow-xs transition-opacity hover:opacity-90", onclick: start_new,
                             UserPlus { size: 16 }
                         }
                     }
                 }
-                CardContent { class: "space-y-5 px-5 pb-5 pt-5 md:px-6 md:pb-6",
+                CardContent { class: "space-y-6 px-6 pb-6 pt-5",
                     BlockMessage { message: message() }
 
                     div { class: "grid grid-cols-1 gap-3 md:grid-cols-2",
                         if companions().is_empty() && !loading() {
-                            div { class: "rounded-[1.5rem] border border-dashed border-border bg-background/70 p-4 text-sm leading-relaxed text-muted-foreground md:col-span-2",
+                            div { class: "rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm leading-relaxed text-muted-foreground md:col-span-2",
                                 "还没有添加家人或朋友。添加后，agent 可以在聚餐、家庭餐建议中一起考虑他们的偏好。"
                             }
                         }
@@ -335,24 +335,24 @@ fn CompanionsEditor(user_id: String) -> Element {
         DialogRoot {
             open: dialog_open(),
             on_open_change: move |open| dialog_open.set(open),
-            DialogContent { class: "max-h-[min(86dvh,760px)] w-[calc(100vw-1rem)] max-w-[760px] overflow-hidden rounded-[1.5rem] border border-border bg-card p-0 text-left shadow-2xl sm:w-[calc(100vw-2rem)] sm:rounded-[2rem]",
+            DialogContent { class: "max-h-[min(86dvh,760px)] w-[calc(100vw-1rem)] max-w-[760px] overflow-hidden rounded-2xl border border-border bg-card p-0 text-left shadow-lg sm:w-[calc(100vw-2rem)]",
                 div { class: "flex min-h-0 max-h-[min(86dvh,760px)] flex-col",
-                    div { class: "flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-4 md:px-6",
+                    div { class: "flex shrink-0 items-start justify-between gap-4 border-b border-border/50 px-6 py-5",
                         div {
-                            DialogTitle {
+                            DialogTitle { class: "text-lg font-medium tracking-tight",
                                 if editing_id().is_some() { "编辑关系人" } else { "新增关系人" }
                             }
-                            DialogDescription { "偏好、忌口与健康备注。" }
+                            DialogDescription { class: "mt-1", "偏好、忌口与健康备注。" }
                         }
                         Button {
                             variant: ButtonVariant::Ghost,
                             size: ButtonSize::IconSm,
-                            class: "rounded-full border border-border",
+                            class: "rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                             onclick: move |_| dialog_open.set(false),
                             X { size: 16 }
                         }
                     }
-                    div { class: "min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6",
+                    div { class: "min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6",
                         div { class: "grid grid-cols-1 gap-3 md:grid-cols-2",
                             LabeledInput { label: "Name", icon: rsx! { HeartHandshake { size: 16 } }, value: display_name, placeholder: "例如：妈妈、朋友 A" }
                             LabeledInput { label: "Relationship", icon: rsx! { HeartHandshake { size: 16 } }, value: relationship, placeholder: "家人 / 朋友 / 室友" }
@@ -364,14 +364,14 @@ fn CompanionsEditor(user_id: String) -> Element {
                             TagListInput { label: "健康备注", icon: rsx! { HeartHandshake { size: 16 } }, values: health_notes(), draft: health_notes_input, placeholder: "控糖, 少盐", oncommit: commit_health_notes, onremove: move |value| health_notes.write().retain(|item| item != &value) }
                         }
                     }
-                    div { class: "flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-4 md:px-6",
+                    div { class: "flex shrink-0 items-center justify-between gap-3 border-t border-border/50 px-6 py-4",
                         Button {
                             variant: ButtonVariant::Ghost,
-                            class: "rounded-xl border border-border px-4",
+                            class: "rounded-md border border-border px-5 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                             onclick: move |_| dialog_open.set(false),
                             "取消"
                         }
-                        Button { class: "rounded-xl bg-foreground px-5 text-background shadow-sm hover:opacity-90", disabled: saving() || loading(), onclick: save,
+                        Button { class: "rounded-md bg-foreground px-5 py-2 text-background shadow-xs transition-opacity hover:opacity-90", disabled: saving() || loading(), onclick: save,
                             Save { size: 16 }
                             if saving() { "保存中..." } else { "保存" }
                         }
@@ -406,21 +406,21 @@ fn CompanionCard(
     let delete_companion_id = companion.id.clone();
 
     rsx! {
-        div { class: "rounded-[1.5rem] border border-border bg-background/70 p-4",
+        div { class: "rounded-2xl border border-border bg-card p-5 transition-colors hover:border-foreground/20",
             div { class: "flex items-start justify-between gap-3",
                 div {
-                    div { class: "text-base font-semibold text-foreground", "{companion.display_name}" }
-                    div { class: "mt-1 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground", "{relationship}" }
+                    div { class: "text-[15px] font-medium tracking-tight text-foreground", "{companion.display_name}" }
+                    div { class: "mt-0.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground", "{relationship}" }
                 }
                 div { class: "flex gap-2",
-                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, class: "rounded-xl border border-border", onclick: move |_| onedit.call(edit_companion.clone()), "编辑" }
-                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::IconSm, class: "rounded-xl border border-border", onclick: move |_| ondelete.call(delete_companion_id.clone()), Trash2 { size: 15 } }
+                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, class: "rounded-md border border-border transition-colors hover:bg-muted hover:text-foreground", onclick: move |_| onedit.call(edit_companion.clone()), "编辑" }
+                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::IconSm, class: "rounded-md border border-border text-muted-foreground transition-colors hover:border-destructive/30 hover:bg-destructive/5 hover:text-destructive", onclick: move |_| ondelete.call(delete_companion_id.clone()), Trash2 { size: 15 } }
                 }
             }
             if !companion.introduction.trim().is_empty() {
-                p { class: "mt-3 text-sm leading-relaxed text-muted-foreground", "{companion.introduction}" }
+                p { class: "mt-4 text-sm leading-relaxed text-muted-foreground", "{companion.introduction}" }
             }
-            div { class: "mt-4 grid gap-2 text-xs text-muted-foreground",
+            div { class: "mt-5 grid gap-2 text-xs text-muted-foreground",
                 div { "偏好：{preferred}" }
                 div { "忌口：{avoided}" }
                 if !companion.health_notes.is_empty() {

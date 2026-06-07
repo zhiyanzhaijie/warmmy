@@ -168,6 +168,7 @@ impl UserPreferencesQueryHandler {
 
 #[derive(Debug, Clone)]
 pub struct UserAIConfigSnapshot {
+    pub api_keys: Vec<domain::UserApiKey>,
     pub providers: Vec<domain::UserAIProvider>,
     pub routes: Vec<domain::UserAIRoute>,
 }
@@ -207,6 +208,11 @@ impl UserAIConfigQueryHandler {
     }
 
     pub async fn get_snapshot(&self, user_id: &UserId) -> AppResult<UserAIConfigSnapshot> {
+        let api_keys = self
+            .secrets
+            .list_user_api_keys(user_id)
+            .await
+            .map_err(AppError::upstream)?;
         let providers = self
             .repo
             .list_providers(user_id)
@@ -217,7 +223,11 @@ impl UserAIConfigQueryHandler {
             .list_routes(user_id)
             .await
             .map_err(AppError::upstream)?;
-        Ok(UserAIConfigSnapshot { providers, routes })
+        Ok(UserAIConfigSnapshot {
+            api_keys,
+            providers,
+            routes,
+        })
     }
 
     pub async fn resolve(

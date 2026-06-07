@@ -134,7 +134,7 @@ pub fn SystemPreferenceBlock(
         Button {
             variant: ButtonVariant::Ghost,
             size: ButtonSize::IconLg,
-            class: "h-12 w-12 rounded-full border border-border bg-card/80 text-foreground shadow-sm backdrop-blur transition hover:bg-background/90",
+            class: "h-12 w-12 rounded-full border border-border bg-card text-muted-foreground shadow-xs transition-colors hover:bg-muted hover:text-foreground",
             aria_label: "打开系统偏好",
             onclick: move |_| sheet_open.set(true),
             Palette { size: 22 }
@@ -147,44 +147,43 @@ pub fn SystemPreferenceBlock(
                 side: SheetSide::Right,
                 class: "w-[min(88vw,26rem)] max-w-none gap-0 border-l border-border bg-card p-0 text-foreground shadow-2xl",
                 div { class: "flex h-full min-h-0 flex-col overflow-hidden",
-                    SheetHeader { class: "relative shrink-0 border-b border-border px-5 pb-5 pt-6 md:px-6",
-                        div { class: "pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-primary/10 blur-3xl" }
+                    SheetHeader { class: "relative shrink-0 border-b border-border/50 px-6 pb-5 pt-6",
                         div { class: "relative pr-10",
-                            p { class: "text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground", "System" }
+                            p { class: "text-[11px] font-medium uppercase tracking-widest text-muted-foreground", "System" }
                             div { class: "mt-3 flex items-center gap-3",
-                                div { class: "grid h-11 w-11 place-items-center rounded-2xl border border-border bg-background text-foreground" ,
-                                    Palette { size: 21 }
+                                div { class: "grid h-10 w-10 place-items-center rounded-xl border border-border bg-card text-foreground shadow-xs" ,
+                                    Palette { size: 18 }
                                 }
                                 div { class: "min-w-0",
-                                    SheetTitle { "系统偏好" }
-                                    SheetDescription { "调整界面主题与默认语言。" }
+                                    SheetTitle { class: "text-lg font-medium tracking-tight", "系统偏好" }
+                                    SheetDescription { class: "mt-1", "调整界面主题与默认语言。" }
                                 }
                             }
                         }
-                        SheetContentClose { class: "right-5 top-6 rounded-full border border-border text-muted-foreground transition hover:bg-background hover:text-foreground" }
+                        SheetContentClose { class: "right-5 top-6 rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" }
                     }
 
-                    div { class: "min-h-0 flex-1 overflow-y-auto px-5 py-5 md:px-6",
+                    div { class: "min-h-0 flex-1 overflow-y-auto px-6 py-6",
                         BlockMessage { message: message() }
 
                         div { class: "mb-6 grid grid-cols-2 gap-3",
-                            div { class: "rounded-[1.4rem] border border-border bg-background/70 px-4 py-4",
-                                div { class: "flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground",
+                            div { class: "rounded-xl border border-border bg-card px-4 py-4",
+                                div { class: "flex items-center gap-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground",
                                     Palette { size: 14 }
                                     "Theme"
                                 }
-                                div { class: "mt-2 text-xl font-semibold text-foreground", "{theme_label}" }
+                                div { class: "mt-2 text-xl font-medium tracking-tight text-foreground", "{theme_label}" }
                             }
-                            div { class: "rounded-[1.4rem] border border-border bg-background/70 px-4 py-4",
-                                div { class: "flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground",
+                            div { class: "rounded-xl border border-border bg-card px-4 py-4",
+                                div { class: "flex items-center gap-2 text-[11px] font-medium uppercase tracking-widest text-muted-foreground",
                                     Globe { size: 14 }
                                     "Lang"
                                 }
-                                div { class: "mt-2 truncate text-xl font-semibold text-foreground", "{language_label}" }
+                                div { class: "mt-2 truncate text-xl font-medium tracking-tight text-foreground", "{language_label}" }
                             }
                         }
 
-                        div { class: "space-y-5",
+                        div { class: "space-y-6",
                             LabeledChoiceGroup {
                                 label: "Theme",
                                 icon: rsx! { Palette { size: 16 } },
@@ -208,9 +207,9 @@ pub fn SystemPreferenceBlock(
                             }
                         }
 
-                        div { class: "mt-7 rounded-[1.6rem] border border-dashed border-border bg-background/45 px-4 py-4",
+                        div { class: "mt-8 rounded-xl border border-dashed border-border bg-card px-4 py-4",
                             div { class: "flex items-start gap-3",
-                                Sparkles { class: "mt-0.5 text-muted-foreground", size: 17 }
+                                Sparkles { class: "mt-0.5 text-muted-foreground", size: 16 }
                                 p { class: "text-xs leading-relaxed text-muted-foreground",
                                     "这些设置会立即影响本机界面表现，保存后同步写入当前用户偏好。"
                                 }
@@ -218,15 +217,15 @@ pub fn SystemPreferenceBlock(
                         }
                     }
 
-                    SheetFooter { class: "shrink-0 border-t border-border bg-card px-5 py-4 md:px-6",
+                    SheetFooter { class: "shrink-0 border-t border-border/50 bg-card px-6 py-4",
                         Button {
                             variant: ButtonVariant::Ghost,
-                            class: "rounded-xl border border-border px-4",
+                            class: "rounded-md border border-border px-5 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                             onclick: move |_| sheet_open.set(false),
                             "取消"
                         }
                         Button {
-                            class: "rounded-xl bg-foreground px-5 text-background shadow-sm hover:opacity-90",
+                            class: "rounded-md bg-foreground px-5 py-2 text-background shadow-xs transition-opacity hover:opacity-90",
                             disabled: saving() || loading(),
                             onclick: save,
                             if saving() { "保存中..." } else { "保存系统偏好" }

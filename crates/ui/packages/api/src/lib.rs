@@ -22,11 +22,12 @@ pub use meal::{
 };
 pub use user::{
     confirm_health_expectation, create_user_profile, delete_dining_companion,
-    delete_health_expectation, delete_user_ai_provider, get_user_ai_config, get_user_preferences,
-    get_user_profile, list_dining_companions, list_health_expectations, list_user_profiles,
-    save_dining_companion, save_user_ai_provider, save_user_ai_route, save_user_profile,
-    update_user_preferences, upsert_health_expectation, DiningCompanionDTO, HealthExpectationDTO,
-    SaveDiningCompanionInput, SaveUserAIProviderInput, SaveUserAIRouteInput, SaveUserProfileInput,
-    UpdatePreferencesInput, UpsertHealthExpectationInput, UserAICapabilityStatusDTO,
-    UserAIConfigDTO, UserAIProviderDTO, UserAIRouteDTO, UserPreferencesDTO, UserProfileDTO,
+    delete_health_expectation, delete_user_ai_key, delete_user_ai_provider, get_user_ai_config,
+    get_user_preferences, get_user_profile, list_dining_companions, list_health_expectations,
+    list_user_profiles, save_dining_companion, save_user_ai_key, save_user_ai_provider,
+    save_user_ai_route, save_user_profile, update_user_preferences, upsert_health_expectation,
+    DiningCompanionDTO, HealthExpectationDTO, SaveDiningCompanionInput, SaveUserAIKeyInput,
+    SaveUserAIProviderInput, SaveUserAIRouteInput, SaveUserProfileInput, UpdatePreferencesInput,
+    UpsertHealthExpectationInput, UserAICapabilityStatusDTO, UserAIConfigDTO, UserAIKeyDTO,
+    UserAIProviderDTO, UserAIRouteDTO, UserPreferencesDTO, UserProfileDTO,
 };

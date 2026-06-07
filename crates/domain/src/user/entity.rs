@@ -100,6 +100,15 @@ pub struct UserAIProvider {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UserApiKey {
+    pub id: String,
+    pub user_id: UserId,
+    pub name: String,
+    pub secret_ref: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct UserAIRoute {
     pub id: String,
     pub user_id: UserId,

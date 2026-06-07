@@ -118,7 +118,7 @@ impl ModelMemoryExtractor {
         );
 
         match self.model.provider.as_str() {
-            "openai" | "openai_compatible" | "siliconflow" => {
+            "openai" | "openai_compatible" | "siliconflow" | "dashscope" => {
                 let client = openai::Client::builder()
                     .api_key(&self.model.api_key)
                     .base_url(&self.model.base_url)

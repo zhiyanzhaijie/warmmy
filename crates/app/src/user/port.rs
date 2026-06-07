@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use domain::{
-    AICapability, DiningCompanion, DiningCompanionId, UserAIProvider, UserAIRoute,
+    AICapability, DiningCompanion, DiningCompanionId, UserAIProvider, UserAIRoute, UserApiKey,
     UserHealthExpectation, UserId, UserPreferences, UserProfile,
 };
 
@@ -67,6 +67,8 @@ pub trait UserAIConfigRepositoryPort: Send + Sync {
     ) -> Result<Option<UserAIRoute>, String>;
 
     async fn save_route(&self, route: &UserAIRoute) -> Result<(), String>;
+
+    async fn delete_route(&self, user_id: &UserId, route_id: &str) -> Result<(), String>;
 }
 
 #[async_trait]
@@ -76,4 +78,10 @@ pub trait SecretStorePort: Send + Sync {
     async fn get_secret(&self, secret_ref: &str) -> Result<Option<String>, String>;
 
     async fn delete_secret(&self, secret_ref: &str) -> Result<(), String>;
+
+    async fn list_user_api_keys(&self, user_id: &UserId) -> Result<Vec<UserApiKey>, String>;
+
+    async fn save_user_api_key(&self, api_key: &UserApiKey, value: &str) -> Result<(), String>;
+
+    async fn delete_user_api_key(&self, user_id: &UserId, api_key_id: &str) -> Result<(), String>;
 }

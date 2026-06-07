@@ -11,5 +11,6 @@ pub use user::{
     AICapability, AIProviderKind, AppPreferences, AppTheme, CuisinePreference, DietaryPreferences,
     DiningCompanion, DiningCompanionId, ExpectationSource, HealthExpectationId,
     HealthExpectationKind, HealthExpectationStatus, PreferenceConfidence, UserAIProvider,
-    UserAIRoute, UserHealthExpectation, UserId, UserIdInvalidError, UserPreferences, UserProfile,
+    UserAIRoute, UserApiKey, UserHealthExpectation, UserId, UserIdInvalidError,
+    UserPreferences, UserProfile,
 };

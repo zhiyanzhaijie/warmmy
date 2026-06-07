@@ -60,45 +60,45 @@ pub fn HealthExpectationSummaryBlock(
         .unwrap_or_else(|| "还没有健康期望".to_string());
 
     rsx! {
-        Card { class: "min-h-[212px] rounded-[1.5rem] border border-border bg-card px-0 py-0 shadow-none",
-            CardContent { class: "flex h-full flex-col justify-between gap-5 px-5 py-5 md:px-6 md:py-6",
+        Card { class: "min-h-[212px] rounded-2xl border border-border bg-card px-0 py-0 shadow-none",
+            CardContent { class: "flex h-full flex-col justify-between gap-5 px-6 py-6",
                 div {
                     div { class: "mb-4 flex items-start justify-between gap-3",
-                        div { class: "flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background text-foreground",
-                            Flame { size: 19 }
+                        div { class: "flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-xs",
+                            Flame { size: 18 }
                         }
                         Button {
                             variant: ButtonVariant::Ghost,
-                            class: "rounded-full border border-border px-3",
+                            class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                             onclick: move |_| {
                                 nav.push("/me/expectations");
                             },
                             Pencil { size: 15 }
                         }
                     }
-                    p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Expectation" }
-                    h3 { class: "mt-2 text-xl font-semibold text-foreground", "健康期望" }
+                    p { class: "text-[11px] font-medium uppercase tracking-widest text-muted-foreground", "Expectation" }
+                    h3 { class: "mt-2 text-xl font-medium tracking-tight text-foreground", "健康期望" }
                     p { class: "mt-2 line-clamp-2 text-sm leading-relaxed text-muted-foreground", "{preview}" }
                 }
                 BlockMessage { message: message() }
-                div { class: "grid grid-cols-2 gap-2 text-sm",
+                div { class: "grid grid-cols-2 gap-3 text-sm",
                     button {
                         r#type: "button",
-                        class: "rounded-2xl border border-border bg-background px-3 py-3 text-left transition hover:bg-muted/50",
+                        class: "rounded-2xl border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-muted",
                         onclick: move |_| {
                             nav.push("/me/expectations");
                         },
-                        div { class: "font-doodle text-2xl font-semibold leading-none text-foreground", "{active}" }
-                        div { class: "mt-1 text-xs text-muted-foreground", if loading() { "loading" } else { "Active" } }
+                        div { class: "text-2xl font-medium tracking-tight text-foreground", "{active}" }
+                        div { class: "mt-1 text-[11px] uppercase tracking-widest text-muted-foreground", if loading() { "loading" } else { "Active" } }
                     }
                     button {
                         r#type: "button",
-                        class: "rounded-2xl border border-border bg-background px-3 py-3 text-left transition hover:bg-muted/50",
+                        class: "rounded-2xl border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-muted",
                         onclick: move |_| {
                             nav.push("/me/expectations");
                         },
-                        div { class: "font-doodle text-2xl font-semibold leading-none text-foreground", "{proposed}" }
-                        div { class: "mt-1 text-xs text-muted-foreground", if loading() { "loading" } else { "Proposed" } }
+                        div { class: "text-2xl font-medium tracking-tight text-foreground", "{proposed}" }
+                        div { class: "mt-1 text-[11px] uppercase tracking-widest text-muted-foreground", if loading() { "loading" } else { "Proposed" } }
                     }
                 }
             }
@@ -117,13 +117,13 @@ pub fn HealthExpectationEditBlock() -> Element {
         div { class: "flex h-full min-h-0 flex-col px-4 py-5 md:px-8 md:py-8",
             div { class: "mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-5",
                 div { class: "flex items-center justify-between gap-3",
-                    Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3", onclick: move |_| {
+                    Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", onclick: move |_| {
                         nav.push("/me");
                     },
                         ArrowLeft { size: 16 }
                         "返回"
                     }
-                    p { class: "text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Expectations" }
+                    p { class: "text-xs font-medium uppercase tracking-widest text-muted-foreground", "Expectations" }
                 }
                 div { class: "min-h-0 flex-1 overflow-y-auto pb-28 md:pb-12",
                     HealthExpectedBlock {
@@ -231,12 +231,12 @@ pub fn HealthExpectedBlock(
     };
 
     rsx! {
-        Card { class: "rounded-[2rem] border border-border bg-card px-0 py-0 shadow-none xl:sticky xl:top-8 xl:self-start",
-            CardHeader { class: "gap-3 px-5 pb-0 pt-5 md:px-6 md:pt-6",
+        Card { class: "rounded-2xl border border-border bg-card px-0 py-0 shadow-none xl:sticky xl:top-8 xl:self-start",
+            CardHeader { class: "gap-3 px-6 pb-0 pt-6",
                 div { class: "flex items-start justify-between gap-3",
                     div {
-                        p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Expectation stack" }
-                        CardTitle { class: "mt-2 flex items-center gap-2 text-2xl font-semibold",
+                        p { class: "text-[11px] font-medium uppercase tracking-widest text-muted-foreground", "Expectation stack" }
+                        CardTitle { class: "mt-2 flex items-center gap-2 text-xl font-medium tracking-tight",
                             Flame { size: 18 }
                             "健康期望"
                         }
@@ -245,17 +245,17 @@ pub fn HealthExpectedBlock(
                     div { class: "flex shrink-0 gap-2",
                         Button {
                             size: ButtonSize::IconSm,
-                            class: "rounded-full bg-foreground text-background hover:opacity-90",
+                            class: "rounded-full bg-foreground text-background shadow-xs transition-opacity hover:opacity-90",
                             onclick: open_new,
                             Plus { size: 16 }
                         }
                     }
                 }
             }
-            CardContent { class: "space-y-3 px-5 pb-5 pt-5 md:px-6 md:pb-6",
+            CardContent { class: "space-y-4 px-6 pb-6 pt-5",
                 BlockMessage { message: message() }
                 if loading() {
-                    div { class: "rounded-2xl border border-border bg-background/70 px-4 py-6 text-sm text-muted-foreground", "加载中..." }
+                    div { class: "rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground", "加载中..." }
                 } else if expectations().is_empty() {
                     EmptyExpectationCard { on_new: open_new }
                 } else {
@@ -317,24 +317,24 @@ pub fn HealthExpectedBlock(
         DialogRoot {
             open: dialog_open(),
             on_open_change: move |open| dialog_open.set(open),
-            DialogContent { class: "max-h-[min(86dvh,760px)] w-[calc(100vw-1rem)] max-w-[680px] overflow-hidden rounded-[1.5rem] border border-border bg-card p-0 text-left shadow-2xl sm:w-[calc(100vw-2rem)] sm:rounded-[2rem]",
+            DialogContent { class: "max-h-[min(86dvh,760px)] w-[calc(100vw-1rem)] max-w-[680px] overflow-hidden rounded-2xl border border-border bg-card p-0 text-left shadow-lg sm:w-[calc(100vw-2rem)]",
                 div { class: "flex min-h-0 max-h-[min(86dvh,760px)] flex-col",
-                    div { class: "flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-4 md:px-6",
+                    div { class: "flex shrink-0 items-start justify-between gap-4 border-b border-border/50 px-6 py-5",
                         div {
-                            DialogTitle {
+                            DialogTitle { class: "text-lg font-medium tracking-tight",
                                 if expectation_id().trim().is_empty() { "新增健康期望" } else { "编辑健康期望" }
                             }
-                            DialogDescription { "阶段目标与优先级。" }
+                            DialogDescription { class: "mt-1", "阶段目标与优先级。" }
                         }
                         Button {
                             variant: ButtonVariant::Ghost,
                             size: ButtonSize::IconSm,
-                            class: "rounded-full border border-border",
+                            class: "rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                             onclick: move |_| dialog_open.set(false),
                             X { size: 16 }
                         }
                     }
-                    div { class: "min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-6",
+                    div { class: "min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6",
                         LabeledInput {
                             label: "Title",
                             icon: rsx! { Flame { size: 16 } },
@@ -377,15 +377,15 @@ pub fn HealthExpectedBlock(
                             }
                         }
                     }
-                    div { class: "flex shrink-0 items-center justify-between gap-3 border-t border-border px-4 py-4 md:px-6",
+                    div { class: "flex shrink-0 items-center justify-between gap-3 border-t border-border/50 px-6 py-4",
                         Button {
                             variant: ButtonVariant::Ghost,
-                            class: "rounded-xl border border-border px-4",
+                            class: "rounded-md border border-border px-5 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                             onclick: move |_| dialog_open.set(false),
                             "取消"
                         }
                         Button {
-                            class: "rounded-xl bg-foreground px-5 text-background shadow-sm hover:opacity-90",
+                            class: "rounded-md bg-foreground px-5 py-2 text-background shadow-xs transition-opacity hover:opacity-90",
                             disabled: saving(),
                             onclick: save,
                             if saving() { "保存中..." } else { "保存" }
@@ -402,13 +402,13 @@ fn EmptyExpectationCard(on_new: EventHandler<MouseEvent>) -> Element {
     rsx! {
         button {
             r#type: "button",
-            class: "w-full rounded-[1.5rem] border border-dashed border-border bg-background/70 px-4 py-8 text-left text-sm leading-relaxed text-muted-foreground transition hover:bg-muted/50",
+            class: "group w-full rounded-2xl border border-dashed border-border bg-card px-6 py-10 text-left transition-all hover:border-foreground/30 hover:bg-card/80",
             onclick: move |event| on_new.call(event),
-            div { class: "mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background",
-                Plus { size: 18 }
+            div { class: "mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors group-hover:border-foreground/20 group-hover:text-foreground",
+                Plus { size: 20 }
             }
-            div { class: "font-medium text-foreground", "添加第一个健康期望" }
-            div { class: "mt-1", "例如减脂、控糖、改善睡眠或短期提神。" }
+            div { class: "text-base font-medium tracking-tight text-foreground", "添加第一个健康期望" }
+            div { class: "mt-1.5 text-sm leading-relaxed text-muted-foreground", "例如减脂、控糖、改善睡眠或短期提神。" }
         }
     }
 }
@@ -431,26 +431,26 @@ fn HealthExpectationMiniCard(
     let item_for_edit = item.clone();
 
     rsx! {
-        div { class: "group rounded-[1.45rem] border border-border bg-background/80 p-4 transition hover:bg-background",
+        div { class: "group rounded-xl border border-border bg-card p-4 transition-colors hover:border-foreground/20",
             button { r#type: "button", class: "w-full text-left", onclick: move |_| on_edit.call(item_for_edit.clone()),
                 div { class: "flex items-start justify-between gap-3",
                     div { class: "min-w-0",
-                        h3 { class: "line-clamp-1 text-base font-semibold tracking-[-0.2px] text-foreground", "{item.title}" }
+                        h3 { class: "line-clamp-1 text-base font-medium tracking-tight text-foreground", "{item.title}" }
                         p { class: "mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground", "{item.summary}" }
                     }
-                    span { class: format!("shrink-0 rounded-full px-3 py-1 text-xs font-semibold {}", status_badge), "{item.status}" }
+                    span { class: format!("shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors {}", status_badge), "{item.status}" }
                 }
-                div { class: "mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground",
-                    span { class: "rounded-full border border-border bg-card px-2 py-1", "{item.kind}" }
-                    span { class: "rounded-full border border-border bg-card px-2 py-1", "priority {item.priority}" }
-                    span { class: "rounded-full border border-border bg-card px-2 py-1", "{item.source}" }
+                div { class: "mt-4 flex flex-wrap gap-2 text-xs font-medium text-muted-foreground",
+                    span { class: "rounded-md border border-border bg-background px-2.5 py-1", "{item.kind}" }
+                    span { class: "rounded-md border border-border bg-background px-2.5 py-1", "priority {item.priority}" }
+                    span { class: "rounded-md border border-border bg-background px-2.5 py-1", "{item.source}" }
                 }
             }
-            div { class: "mt-3 flex gap-2",
+            div { class: "mt-4 flex gap-2",
                 Button {
                     variant: ButtonVariant::Ghost,
                     size: ButtonSize::Sm,
-                    class: "flex-1 rounded-xl border border-border",
+                    class: "flex-1 rounded-md border border-border transition-colors hover:bg-muted hover:text-foreground",
                     onclick: move |_| on_confirm.call(expectation_id.clone()),
                     disabled: is_active,
                     "Confirm"
@@ -458,7 +458,7 @@ fn HealthExpectationMiniCard(
                 Button {
                     variant: ButtonVariant::Ghost,
                     size: ButtonSize::Sm,
-                    class: "flex-1 rounded-xl border border-destructive/30 text-destructive",
+                    class: "flex-1 rounded-md border border-border text-destructive transition-colors hover:border-destructive/30 hover:bg-destructive/5",
                     onclick: move |_| on_delete.call(expectation_id_for_delete.clone()),
                     "Delete"
                 }

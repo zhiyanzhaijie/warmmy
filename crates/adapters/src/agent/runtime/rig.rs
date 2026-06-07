@@ -3,27 +3,23 @@ use std::sync::Arc;
 use app::app_error::{AppError, AppResult};
 use app::conversation::{
     AgentStatusKind, ChatMessage, ChatMessageRepositoryPort, ConversationReplyStream,
-    ConversationStreamEvent, ConversationSummary, ConversationUserInput, EphemeralImageData,
-    EphemeralImageStorePort, SaveMessageImageAttachment, SendUserMessageResult,
+    ConversationStreamEvent, ConversationSummary, ConversationUserInput, EphemeralImageStorePort,
+    SendUserMessageResult,
 };
 use app::meal::MealCommandHandler;
 use app::user::{ResolvedAIModelConfig, UserAIConfigQueryHandler, UserDietaryContextQueryHandler};
 use async_stream::stream;
-use base64::Engine;
 use futures_util::StreamExt;
 use rig::agent::{Agent, AgentBuilder, MultiTurnStreamItem, StreamingError};
 use rig::client::CompletionClient;
 use rig::completion::{CompletionModel, Message, Prompt};
 use rig::message::ToolChoice;
-use rig::message::{ImageDetail, ImageMediaType, MimeType, UserContent};
 use rig::providers::{deepseek, openai};
 use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
 use rig::tool::ToolDyn;
-use rig::OneOrMany;
-use serde_json::{to_value, Value};
 use tokio::sync::mpsc;
 
-use crate::agent::interaction::{AgentInteractionRequest, AgentInteractionSink};
+use crate::agent::interaction::AgentInteractionSink;
 use crate::agent::memory::long_term::extractor::{MemoryObservation, ModelMemoryExtractor};
 use crate::agent::memory::long_term::index::NoopMemoryIndex;
 use crate::agent::memory::long_term::pipeline::MemoryPipeline;
@@ -36,7 +32,14 @@ use crate::agent::memory::MemoryContextProvider;
 use crate::agent::memory::SessionConversationMemory;
 use crate::agent::prompts::conversation_summary::CONVERSATION_SUMMARY_PREAMBLE;
 use crate::agent::routing::classifier::{classify_route, AgentRoute};
+use crate::agent::runtime::events::{
+    initial_route_status, interaction_event, status_event, stream_event,
+};
 use crate::agent::runtime::hook::{AgentStatusSink, GuardrailHook, WarmmyPromptHook};
+use crate::agent::runtime::image::{build_prompt_message, persist_user_image_message};
+use crate::agent::runtime::persistence::{
+    is_internal_conversation_input, persist_assistant_visible_message, persist_user_visible_message,
+};
 use crate::agent::services::nutrition::curator::{ModelNutritionCurator, NutritionCurator};
 use crate::agent::services::nutrition::retriever::{
     LanceDbNutritionReferenceRetriever, NutritionReferenceRetriever,
@@ -48,7 +51,6 @@ use domain::{AICapability, UserId};
 const DEFAULT_MAX_TURNS: usize = 4;
 const DEFAULT_HISTORY_WINDOW_MESSAGES: usize = 16;
 const DEFAULT_EMBEDDING_NDIMS: usize = 1024;
-const INTERNAL_CONVERSATION_MARKER: &str = "[warmmy:internal-continuation]";
 const WARMMY_PREAMBLE: &str = r#"你是 warmmy，一个温暖、专业的对话型饮食助理。
 
 ## 自我认知
@@ -122,6 +124,28 @@ impl ConversationAgent {
                 .conversation(conversation_id)
                 .await
                 .map_err(|e| AppError::upstream(e.to_string())),
+        }
+    }
+
+    async fn stream(
+        self,
+        prompt: Message,
+        conversation_id: String,
+        wrap_ctx: StreamWrapCtx,
+    ) -> ConversationReplyStream {
+        match self {
+            Self::OpenAiResponses(agent) => {
+                let raw = agent.stream_prompt(prompt).conversation(conversation_id).await;
+                RigConversationRuntime::wrap_stream(raw, wrap_ctx)
+            }
+            Self::OpenAiCompletions(agent) => {
+                let raw = agent.stream_prompt(prompt).conversation(conversation_id).await;
+                RigConversationRuntime::wrap_stream(raw, wrap_ctx)
+            }
+            Self::DeepSeek(agent) => {
+                let raw = agent.stream_prompt(prompt).conversation(conversation_id).await;
+                RigConversationRuntime::wrap_stream(raw, wrap_ctx)
+            }
         }
     }
 }
@@ -309,7 +333,7 @@ impl RigConversationRuntime {
                     spec,
                 )))
             }
-            "openai_compatible" | "siliconflow" => {
+            "openai_compatible" | "siliconflow" | "dashscope" => {
                 let client = Self::openai_client(chat)?.completions_api();
                 Ok(ConversationAgent::OpenAiCompletions(configure_agent(
                     client.agent(model),
@@ -366,10 +390,9 @@ impl RigConversationRuntime {
             input.has_images = input.has_images(),
             "agent route selected"
         );
-        let prompt = self.build_prompt_message(&input).await?;
-        self.persist_user_image_message(user_id, session_id, &input, &memory_input)
-            .await;
-        self.persist_user_visible_message(user_id, session_id, &input, &memory_input)
+        let prompt = build_prompt_message(&self.image_store, &input).await?;
+        persist_user_image_message(&self.repo, user_id, session_id, &input, &memory_input).await;
+        persist_user_visible_message(&self.repo, user_id, session_id, &input, &memory_input)
             .await?;
 
         let rag_context = self.build_rag_agent_context(user_id, rag.as_ref()).await?;
@@ -390,8 +413,7 @@ impl RigConversationRuntime {
             .prompt(prompt, session_id)
             .await?;
 
-        self.persist_assistant_visible_message(user_id, session_id, &reply)
-            .await?;
+        persist_assistant_visible_message(&self.repo, user_id, session_id, &reply).await?;
         self.observe_memory(user_id, session_id, &memory_input, &reply)
             .await;
         self.spawn_conversation_summary_update(user_id, session_id);
@@ -461,11 +483,9 @@ impl RigConversationRuntime {
         let user_input = input.visible_text();
         let has_images = input.has_images();
         let tool_choice = tool_choice_for_route(route, &user_input);
-        let prompt = self.build_prompt_message(&input).await?;
-        self.persist_user_image_message(user_id, session_id, &input, &user_input)
-            .await;
-        self.persist_user_visible_message(user_id, session_id, &input, &user_input)
-            .await?;
+        let prompt = build_prompt_message(&self.image_store, &input).await?;
+        persist_user_image_message(&self.repo, user_id, session_id, &input, &user_input).await;
+        persist_user_visible_message(&self.repo, user_id, session_id, &input, &user_input).await?;
         let user_id_for_history = user_id.clone();
         let user_id_for_memory = user_id.clone();
         let session_id_for_history = session_id.to_string();
@@ -503,143 +523,9 @@ impl RigConversationRuntime {
             status_rx,
         };
 
-        match agent {
-            ConversationAgent::OpenAiResponses(agent) => {
-                let raw = agent
-                    .stream_prompt(prompt)
-                    .conversation(session_id.to_string())
-                    .await;
-                Ok(Self::wrap_stream(raw, wrap_ctx))
-            }
-            ConversationAgent::OpenAiCompletions(agent) => {
-                let raw = agent
-                    .stream_prompt(prompt)
-                    .conversation(session_id.to_string())
-                    .await;
-                Ok(Self::wrap_stream(raw, wrap_ctx))
-            }
-            ConversationAgent::DeepSeek(agent) => {
-                let raw = agent
-                    .stream_prompt(prompt)
-                    .conversation(session_id.to_string())
-                    .await;
-                Ok(Self::wrap_stream(raw, wrap_ctx))
-            }
-        }
+        Ok(agent.stream(prompt, session_id.to_string(), wrap_ctx).await)
     }
 
-    async fn persist_user_visible_message(
-        &self,
-        user_id: &UserId,
-        session_id: &str,
-        input: &ConversationUserInput,
-        visible_text: &str,
-    ) -> AppResult<()> {
-        let visible_text = visible_text.trim();
-        if visible_text.is_empty()
-            || input.has_images()
-            || is_internal_conversation_input(visible_text)
-        {
-            return Ok(());
-        }
-
-        self.repo
-            .save_message(user_id, session_id, "user", visible_text)
-            .await
-            .map_err(AppError::database)?;
-        Ok(())
-    }
-
-    async fn persist_assistant_visible_message(
-        &self,
-        user_id: &UserId,
-        session_id: &str,
-        reply: &str,
-    ) -> AppResult<()> {
-        let reply = reply.trim();
-        if reply.is_empty() {
-            return Ok(());
-        }
-
-        self.repo
-            .save_message(user_id, session_id, "assistant", reply)
-            .await
-            .map_err(AppError::database)?;
-        Ok(())
-    }
-
-    async fn build_prompt_message(&self, input: &ConversationUserInput) -> AppResult<Message> {
-        let images = self.load_image_data(input).await?;
-        let mut content = Vec::new();
-        let text = input.text.trim();
-
-        if !text.is_empty() || images.is_empty() {
-            content.push(UserContent::text(text.to_string()));
-        }
-
-        for image in images {
-            let media_type = ImageMediaType::from_mime_type(&image.mime_type).ok_or_else(|| {
-                AppError::validation(format!("unsupported image mime type: {}", image.mime_type))
-            })?;
-            let encoded = base64::engine::general_purpose::STANDARD.encode(image.bytes);
-            content.push(UserContent::image_base64(
-                encoded,
-                Some(media_type),
-                Some(ImageDetail::Auto),
-            ));
-        }
-
-        let content = OneOrMany::many(content)
-            .map_err(|_| AppError::validation("empty conversation input"))?;
-        Ok(Message::User { content })
-    }
-
-    async fn load_image_data(
-        &self,
-        input: &ConversationUserInput,
-    ) -> AppResult<Vec<EphemeralImageData>> {
-        let mut images = Vec::new();
-        for image in input.image_attachments() {
-            images.push(self.image_store.load_image(&image.asset_id).await?);
-        }
-        Ok(images)
-    }
-
-    async fn persist_user_image_message(
-        &self,
-        user_id: &UserId,
-        session_id: &str,
-        input: &ConversationUserInput,
-        visible_text: &str,
-    ) {
-        let attachments = input
-            .image_attachments()
-            .map(|image| SaveMessageImageAttachment {
-                mime_type: image.mime_type.clone(),
-                size_bytes: image.size_bytes,
-                width: image.width,
-                height: image.height,
-                data_url: image.preview_data_url.clone(),
-                status: if image.preview_data_url.is_some() {
-                    "available".to_string()
-                } else {
-                    "missing".to_string()
-                },
-            })
-            .collect::<Vec<_>>();
-
-        if attachments.is_empty() {
-            return;
-        }
-
-        if let Err(err) = self
-            .repo
-            .save_message_with_attachments(user_id, session_id, "user", visible_text, attachments)
-            .await
-        {
-            tracing::warn!(error = %err, "failed to persist image message attachments");
-        }
-    }
 
     fn wrap_stream<S, R>(mut raw: S, ctx: StreamWrapCtx) -> ConversationReplyStream
     where
@@ -961,7 +847,7 @@ impl RigConversationRuntime {
         prompt: String,
     ) -> AppResult<String> {
         match model.provider.as_str() {
-            "openai" | "openai_compatible" | "siliconflow" => {
+            "openai" | "openai_compatible" | "siliconflow" | "dashscope" => {
                 let client = Self::openai_client(model)?.completions_api();
                 client
                     .agent(model.model.as_str())
@@ -1015,35 +901,12 @@ impl RigConversationRuntime {
     }
 }
 
-fn initial_route_status(route: AgentRoute, has_images: bool) -> String {
-    match route {
-        AgentRoute::MealIntake => status_event(
-            AgentStatusKind::ReadingInput,
-            if has_images {
-                "我在整理图片里的用餐线索。"
-            } else {
-                "我在整理这次用餐线索。"
-            },
-        ),
-        AgentRoute::Chat if has_images => {
-            status_event(AgentStatusKind::ReadingInput, "我在认真看看这张图片。")
-        }
-        AgentRoute::Chat => status_event(AgentStatusKind::Thinking, "我在准备这次对话的上下文。"),
-    }
-}
 
 fn tool_choice_for_route(route: AgentRoute, _input: &str) -> ToolChoice {
     match route {
-        AgentRoute::MealIntake => ToolChoice::Required,
+        AgentRoute::MealIntake => ToolChoice::Auto,
         AgentRoute::Chat => ToolChoice::Auto,
     }
-}
-
-fn status_event(kind: AgentStatusKind, label: &str) -> String {
-    stream_event(ConversationStreamEvent::Status {
-        kind,
-        label: label.to_string(),
-    })
 }
 
 fn build_conversation_summary_prompt(previous_summary: &str, window: &[ChatMessage]) -> String {
@@ -1071,40 +934,3 @@ fn build_conversation_summary_prompt(previous_summary: &str, window: &[ChatMessa
     )
 }
 
-fn interaction_event(interaction: AgentInteractionRequest) -> String {
-    let interaction = to_value(interaction).unwrap_or(Value::Null);
-    stream_event(ConversationStreamEvent::InteractionRequested { interaction })
-}
-
-fn stream_event(event: ConversationStreamEvent) -> String {
-    match serde_json::to_string(&event) {
-        Ok(line) => line + "\n",
-        Err(err) => {
-            tracing::warn!(error = %err, "failed to serialize conversation stream event");
-            String::new()
-        }
-    }
-}
-
-async fn persist_assistant_visible_message(
-    repo: &Arc<dyn ChatMessageRepositoryPort>,
-    user_id: &UserId,
-    session_id: &str,
-    reply: &str,
-) -> AppResult<()> {
-    let reply = reply.trim();
-    if reply.is_empty() {
-        return Ok(());
-    }
-
-    repo.save_message(user_id, session_id, "assistant", reply)
-        .await
-        .map_err(AppError::database)?;
-    Ok(())
-}
-
-fn is_internal_conversation_input(text: &str) -> bool {
-    text.trim_start().starts_with(INTERNAL_CONVERSATION_MARKER)
-        || text.starts_with("用户已在界面确认一条待确认用餐记录。")
-        || text.starts_with("用户已在界面取消一条待确认用餐记录。")
-}

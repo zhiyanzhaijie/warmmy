@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use app::user::{
@@ -11,7 +12,7 @@ use domain::{
     AICapability, AIProviderKind, AppPreferences, DietaryPreferences, DiningCompanion,
     DiningCompanionId, ExpectationSource, HealthExpectationId, HealthExpectationKind,
     HealthExpectationStatus, UserAIProvider, UserAIRoute, UserHealthExpectation, UserId,
-    UserPreferences, UserProfile,
+    UserApiKey, UserPreferences, UserProfile,
 };
 
 use crate::crypto::SharedSecretCipher;
@@ -24,6 +25,14 @@ use crate::persistence::sqlite::models::{
 pub struct SqliteUserRepo {
     db: Arc<Mutex<toasty::Db>>,
     secret_cipher: SharedSecretCipher,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct UserApiKeyScope {
+    kind: String,
+    user_id: String,
+    api_key_id: String,
+    name: String,
 }
 
 impl SqliteUserRepo {
@@ -305,6 +314,32 @@ impl SqliteUserRepo {
             "blood_sugar_control" => HealthExpectationKind::BloodSugarControl,
             other => HealthExpectationKind::Custom(other.to_string()),
         }
+    }
+
+    fn build_user_api_key_scope(api_key: &UserApiKey) -> Result<String, String> {
+        serde_json::to_string(&UserApiKeyScope {
+            kind: "user_api_key".to_string(),
+            user_id: api_key.user_id.as_str().to_string(),
+            api_key_id: api_key.id.clone(),
+            name: api_key.name.clone(),
+        })
+        .map_err(|err| err.to_string())
+    }
+
+    fn row_to_user_api_key(row: UserSecretRow) -> Result<Option<UserApiKey>, String> {
+        let Ok(scope) = serde_json::from_str::<UserApiKeyScope>(&row.scope) else {
+            return Ok(None);
+        };
+        if scope.kind != "user_api_key" {
+            return Ok(None);
+        }
+        Ok(Some(UserApiKey {
+            id: scope.api_key_id,
+            user_id: UserId::parse(&scope.user_id).map_err(|err| err.to_string())?,
+            name: scope.name,
+            secret_ref: row.id,
+            updated_at: row.updated_at,
+        }))
     }
 }
 
@@ -596,6 +631,20 @@ impl UserAIConfigRepositoryPort for SqliteUserRepo {
         }
         Ok(())
     }
+
+    async fn delete_route(&self, user_id: &UserId, route_id: &str) -> Result<(), String> {
+        let mut db = self.db.lock().await;
+        let row = UserAIRouteRow::get_by_id(&mut *db, route_id)
+            .await
+            .map_err(|err| err.to_string())?;
+        if row.user_id != user_id.as_str() {
+            return Err("ai route does not belong to user".to_string());
+        }
+        row.delete()
+            .exec(&mut *db)
+            .await
+            .map_err(|err| err.to_string())
+    }
 }
 
 #[async_trait]
@@ -652,5 +701,60 @@ impl SecretStorePort for SqliteUserRepo {
             Err(err) if err.is_record_not_found() => Ok(()),
             Err(err) => Err(err.to_string()),
         }
+    }
+
+    async fn list_user_api_keys(&self, user_id: &UserId) -> Result<Vec<UserApiKey>, String> {
+        let mut db = self.db.lock().await;
+        let rows = UserSecretRow::filter(UserSecretRow::fields().id().ne(""))
+            .exec(&mut *db)
+            .await
+            .map_err(|err| err.to_string())?;
+
+        let mut api_keys = Vec::new();
+        for row in rows {
+            if let Some(api_key) = Self::row_to_user_api_key(row)? {
+                if api_key.user_id == *user_id {
+                    api_keys.push(api_key);
+                }
+            }
+        }
+        api_keys.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(api_keys)
+    }
+
+    async fn save_user_api_key(&self, api_key: &UserApiKey, value: &str) -> Result<(), String> {
+        let encrypted_value = self.secret_cipher.encrypt(value)?;
+        let scope = Self::build_user_api_key_scope(api_key)?;
+        let mut db = self.db.lock().await;
+        match UserSecretRow::get_by_id(&mut *db, &api_key.secret_ref).await {
+            Ok(mut current) => {
+                current
+                    .update()
+                    .scope(scope)
+                    .secret_value(encrypted_value.clone())
+                    .updated_at(api_key.updated_at.clone())
+                    .exec(&mut *db)
+                    .await
+                    .map_err(|err| err.to_string())?;
+            }
+            Err(err) if err.is_record_not_found() => {
+                toasty::create!(UserSecretRow {
+                    id: api_key.secret_ref.clone(),
+                    scope: scope,
+                    secret_value: encrypted_value,
+                    updated_at: api_key.updated_at.clone(),
+                })
+                .exec(&mut *db)
+                .await
+                .map_err(|create_err| create_err.to_string())?;
+            }
+            Err(err) => return Err(err.to_string()),
+        }
+        Ok(())
+    }
+
+    async fn delete_user_api_key(&self, user_id: &UserId, api_key_id: &str) -> Result<(), String> {
+        let secret_ref = format!("secret:user:{}:api_key:{api_key_id}", user_id.as_str());
+        self.delete_secret(&secret_ref).await
     }
 }

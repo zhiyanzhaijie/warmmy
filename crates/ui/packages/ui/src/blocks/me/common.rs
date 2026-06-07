@@ -23,9 +23,9 @@ pub fn StatPill(
     #[props(default)] onclick: Option<EventHandler<MouseEvent>>,
 ) -> Element {
     let class = if onclick.is_some() {
-        "rounded-[1.1rem] border border-border bg-card px-3 py-3 transition hover:bg-muted/50"
+        "rounded-2xl border border-border bg-card px-4 py-3 transition-colors hover:bg-muted"
     } else {
-        "rounded-[1.1rem] border border-border bg-card px-3 py-3"
+        "rounded-2xl border border-border bg-card px-4 py-3"
     };
 
     rsx! {
@@ -38,8 +38,8 @@ pub fn StatPill(
                     action.call(event);
                 }
             },
-            div { class: "font-doodle text-2xl font-semibold leading-none tracking-[-0.6px] text-foreground", "{value}" }
-            div { class: "mt-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground", "{label}" }
+            div { class: "text-2xl font-medium tracking-tight text-foreground", "{value}" }
+            div { class: "mt-1 text-[11px] font-medium uppercase tracking-widest text-muted-foreground", "{label}" }
         }
     }
 }
@@ -48,7 +48,7 @@ pub fn StatPill(
 pub fn BlockMessage(message: String) -> Element {
     rsx! {
         if !message.is_empty() {
-            div { class: "rounded-2xl border border-border bg-background/70 px-4 py-3 text-sm text-foreground", "{message}" }
+            div { class: "rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground", "{message}" }
         }
     }
 }
@@ -71,9 +71,9 @@ pub fn LabeledInput(
 ) -> Element {
     rsx! {
         label { class: "flex flex-col gap-2",
-            span { class: "flex items-center gap-2 text-sm font-medium text-foreground/80", {icon} "{label}" }
+            span { class: "flex items-center gap-2 text-sm font-medium text-foreground", {icon} "{label}" }
             Input {
-                class: "rounded-xl border border-border bg-background px-4 py-3 text-sm shadow-none focus:shadow-md",
+                class: "rounded-md border border-border bg-card px-3 py-2.5 text-sm shadow-none transition-all hover:border-foreground/20 focus:border-foreground/40 focus:ring-4 focus:ring-foreground/5",
                 value: value(),
                 placeholder,
                 oninput: move |e: FormEvent| value.set(e.value()),
@@ -91,9 +91,9 @@ pub fn LabeledTextarea(
 ) -> Element {
     rsx! {
         label { class: "flex flex-col gap-2",
-            span { class: "flex items-center gap-2 text-sm font-medium text-foreground/80", {icon} "{label}" }
+            span { class: "flex items-center gap-2 text-sm font-medium text-foreground", {icon} "{label}" }
             textarea {
-                class: "min-h-28 rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground outline-none placeholder:text-muted-foreground focus:shadow-md",
+                class: "min-h-28 rounded-md border border-border bg-card px-3 py-2.5 text-sm leading-relaxed text-foreground outline-none transition-all placeholder:text-muted-foreground hover:border-foreground/20 focus:border-foreground/40 focus:ring-4 focus:ring-foreground/5",
                 value: value(),
                 placeholder,
                 oninput: move |e: FormEvent| value.set(e.value()),
@@ -112,19 +112,19 @@ pub fn LabeledChoiceGroup(
 ) -> Element {
     rsx! {
         div { class: "flex flex-col gap-2",
-            span { class: "flex items-center gap-2 text-sm font-medium text-foreground/80", {icon} "{label}" }
-            div { class: "flex flex-wrap gap-2 rounded-[1.25rem] border border-border bg-background p-2",
+            span { class: "flex items-center gap-2 text-sm font-medium text-foreground", {icon} "{label}" }
+            div { class: "flex flex-wrap gap-2 rounded-xl border border-border bg-card p-2",
                 for option in options {
                     Button {
                         key: "{label}:{option.value}",
                         variant: ButtonVariant::Ghost,
                         size: ButtonSize::Sm,
                         class: format!(
-                            "rounded-xl px-3 {}",
+                            "rounded-md px-3 transition-colors {}",
                             if value() == option.value {
-                                "bg-foreground text-background hover:opacity-90"
+                                "bg-foreground text-background shadow-xs hover:opacity-90"
                             } else {
-                                "border border-border text-foreground/80 hover:bg-muted"
+                                "border border-transparent text-muted-foreground hover:bg-muted hover:text-foreground"
                             }
                         ),
                         onclick: move |_| {
@@ -154,17 +154,17 @@ pub fn TagListInput(
 ) -> Element {
     rsx! {
         div { class: "flex flex-col gap-2",
-            span { class: "flex items-center gap-2 text-sm font-medium text-foreground/80", {icon} "{label}" }
-            div { class: "rounded-[1.25rem] border border-border bg-background p-3",
+            span { class: "flex items-center gap-2 text-sm font-medium text-foreground", {icon} "{label}" }
+            div { class: "rounded-xl border border-border bg-card p-3",
                 div { class: "mb-3 flex min-h-8 flex-wrap gap-2",
                     if values.is_empty() {
-                        span { class: "rounded-full border border-dashed border-border px-3 py-1 text-xs text-muted-foreground", "暂无条目" }
+                        span { class: "rounded-md border border-dashed border-border px-3 py-1 text-xs text-muted-foreground", "暂无条目" }
                     } else {
                         for item in values {
                             button {
                                 key: "{item}",
                                 r#type: "button",
-                                class: "inline-flex items-center gap-2 rounded-full bg-foreground px-3 py-1 text-xs font-medium text-background shadow-sm",
+                                class: "inline-flex items-center gap-2 rounded-md bg-foreground px-3 py-1 text-xs font-medium text-background shadow-xs transition-opacity hover:opacity-90",
                                 onclick: {
                                     let item = item.clone();
                                     move |_| onremove.call(item.clone())
@@ -177,7 +177,7 @@ pub fn TagListInput(
                 }
                 div { class: "flex flex-col gap-2 sm:flex-row sm:items-center",
                     Input {
-                        class: "min-w-0 flex-1 rounded-xl border border-border bg-card px-4 py-2.5 text-sm shadow-none",
+                        class: "min-w-0 flex-1 rounded-md border border-border bg-card px-3 py-2 text-sm shadow-none transition-all hover:border-foreground/20 focus:border-foreground/40 focus:ring-4 focus:ring-foreground/5",
                         value: draft(),
                         placeholder,
                         oninput: move |e: FormEvent| draft.set(e.value()),
@@ -191,13 +191,13 @@ pub fn TagListInput(
                     Button {
                         variant: ButtonVariant::Ghost,
                         size: ButtonSize::IconSm,
-                        class: "shrink-0 rounded-xl border border-border",
+                        class: "shrink-0 rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
                         onclick: move |_| oncommit.call(()),
                         Plus { size: 16 }
                     }
                 }
             }
-            p { class: "px-1 text-xs leading-relaxed text-muted-foreground/75", "支持使用英文逗号、中文逗号、分号或换行一次输入多个条目。" }
+            p { class: "px-1 text-xs leading-relaxed text-muted-foreground", "支持使用中英文逗号、分号或回车确认输入多个条目。" }
         }
     }
 }

@@ -59,7 +59,7 @@ impl NutritionCurator for ModelNutritionCurator {
                     .await
                     .map_err(|err| AppError::upstream(err.to_string()))?
             }
-            "openai_compatible" | "siliconflow" => {
+            "openai_compatible" | "siliconflow" | "dashscope" => {
                 let client = openai::Client::builder()
                     .api_key(&self.config.api_key)
                     .base_url(&self.config.base_url)

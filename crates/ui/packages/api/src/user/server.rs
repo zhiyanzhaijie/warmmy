@@ -51,8 +51,17 @@ pub struct UserAIProviderDTO {
     pub kind: String,
     pub name: String,
     pub base_url: String,
+    pub api_key_ref: Option<String>,
     pub has_api_key: bool,
     pub enabled: bool,
+    pub updated_at: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct UserAIKeyDTO {
+    pub id: String,
+    pub name: String,
+    pub secret_ref: String,
     pub updated_at: String,
 }
 
@@ -79,6 +88,7 @@ pub struct UserAICapabilityStatusDTO {
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct UserAIConfigDTO {
+    pub api_keys: Vec<UserAIKeyDTO>,
     pub providers: Vec<UserAIProviderDTO>,
     pub routes: Vec<UserAIRouteDTO>,
     pub statuses: Vec<UserAICapabilityStatusDTO>,
@@ -90,8 +100,15 @@ pub struct SaveUserAIProviderInput {
     pub kind: String,
     pub name: String,
     pub base_url: String,
-    pub api_key: Option<String>,
+    pub api_key_ref: Option<String>,
     pub enabled: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
+pub struct SaveUserAIKeyInput {
+    pub id: Option<String>,
+    pub name: String,
+    pub api_key: Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
@@ -511,6 +528,7 @@ pub async fn get_user_ai_config(user_id: String) -> Result<UserAIConfigDTO, Serv
         .map_err(api_error)?;
 
     Ok(UserAIConfigDTO {
+        api_keys: snapshot.api_keys.into_iter().map(ai_key_to_dto).collect(),
         providers: snapshot
             .providers
             .into_iter()
@@ -538,8 +556,50 @@ pub async fn save_user_ai_provider(
             kind,
             name: input.name,
             base_url: input.base_url,
-            api_key: input.api_key,
+            api_key_ref: input.api_key_ref,
             enabled: input.enabled,
+        })
+        .await
+        .map_err(api_error)?;
+
+    get_user_ai_config(user_id.to_string()).await
+}
+
+#[post("/api/user/ai/keys/save", state: State)]
+pub async fn save_user_ai_key(
+    user_id: String,
+    input: SaveUserAIKeyInput,
+) -> Result<UserAIConfigDTO, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    state
+        .0
+        .user
+        .ai_config_command
+        .save_api_key(app::user::SaveUserApiKeyCommand {
+            user_id: user_id.clone(),
+            api_key_id: input.id,
+            name: input.name,
+            api_key: input.api_key,
+        })
+        .await
+        .map_err(api_error)?;
+
+    get_user_ai_config(user_id.to_string()).await
+}
+
+#[post("/api/user/ai/keys/delete", state: State)]
+pub async fn delete_user_ai_key(
+    user_id: String,
+    api_key_id: String,
+) -> Result<UserAIConfigDTO, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    state
+        .0
+        .user
+        .ai_config_command
+        .delete_api_key(app::user::DeleteUserApiKeyCommand {
+            user_id: user_id.clone(),
+            api_key_id,
         })
         .await
         .map_err(api_error)?;
@@ -560,6 +620,26 @@ pub async fn delete_user_ai_provider(
         .delete_provider(app::user::DeleteUserAIProviderCommand {
             user_id: user_id.clone(),
             provider_id,
+        })
+        .await
+        .map_err(api_error)?;
+
+    get_user_ai_config(user_id.to_string()).await
+}
+
+#[post("/api/user/ai/routes/delete", state: State)]
+pub async fn delete_user_ai_route(
+    user_id: String,
+    route_id: String,
+) -> Result<UserAIConfigDTO, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    state
+        .0
+        .user
+        .ai_config_command
+        .delete_route(app::user::DeleteUserAIRouteCommand {
+            user_id: user_id.clone(),
+            route_id,
         })
         .await
         .map_err(api_error)?;
@@ -600,9 +680,19 @@ fn ai_provider_to_dto(provider: domain::UserAIProvider) -> UserAIProviderDTO {
         kind: provider.kind.as_str().to_string(),
         name: provider.name,
         base_url: provider.base_url,
+        api_key_ref: provider.secret_ref.clone(),
         has_api_key,
         enabled: provider.enabled,
         updated_at: provider.updated_at,
+    }
+}
+
+fn ai_key_to_dto(api_key: domain::UserApiKey) -> UserAIKeyDTO {
+    UserAIKeyDTO {
+        id: api_key.id,
+        name: api_key.name,
+        secret_ref: api_key.secret_ref,
+        updated_at: api_key.updated_at,
     }
 }
 

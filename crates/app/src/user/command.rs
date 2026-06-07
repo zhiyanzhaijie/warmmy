@@ -350,14 +350,33 @@ pub struct SaveUserAIProviderCommand {
     pub kind: domain::AIProviderKind,
     pub name: String,
     pub base_url: String,
-    pub api_key: Option<String>,
+    pub api_key_ref: Option<String>,
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SaveUserApiKeyCommand {
+    pub user_id: UserId,
+    pub api_key_id: Option<String>,
+    pub name: String,
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DeleteUserApiKeyCommand {
+    pub user_id: UserId,
+    pub api_key_id: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct DeleteUserAIProviderCommand {
     pub user_id: UserId,
     pub provider_id: String,
+}
+#[derive(Debug, Clone)]
+pub struct DeleteUserAIRouteCommand {
+    pub user_id: UserId,
+    pub route_id: String,
 }
 
 #[derive(Debug, Clone)]
@@ -422,21 +441,25 @@ impl UserAIConfigCommandHandler {
             .into_iter()
             .find(|item| item.id == provider_id);
 
-        let secret_ref = match input.api_key {
-            Some(api_key) if !api_key.trim().is_empty() => Some(
-                self.secrets
-                    .put_secret(
-                        &format!(
-                            "user:{}:ai_provider:{}",
-                            input.user_id.as_str(),
-                            provider_id
-                        ),
-                        api_key.trim(),
-                    )
-                    .await
-                    .map_err(AppError::upstream)?,
+        let api_keys = self
+            .secrets
+            .list_user_api_keys(&input.user_id)
+            .await
+            .map_err(AppError::upstream)?;
+        let secret_ref = match input
+            .api_key_ref
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(secret_ref) => Some(
+                api_keys
+                    .iter()
+                    .find(|item| item.secret_ref == secret_ref)
+                    .map(|item| item.secret_ref.clone())
+                    .ok_or_else(|| AppError::validation(format!("api key not found: {secret_ref}")))?,
             ),
-            _ => existing.and_then(|provider| provider.secret_ref),
+            None => existing.and_then(|provider| provider.secret_ref),
         };
 
         let provider = domain::UserAIProvider {
@@ -460,24 +483,16 @@ impl UserAIConfigCommandHandler {
 
     pub async fn delete_provider(&self, input: DeleteUserAIProviderCommand) -> AppResult<()> {
         self.ensure_profile_exists(&input.user_id).await?;
-        let providers = self
-            .repo
-            .list_providers(&input.user_id)
-            .await
-            .map_err(AppError::upstream)?;
-        if let Some(provider) = providers
-            .into_iter()
-            .find(|item| item.id == input.provider_id)
-        {
-            if let Some(secret_ref) = provider.secret_ref {
-                self.secrets
-                    .delete_secret(&secret_ref)
-                    .await
-                    .map_err(AppError::upstream)?;
-            }
-        }
         self.repo
             .delete_provider(&input.user_id, &input.provider_id)
+            .await
+            .map_err(AppError::upstream)
+    }
+
+    pub async fn delete_route(&self, input: DeleteUserAIRouteCommand) -> AppResult<()> {
+        self.ensure_profile_exists(&input.user_id).await?;
+        self.repo
+            .delete_route(&input.user_id, &input.route_id)
             .await
             .map_err(AppError::upstream)
     }
@@ -553,6 +568,90 @@ impl UserAIConfigCommandHandler {
             .map_err(AppError::upstream)?;
 
         Ok(route)
+    }
+
+    pub async fn save_api_key(&self, input: SaveUserApiKeyCommand) -> AppResult<domain::UserApiKey> {
+        self.ensure_profile_exists(&input.user_id).await?;
+
+        let now = chrono::Utc::now().to_rfc3339();
+        let api_key_id = input.api_key_id.unwrap_or_else(|| {
+            format!(
+                "ai-key-{}",
+                chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default()
+            )
+        });
+        let name = input.name.trim().to_string();
+        if name.is_empty() {
+            return Err(AppError::validation("api key name is empty"));
+        }
+
+        let existing = self
+            .secrets
+            .list_user_api_keys(&input.user_id)
+            .await
+            .map_err(AppError::upstream)?
+            .into_iter()
+            .find(|item| item.id == api_key_id);
+        let secret_ref = format!("secret:user:{}:api_key:{api_key_id}", input.user_id.as_str());
+        let secret_value = match input.api_key {
+            Some(value) if !value.trim().is_empty() => value.trim().to_string(),
+            _ => {
+                let existing = existing.ok_or_else(|| {
+                    AppError::validation("new api key requires a plaintext value")
+                })?;
+                self.secrets
+                    .get_secret(&existing.secret_ref)
+                    .await
+                    .map_err(AppError::upstream)?
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or_else(|| AppError::validation("existing api key payload is missing"))?
+            }
+        };
+
+        let api_key = domain::UserApiKey {
+            id: api_key_id,
+            user_id: input.user_id,
+            name,
+            secret_ref,
+            updated_at: now,
+        };
+
+        self.secrets
+            .save_user_api_key(&api_key, &secret_value)
+            .await
+            .map_err(AppError::upstream)?;
+
+        Ok(api_key)
+    }
+
+    pub async fn delete_api_key(&self, input: DeleteUserApiKeyCommand) -> AppResult<()> {
+        self.ensure_profile_exists(&input.user_id).await?;
+
+        let api_key = self
+            .secrets
+            .list_user_api_keys(&input.user_id)
+            .await
+            .map_err(AppError::upstream)?
+            .into_iter()
+            .find(|item| item.id == input.api_key_id)
+            .ok_or_else(|| AppError::NotFound(format!("api key not found: {}", input.api_key_id)))?;
+
+        let providers = self
+            .repo
+            .list_providers(&input.user_id)
+            .await
+            .map_err(AppError::upstream)?;
+        if providers
+            .iter()
+            .any(|provider| provider.secret_ref.as_deref() == Some(api_key.secret_ref.as_str()))
+        {
+            return Err(AppError::validation("api key is still referenced by a provider"));
+        }
+
+        self.secrets
+            .delete_user_api_key(&input.user_id, &input.api_key_id)
+            .await
+            .map_err(AppError::upstream)
     }
 
     async fn ensure_profile_exists(&self, user_id: &UserId) -> AppResult<()> {

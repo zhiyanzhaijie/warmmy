@@ -75,13 +75,13 @@ pub fn ProfileSummaryBlock(
                         }
                     }
 
-                    div { class: "relative z-10 grid min-h-0 grid-cols-3 gap-2 rounded-[1.75rem] border border-border bg-background/70 p-2 md:gap-3 md:p-3",
+                    div { class: "relative z-10 grid min-h-0 grid-cols-3 gap-2 rounded-2xl border border-border bg-card p-2 md:gap-3 md:p-3",
                         ProfileEntry {
                             icon: rsx! { Utensils { size: 34 } },
                             value: preference_count.to_string(),
                             label: "饮食偏好".to_string(),
                             description: "口味与避忌".to_string(),
-                            accent_class: "text-primary".to_string(),
+                            accent_class: "text-foreground".to_string(),
                             onclick: move |_| {
                                 nav.push("/me/preferences");
                             },
@@ -101,7 +101,7 @@ pub fn ProfileSummaryBlock(
                             value: companion_count.to_string(),
                             label: "一起吃饭".to_string(),
                             description: "相关的人".to_string(),
-                            accent_class: "text-accent-foreground".to_string(),
+                            accent_class: "text-foreground/80".to_string(),
                             onclick: move |_| {
                                 nav.push("/me/companions");
                             },
@@ -128,26 +128,26 @@ fn ProfileIdentityPanel(
     rsx! {
         div { class: "flex min-w-0 flex-col gap-4 overflow-hidden",
             div { class: "relative h-20 w-20 shrink-0 md:h-24 md:w-24",
-                div { class: "flex h-full w-full items-center justify-center rounded-[1.75rem] border border-border bg-foreground font-doodle text-5xl font-semibold text-background shadow-sm",
+                div { class: "flex h-full w-full items-center justify-center rounded-2xl border border-border bg-foreground text-5xl font-medium tracking-tight text-background shadow-xs",
                     "{avatar_initial}"
                 }
                 Button {
-                    class: "absolute -bottom-2 -right-2 rounded-full border border-border bg-card p-0 text-foreground shadow-sm hover:bg-muted",
+                    class: "absolute -bottom-2 -right-2 rounded-full border border-border bg-card p-2 text-foreground transition-colors hover:bg-muted",
                     disabled: loading,
                     onclick: move |_| {
                         nav.push("/me/profile");
                     },
-                    Pencil { size: 15 }
+                    Pencil { size: 14 }
                 }
             }
             div { class: "flex flex-wrap items-center gap-2",
-                div { class: "inline-flex items-center gap-2 rounded-full border border-border bg-background/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground",
+                div { class: "inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs font-medium uppercase tracking-widest text-muted-foreground",
                     UserRound { size: 14 }
                     "Owner · #{user_id}"
                 }
             }
             Button {
-                class: "w-fit rounded-full bg-foreground px-3 py-1 text-xs text-background shadow-sm hover:opacity-90",
+                class: "w-fit rounded-full bg-foreground px-4 py-1.5 text-xs text-background shadow-xs transition-opacity hover:opacity-90",
                 onclick: move |_| {
                     nav.push("/warmmy");
                 },
@@ -156,13 +156,13 @@ fn ProfileIdentityPanel(
             }
             div { class: "flex flex-wrap gap-2 text-xs text-muted-foreground",
                 if !gender.trim().is_empty() {
-                    span { class: "rounded-full border border-border bg-background px-3 py-1", "{gender}" }
+                    span { class: "rounded-full border border-border bg-card px-3 py-1", "{gender}" }
                 }
                 if !age.trim().is_empty() {
-                    span { class: "rounded-full border border-border bg-background px-3 py-1", "{age} 岁" }
+                    span { class: "rounded-full border border-border bg-card px-3 py-1", "{age} 岁" }
                 }
             }
-            h2 { class: "font-doodle text-4xl font-semibold leading-tight text-foreground md:text-5xl", "{display_name}" }
+            h2 { class: "text-4xl font-medium tracking-tight text-foreground md:text-5xl", "{display_name}" }
             p {
                 class: "max-w-3xl whitespace-normal break-words text-sm leading-relaxed text-muted-foreground md:text-base",
                 "{intro}"
@@ -297,20 +297,20 @@ fn ProfileEntry(
     onclick: EventHandler<MouseEvent>,
 ) -> Element {
     let icon_class = format!(
-        "grid h-14 w-14 place-items-center rounded-[1.15rem] border border-border bg-background/75 transition group-hover:-translate-y-0.5 group-hover:bg-card md:h-16 md:w-16 {accent_class}"
+        "grid h-14 w-14 place-items-center rounded-2xl border border-border bg-card transition-colors group-hover:bg-muted md:h-16 md:w-16 {accent_class}"
     );
 
     rsx! {
         button {
             r#type: "button",
-            class: "group flex min-h-[8.25rem] flex-col items-center justify-center rounded-[1.35rem] border border-border bg-card/80 px-2 py-4 text-center transition hover:-translate-y-0.5 hover:bg-card md:min-h-[10rem] md:px-4 md:py-5",
+            class: "group flex min-h-[8.25rem] flex-col items-center justify-center rounded-2xl border border-border bg-card/80 px-2 py-4 text-center transition-all hover:bg-card md:min-h-[10rem] md:px-4 md:py-5",
             onclick: move |event| onclick.call(event),
             div { class: "{icon_class}",
                 {icon}
             }
             div { class: "mt-3 min-w-0 w-full",
-                div { class: "font-doodle text-xl font-semibold leading-none text-foreground md:text-2xl", "{value}" }
-                div { class: "mt-1 truncate text-[13px] font-semibold leading-tight text-foreground md:text-sm", "{label}" }
+                div { class: "text-xl font-medium tracking-tight text-foreground md:text-2xl", "{value}" }
+                div { class: "mt-1 truncate text-[13px] font-medium leading-tight text-foreground md:text-sm", "{label}" }
                 div { class: "mt-1 truncate text-[11px] leading-tight text-muted-foreground md:text-xs",
                     "{description}"
                 }
@@ -394,23 +394,23 @@ fn ProfileEditor(user_id: String) -> Element {
 
     rsx! {
         div { class: "flex items-center justify-between gap-3",
-            Button { variant: crate::components::ui::button::ButtonVariant::Ghost, class: "rounded-full border border-border px-3", onclick: move |_| {
+            Button { variant: crate::components::ui::button::ButtonVariant::Ghost, class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", onclick: move |_| {
                 nav.push("/me");
             },
                 ArrowLeft { size: 16 }
                 "返回"
             }
-            p { class: "text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Owner profile" }
+            p { class: "text-xs font-medium uppercase tracking-widest text-muted-foreground", "Owner profile" }
         }
-        Card { class: "rounded-[2rem] border border-border bg-card px-0 py-0 shadow-none",
-            CardHeader { class: "gap-3 px-5 pb-0 pt-5 md:px-6 md:pt-6",
-                CardTitle { class: "flex items-center gap-2 text-2xl font-semibold",
+        Card { class: "rounded-2xl border border-border bg-card px-0 py-0 shadow-none",
+            CardHeader { class: "gap-3 px-6 pb-2 pt-6",
+                CardTitle { class: "flex items-center gap-2 text-xl font-medium tracking-tight",
                     UserRound { size: 20 }
                     "我的资料"
                 }
                 p { class: "text-sm leading-relaxed text-muted-foreground", "这些资料会作为 owner 的长期身份信息，被本机 agent 读取。" }
             }
-            CardContent { class: "space-y-4 px-5 pb-5 pt-5 md:px-6 md:pb-6",
+            CardContent { class: "space-y-6 px-6 pb-6 pt-4",
                 BlockMessage { message: message() }
                 div { class: "grid grid-cols-1 gap-3 md:grid-cols-2",
                     LabeledInput { label: "Display name", icon: rsx! { UserRound { size: 16 } }, value: display_name, placeholder: "屋主" }
@@ -418,7 +418,7 @@ fn ProfileEditor(user_id: String) -> Element {
                 }
                 LabeledInput { label: "Age", icon: rsx! { UserRound { size: 16 } }, value: age, placeholder: "可选，例如 32" }
                 LabeledTextarea { label: "Introduction", icon: rsx! { UserRound { size: 16 } }, value: introduction, placeholder: "例如：经常在家做饭，偏好轻食和中餐。" }
-                Button { class: "w-full rounded-xl bg-foreground text-background shadow-sm hover:opacity-90 sm:w-auto", disabled: saving() || loading(), onclick: save_profile,
+                Button { class: "w-full rounded-md bg-foreground px-5 py-2 text-background shadow-xs transition-opacity hover:opacity-90 sm:w-auto", disabled: saving() || loading(), onclick: save_profile,
                     Save { size: 16 }
                     if saving() { "保存中..." } else { "保存用户信息" }
                 }
