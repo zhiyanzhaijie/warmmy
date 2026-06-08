@@ -2,6 +2,7 @@ mod chat_view;
 mod home_view;
 mod me_view;
 mod travel_view;
+mod warmmy_pisa_svg;
 mod warmmy_view;
 
 pub use chat_view::{ChatDetailView, ChatView};

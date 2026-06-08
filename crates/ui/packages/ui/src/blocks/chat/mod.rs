@@ -5,12 +5,12 @@ mod sessions;
 mod state;
 mod stream;
 
-use dioxus::prelude::*;
-use dioxus_icons::lucide::{ArrowLeft, Check};
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::hooks::use_IO;
 use crate::providers::current_user_id;
 use crate::today_session_id;
+use dioxus::prelude::*;
+use dioxus_icons::lucide::{ArrowLeft, Check};
 
 use api::conversation;
 use api::meal;
@@ -18,9 +18,7 @@ use api::meal;
 use composer::{ChatComposer, SendChatMessage};
 use messages::ChatMessageList;
 use sessions::SessionStrip;
-use stream::{
-    activate_session, append_pending_meal_messages, set_active_session_messages,
-};
+use stream::{activate_session, append_pending_meal_messages, set_active_session_messages};
 
 pub use state::{
     ChatActionContext, ChatContext, ChatMessage, ChatMessageAction, FinalizeConversationDay,
@@ -92,9 +90,9 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
 
     rsx! {
         div {
-            class: "h-full min-h-0 overflow-hidden bg-background md:px-4 md:py-4",
+            class: "h-full min-h-0 overflow-hidden bg-transparent md:px-4 md:py-4",
             div {
-                class: "mx-auto flex h-full min-h-0 max-w-5xl flex-col overflow-hidden bg-background md:rounded-[1.5rem] md:bg-card/35",
+                class: "mx-auto flex h-full min-h-0 max-w-5xl flex-col overflow-hidden bg-transparent md:rounded-[1.5rem] md:bg-card/35",
                 ChatHeader {
                     user_id: user_id.clone(),
                     session_id: session_id.clone(),
@@ -272,59 +270,56 @@ fn load_session_history(
             &history_session_id,
             &history_is_detail_route,
         ),
-        move |(request_user_id, sid, is_detail_route)| {
-            async move {
-                if sid.is_empty() {
-                    return None;
-                }
-
-                let pending_meals = meal::list_pending_meals(request_user_id.clone(), sid.clone())
-                    .await
-                    .unwrap_or_default();
-
-                let history =
-                    match conversation::get_session_history(request_user_id.clone(), sid.clone())
-                        .await
-                    {
-                        Ok(history) => Some(
-                            history
-                                .into_iter()
-                                .enumerate()
-                                .map(|(index, msg)| ChatMessage {
-                                    id: index as u64 + 1,
-                                    text: msg.content,
-                                    is_bot: msg.role != "user",
-                                    is_skeleton: false,
-                                    is_streaming: false,
-                                    attachments: msg
-                                        .attachments
-                                        .into_iter()
-                                        .map(|attachment| state::ChatMessageAttachment {
-                                            id: attachment.id,
-                                            kind: attachment.kind,
-                                            mime_type: attachment.mime_type,
-                                            size_bytes: attachment.size_bytes,
-                                            width: attachment.width,
-                                            height: attachment.height,
-                                            data_url: attachment.data_url,
-                                            status: attachment.status,
-                                        })
-                                        .collect(),
-                                    action: None,
-                                    pending_meal: None,
-                                })
-                                .collect::<Vec<_>>(),
-                        ),
-                        Err(_) => None,
-                    };
-
-                Some(LoadedSessionHistory {
-                    session_id: sid,
-                    is_detail_route,
-                    history,
-                    pending_meals,
-                })
+        move |(request_user_id, sid, is_detail_route)| async move {
+            if sid.is_empty() {
+                return None;
             }
+
+            let pending_meals = meal::list_pending_meals(request_user_id.clone(), sid.clone())
+                .await
+                .unwrap_or_default();
+
+            let history =
+                match conversation::get_session_history(request_user_id.clone(), sid.clone()).await
+                {
+                    Ok(history) => Some(
+                        history
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, msg)| ChatMessage {
+                                id: index as u64 + 1,
+                                text: msg.content,
+                                is_bot: msg.role != "user",
+                                is_skeleton: false,
+                                is_streaming: false,
+                                attachments: msg
+                                    .attachments
+                                    .into_iter()
+                                    .map(|attachment| state::ChatMessageAttachment {
+                                        id: attachment.id,
+                                        kind: attachment.kind,
+                                        mime_type: attachment.mime_type,
+                                        size_bytes: attachment.size_bytes,
+                                        width: attachment.width,
+                                        height: attachment.height,
+                                        data_url: attachment.data_url,
+                                        status: attachment.status,
+                                    })
+                                    .collect(),
+                                action: None,
+                                pending_meal: None,
+                            })
+                            .collect::<Vec<_>>(),
+                    ),
+                    Err(_) => None,
+                };
+
+            Some(LoadedSessionHistory {
+                session_id: sid,
+                is_detail_route,
+                history,
+                pending_meals,
+            })
         },
     ));
 
@@ -423,7 +418,12 @@ fn load_session_history(
                     }],
                     1,
                 );
-                append_pending_meal_messages(chat_state, loaded.session_id, loaded.pending_meals, 1);
+                append_pending_meal_messages(
+                    chat_state,
+                    loaded.session_id,
+                    loaded.pending_meals,
+                    1,
+                );
             }
         }
     });
