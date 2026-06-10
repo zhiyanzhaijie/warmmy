@@ -55,7 +55,7 @@ pub fn MeBlock() -> Element {
 
     rsx! {
         div { class: "h-full min-h-0 overflow-hidden p-4 md:p-8",
-            section { class: "relative mx-auto h-full min-h-0 w-full max-w-6xl overflow-hidden rounded-2xl border border-border bg-card shadow-none",
+            section { class: "relative mx-auto h-full min-h-0 w-full max-w-6xl overflow-hidden rounded-xl border border-border bg-background shadow-none",
                 div { class: "relative h-full min-h-0",
                     div { class: "absolute right-4 top-4 z-20 md:right-6 md:top-6",
                         SystemPreferenceBlock {

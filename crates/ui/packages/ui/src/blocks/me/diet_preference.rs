@@ -56,16 +56,16 @@ pub fn DietPreferenceSummaryBlock(
     };
 
     rsx! {
-        Card { class: "min-h-[212px] rounded-2xl border border-border bg-card px-0 py-0 shadow-none",
+        Card { class: "min-h-[212px] rounded-xl border border-border bg-background px-0 py-0 shadow-none",
             CardContent { class: "flex h-full flex-col justify-between gap-5 px-6 py-6",
                 div {
                     div { class: "mb-4 flex items-start justify-between gap-3",
-                        div { class: "flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-xs",
+                        div { class: "flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-xs",
                             Flame { size: 18 }
                         }
                         Button {
                             variant: ButtonVariant::Ghost,
-                            class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                            class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground",
                             onclick: move |_| {
                                 nav.push("/me/preferences");
                             },
@@ -84,7 +84,7 @@ pub fn DietPreferenceSummaryBlock(
                     }
                     Button {
                         variant: ButtonVariant::Ghost,
-                        class: "rounded-md border border-border px-4 py-2 transition-colors hover:bg-muted text-foreground",
+                        class: "rounded-[6px] border border-border px-4 py-2 transition-colors hover:border-foreground/40 hover:bg-foreground/5 text-foreground",
                         onclick: move |_| {
                             nav.push("/me/preferences");
                         },
@@ -107,7 +107,7 @@ pub fn DietPreferenceEditBlock() -> Element {
         div { class: "flex h-full min-h-0 flex-col px-4 py-5 md:px-8 md:py-8",
             div { class: "mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col gap-5",
                 div { class: "flex items-center justify-between gap-3",
-                    Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", onclick: move |_| {
+                    Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground", onclick: move |_| {
                         nav.push("/me");
                     },
                         ArrowLeft { size: 16 }
@@ -217,18 +217,18 @@ pub fn DietPreferenceBlock(
     };
 
     rsx! {
-        Card { class: "rounded-2xl border border-border bg-card px-0 py-0 shadow-none",
+        Card { class: "rounded-xl border border-border bg-background px-0 py-0 shadow-none",
             CardHeader { class: "gap-2 px-6 pb-0 pt-6",
                 div { class: "flex items-center justify-between gap-3",
                     CardTitle { class: "flex items-center gap-2 text-xl font-medium tracking-tight",
                         Flame { size: 18 }
                         "饮食偏好"
                     }
-                    span { class: "rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground",
+                    span { class: "rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground",
                         "{preferred_cuisines().len() + avoided_cuisines().len()} tags"
                     }
                 }
-                p { class: "text-sm leading-relaxed text-muted-foreground", "输入多个条目后按回车，保存时会写入长期偏好。" }
+                p { class: "text-sm leading-relaxed text-muted-foreground", "给屋米介绍一下你喜欢吃的和不喜欢吃的吧。" }
             }
             CardContent { class: "space-y-6 px-6 pb-6 pt-5",
                 BlockMessage { message: message() }
@@ -251,7 +251,7 @@ pub fn DietPreferenceBlock(
                     onremove: move |value| avoided_cuisines.write().retain(|item| item != &value),
                 }
                 Button {
-                    class: "w-full rounded-md bg-foreground px-5 py-2 text-background shadow-xs transition-opacity hover:opacity-90 sm:w-auto",
+                    class: "w-full rounded-[6px] bg-foreground px-5 py-2 text-background shadow-[inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_0_0_0.5px_rgba(0,0,0,0.2),0_1px_2px_rgba(0,0,0,0.05)] transition-all hover:opacity-80 focus:shadow-[0_4px_12px_rgba(0,0,0,0.1)] sm:w-auto",
                     disabled: saving() || loading(),
                     onclick: save,
                     if saving() { "保存中..." } else { "保存饮食偏好" }

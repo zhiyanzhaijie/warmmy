@@ -60,16 +60,16 @@ pub fn HealthExpectationSummaryBlock(
         .unwrap_or_else(|| "还没有健康期望".to_string());
 
     rsx! {
-        Card { class: "min-h-[212px] rounded-2xl border border-border bg-card px-0 py-0 shadow-none",
+        Card { class: "min-h-[212px] rounded-xl border border-border bg-background px-0 py-0 shadow-none",
             CardContent { class: "flex h-full flex-col justify-between gap-5 px-6 py-6",
                 div {
                     div { class: "mb-4 flex items-start justify-between gap-3",
-                        div { class: "flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card text-foreground shadow-xs",
+                        div { class: "flex h-10 w-10 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-xs",
                             Flame { size: 18 }
                         }
                         Button {
                             variant: ButtonVariant::Ghost,
-                            class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                            class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground",
                             onclick: move |_| {
                                 nav.push("/me/expectations");
                             },
@@ -84,7 +84,7 @@ pub fn HealthExpectationSummaryBlock(
                 div { class: "grid grid-cols-2 gap-3 text-sm",
                     button {
                         r#type: "button",
-                        class: "rounded-2xl border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-muted",
+                        class: "rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:border-foreground/40 hover:bg-foreground/5",
                         onclick: move |_| {
                             nav.push("/me/expectations");
                         },
@@ -93,7 +93,7 @@ pub fn HealthExpectationSummaryBlock(
                     }
                     button {
                         r#type: "button",
-                        class: "rounded-2xl border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-muted",
+                        class: "rounded-xl border border-border bg-background px-4 py-3 text-left transition-colors hover:border-foreground/40 hover:bg-foreground/5",
                         onclick: move |_| {
                             nav.push("/me/expectations");
                         },
@@ -117,7 +117,7 @@ pub fn HealthExpectationEditBlock() -> Element {
         div { class: "flex h-full min-h-0 flex-col px-4 py-5 md:px-8 md:py-8",
             div { class: "mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-5",
                 div { class: "flex items-center justify-between gap-3",
-                    Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", onclick: move |_| {
+                    Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground", onclick: move |_| {
                         nav.push("/me");
                     },
                         ArrowLeft { size: 16 }
@@ -231,7 +231,7 @@ pub fn HealthExpectedBlock(
     };
 
     rsx! {
-        Card { class: "rounded-2xl border border-border bg-card px-0 py-0 shadow-none xl:sticky xl:top-8 xl:self-start",
+        Card { class: "rounded-xl border border-border bg-background px-0 py-0 shadow-none xl:sticky xl:top-8 xl:self-start",
             CardHeader { class: "gap-3 px-6 pb-0 pt-6",
                 div { class: "flex items-start justify-between gap-3",
                     div {
@@ -240,12 +240,12 @@ pub fn HealthExpectedBlock(
                             Flame { size: 18 }
                             "健康期望"
                         }
-                        p { class: "mt-2 text-sm leading-relaxed text-muted-foreground", "阶段性目标用小卡片承载。点击卡片编辑，新增只占一个按钮。" }
+                        p { class: "mt-2 text-sm leading-relaxed text-muted-foreground", "把最近在意的健康小目标告诉屋米，我们一起慢慢做到。" }
                     }
                     div { class: "flex shrink-0 gap-2",
                         Button {
                             size: ButtonSize::IconSm,
-                            class: "rounded-full bg-foreground text-background shadow-xs transition-opacity hover:opacity-90",
+                            class: "rounded-full bg-foreground text-background shadow-[inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_0_0_0.5px_rgba(0,0,0,0.2),0_1px_2px_rgba(0,0,0,0.05)] transition-all hover:opacity-80 focus:shadow-[0_4px_12px_rgba(0,0,0,0.1)]",
                             onclick: open_new,
                             Plus { size: 16 }
                         }
@@ -255,7 +255,7 @@ pub fn HealthExpectedBlock(
             CardContent { class: "space-y-4 px-6 pb-6 pt-5",
                 BlockMessage { message: message() }
                 if loading() {
-                    div { class: "rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground", "加载中..." }
+                    div { class: "rounded-xl border border-border bg-background px-4 py-6 text-sm text-muted-foreground", "加载中..." }
                 } else if expectations().is_empty() {
                     EmptyExpectationCard { on_new: open_new }
                 } else {
@@ -317,19 +317,19 @@ pub fn HealthExpectedBlock(
         DialogRoot {
             open: dialog_open(),
             on_open_change: move |open| dialog_open.set(open),
-            DialogContent { class: "max-h-[min(86dvh,760px)] w-[calc(100vw-1rem)] max-w-[680px] overflow-hidden rounded-2xl border border-border bg-card p-0 text-left shadow-lg sm:w-[calc(100vw-2rem)]",
+            DialogContent { class: "max-h-[min(86dvh,760px)] w-[calc(100vw-1rem)] max-w-[680px] overflow-hidden rounded-xl border border-border bg-background p-0 text-left shadow-lg sm:w-[calc(100vw-2rem)]",
                 div { class: "flex min-h-0 max-h-[min(86dvh,760px)] flex-col",
                     div { class: "flex shrink-0 items-start justify-between gap-4 border-b border-border/50 px-6 py-5",
                         div {
                             DialogTitle { class: "text-lg font-medium tracking-tight",
                                 if expectation_id().trim().is_empty() { "新增健康期望" } else { "编辑健康期望" }
                             }
-                            DialogDescription { class: "mt-1", "阶段目标与优先级。" }
+                            DialogDescription { class: "mt-1", "告诉屋米你最近最想照顾好的状态。" }
                         }
                         Button {
                             variant: ButtonVariant::Ghost,
                             size: ButtonSize::IconSm,
-                            class: "rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                            class: "rounded-full border border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground",
                             onclick: move |_| dialog_open.set(false),
                             X { size: 16 }
                         }
@@ -380,12 +380,12 @@ pub fn HealthExpectedBlock(
                     div { class: "flex shrink-0 items-center justify-between gap-3 border-t border-border/50 px-6 py-4",
                         Button {
                             variant: ButtonVariant::Ghost,
-                            class: "rounded-md border border-border px-5 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                            class: "rounded-[6px] border border-border px-5 py-2 text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground",
                             onclick: move |_| dialog_open.set(false),
                             "取消"
                         }
                         Button {
-                            class: "rounded-md bg-foreground px-5 py-2 text-background shadow-xs transition-opacity hover:opacity-90",
+                            class: "rounded-[6px] bg-foreground px-5 py-2 text-background shadow-[inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_0_0_0.5px_rgba(0,0,0,0.2),0_1px_2px_rgba(0,0,0,0.05)] transition-all hover:opacity-80 focus:shadow-[0_4px_12px_rgba(0,0,0,0.1)]",
                             disabled: saving(),
                             onclick: save,
                             if saving() { "保存中..." } else { "保存" }
@@ -402,13 +402,13 @@ fn EmptyExpectationCard(on_new: EventHandler<MouseEvent>) -> Element {
     rsx! {
         button {
             r#type: "button",
-            class: "group w-full rounded-2xl border border-dashed border-border bg-card px-6 py-10 text-left transition-all hover:border-foreground/30 hover:bg-card/80",
+            class: "group w-full rounded-xl border border-dashed border-border bg-background px-6 py-10 text-left transition-all hover:border-foreground/30 hover:bg-background/80",
             onclick: move |event| on_new.call(event),
             div { class: "mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors group-hover:border-foreground/20 group-hover:text-foreground",
                 Plus { size: 20 }
             }
             div { class: "text-base font-medium tracking-tight text-foreground", "添加第一个健康期望" }
-            div { class: "mt-1.5 text-sm leading-relaxed text-muted-foreground", "例如减脂、控糖、改善睡眠或短期提神。" }
+            div { class: "mt-1.5 text-sm leading-relaxed text-muted-foreground", "从一个小目标开始就好，屋米会一直陪着你。" }
         }
     }
 }
@@ -431,26 +431,26 @@ fn HealthExpectationMiniCard(
     let item_for_edit = item.clone();
 
     rsx! {
-        div { class: "group rounded-xl border border-border bg-card p-4 transition-colors hover:border-foreground/20",
+        div { class: "group rounded-xl border border-border bg-background p-4 transition-colors hover:border-foreground/20",
             button { r#type: "button", class: "w-full text-left", onclick: move |_| on_edit.call(item_for_edit.clone()),
                 div { class: "flex items-start justify-between gap-3",
                     div { class: "min-w-0",
                         h3 { class: "line-clamp-1 text-base font-medium tracking-tight text-foreground", "{item.title}" }
                         p { class: "mt-1 line-clamp-2 text-sm leading-relaxed text-muted-foreground", "{item.summary}" }
                     }
-                    span { class: format!("shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium transition-colors {}", status_badge), "{item.status}" }
+                    span { class: format!("shrink-0 rounded-[6px] px-2 py-0.5 text-[11px] font-medium transition-colors {}", status_badge), "{item.status}" }
                 }
                 div { class: "mt-4 flex flex-wrap gap-2 text-xs font-medium text-muted-foreground",
-                    span { class: "rounded-md border border-border bg-background px-2.5 py-1", "{item.kind}" }
-                    span { class: "rounded-md border border-border bg-background px-2.5 py-1", "priority {item.priority}" }
-                    span { class: "rounded-md border border-border bg-background px-2.5 py-1", "{item.source}" }
+                    span { class: "rounded-[6px] border border-border bg-background px-2.5 py-1", "{item.kind}" }
+                    span { class: "rounded-[6px] border border-border bg-background px-2.5 py-1", "priority {item.priority}" }
+                    span { class: "rounded-[6px] border border-border bg-background px-2.5 py-1", "{item.source}" }
                 }
             }
             div { class: "mt-4 flex gap-2",
                 Button {
                     variant: ButtonVariant::Ghost,
                     size: ButtonSize::Sm,
-                    class: "flex-1 rounded-md border border-border transition-colors hover:bg-muted hover:text-foreground",
+                    class: "flex-1 rounded-[6px] border border-border transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground",
                     onclick: move |_| on_confirm.call(expectation_id.clone()),
                     disabled: is_active,
                     "Confirm"
@@ -458,7 +458,7 @@ fn HealthExpectationMiniCard(
                 Button {
                     variant: ButtonVariant::Ghost,
                     size: ButtonSize::Sm,
-                    class: "flex-1 rounded-md border border-border text-destructive transition-colors hover:border-destructive/30 hover:bg-destructive/5",
+                    class: "flex-1 rounded-[6px] border border-border text-destructive transition-colors hover:border-destructive/30 hover:bg-destructive/5",
                     onclick: move |_| on_delete.call(expectation_id_for_delete.clone()),
                     "Delete"
                 }

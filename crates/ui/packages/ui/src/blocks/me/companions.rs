@@ -40,16 +40,16 @@ pub fn CompanionsSummaryBlock(user_id: String) -> Element {
     });
 
     rsx! {
-        section { class: "rounded-2xl border border-border bg-card px-6 py-6",
+        section { class: "rounded-xl border border-border bg-background px-6 py-6",
             div { class: "mb-6 flex items-start justify-between gap-3",
                 div {
                     p { class: "text-[11px] font-medium uppercase tracking-widest text-muted-foreground", "Table circle" }
                     h2 { class: "mt-2 text-xl font-medium tracking-tight text-foreground", "常一起吃饭的人" }
-                    p { class: "mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground", "首页只展示关系网络摘要，完整新增、编辑和删除进入独立页面。" }
+                    p { class: "mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground", "把常一起吃饭的人介绍给屋米吧，之后一起吃会更有默契。" }
                 }
                 Button {
                     variant: ButtonVariant::Ghost,
-                    class: "rounded-full border border-border px-4 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                    class: "rounded-full border border-border px-4 py-1.5 text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground",
                     onclick: move |_| {
                         nav.push("/me/companions");
                     },
@@ -59,11 +59,11 @@ pub fn CompanionsSummaryBlock(user_id: String) -> Element {
             }
             BlockMessage { message: message() }
             if loading() {
-                div { class: "rounded-xl border border-border bg-card px-4 py-6 text-sm text-muted-foreground", "加载中..." }
+                div { class: "rounded-xl border border-border bg-background px-4 py-6 text-sm text-muted-foreground", "加载中..." }
             } else if companions().is_empty() {
                 button {
                     r#type: "button",
-                    class: "group w-full rounded-2xl border border-dashed border-border bg-card px-6 py-8 text-left transition-all hover:border-foreground/30 hover:bg-card/80",
+                    class: "group w-full rounded-xl border border-dashed border-border bg-background px-6 py-8 text-left transition-all hover:border-foreground/30 hover:bg-background/80",
                     onclick: move |_| {
                         nav.push("/me/companions");
                     },
@@ -71,7 +71,7 @@ pub fn CompanionsSummaryBlock(user_id: String) -> Element {
                         UserPlus { size: 20 }
                     }
                     div { class: "text-base font-medium tracking-tight text-foreground", "添加家人或朋友" }
-                    div { class: "mt-1.5 text-sm text-muted-foreground", "多人用餐时，agent 会把他们的偏好和健康备注一起考虑。" }
+                    div { class: "mt-1.5 text-sm text-muted-foreground", "把他们也带进来，屋米会更懂这张餐桌的口味。" }
                 }
             } else {
                 div { class: "grid grid-cols-1 gap-3 md:grid-cols-3",
@@ -81,7 +81,7 @@ pub fn CompanionsSummaryBlock(user_id: String) -> Element {
                     if companions().len() > 3 {
                         button {
                             r#type: "button",
-                            class: "rounded-2xl border border-border bg-card p-5 text-left transition-colors hover:border-foreground/20",
+                            class: "rounded-xl border border-border bg-background p-5 text-left transition-colors hover:border-foreground/20",
                             onclick: move |_| {
                                 nav.push("/me/companions");
                             },
@@ -109,7 +109,7 @@ fn CompanionMiniCard(companion: user::DiningCompanionDTO) -> Element {
         .unwrap_or_else(|| "未设置偏好".to_string());
 
     rsx! {
-        div { class: "rounded-2xl border border-border bg-card p-5 transition-colors hover:border-foreground/20",
+        div { class: "rounded-xl border border-border bg-background p-5 transition-colors hover:border-foreground/20",
             div { class: "flex items-center gap-3",
                 div { class: "flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow-xs",
                     HeartHandshake { size: 18 }
@@ -253,7 +253,7 @@ fn CompanionsEditor(user_id: String) -> Element {
 
     rsx! {
         div { class: "flex items-center justify-between gap-3",
-            Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground", onclick: move |_| {
+            Button { variant: ButtonVariant::Ghost, class: "rounded-full border border-border px-3 text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground", onclick: move |_| {
                 nav.push("/me");
             },
                 ArrowLeft { size: 16 }
@@ -262,7 +262,7 @@ fn CompanionsEditor(user_id: String) -> Element {
             p { class: "text-xs font-medium uppercase tracking-widest text-muted-foreground", "Companions" }
         }
         div { class: "min-h-0 flex-1 overflow-y-auto pb-28 md:pb-12",
-            Card { class: "rounded-2xl border border-border bg-card px-0 py-0 shadow-none",
+            Card { class: "rounded-xl border border-border bg-background px-0 py-0 shadow-none",
                 CardHeader { class: "gap-3 px-6 pb-0 pt-6",
                     div { class: "flex items-start justify-between gap-3",
                         div {
@@ -270,9 +270,9 @@ fn CompanionsEditor(user_id: String) -> Element {
                                 HeartHandshake { size: 18 }
                                 "常一起吃饭的人"
                             }
-                            p { class: "mt-2 text-sm leading-relaxed text-muted-foreground", "这些人不会切换成当前用户，只会在多人用餐建议时作为关系链约束。" }
+                            p { class: "mt-2 text-sm leading-relaxed text-muted-foreground", "给屋米认识你身边的人，聚餐时它会更懂大家的喜好。" }
                         }
-                        Button { size: ButtonSize::IconSm, class: "rounded-full bg-foreground text-background shadow-xs transition-opacity hover:opacity-90", onclick: start_new,
+                        Button { size: ButtonSize::IconSm, class: "rounded-full bg-foreground text-background shadow-[inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_0_0_0.5px_rgba(0,0,0,0.2),0_1px_2px_rgba(0,0,0,0.05)] transition-all hover:opacity-80 focus:shadow-[0_4px_12px_rgba(0,0,0,0.1)]", onclick: start_new,
                             UserPlus { size: 16 }
                         }
                     }
@@ -282,8 +282,8 @@ fn CompanionsEditor(user_id: String) -> Element {
 
                     div { class: "grid grid-cols-1 gap-3 md:grid-cols-2",
                         if companions().is_empty() && !loading() {
-                            div { class: "rounded-2xl border border-dashed border-border bg-card p-6 text-center text-sm leading-relaxed text-muted-foreground md:col-span-2",
-                                "还没有添加家人或朋友。添加后，agent 可以在聚餐、家庭餐建议中一起考虑他们的偏好。"
+                            div { class: "rounded-xl border border-dashed border-border bg-background p-6 text-center text-sm leading-relaxed text-muted-foreground md:col-span-2",
+                                "先加上第一位吧，屋米会陪你把这张小饭桌慢慢填满。"
                             }
                         }
                         for companion in companions() {
@@ -335,19 +335,19 @@ fn CompanionsEditor(user_id: String) -> Element {
         DialogRoot {
             open: dialog_open(),
             on_open_change: move |open| dialog_open.set(open),
-            DialogContent { class: "max-h-[min(86dvh,760px)] w-[calc(100vw-1rem)] max-w-[760px] overflow-hidden rounded-2xl border border-border bg-card p-0 text-left shadow-lg sm:w-[calc(100vw-2rem)]",
+            DialogContent { class: "max-h-[min(86dvh,760px)] w-[calc(100vw-1rem)] max-w-[760px] overflow-hidden rounded-xl border border-border bg-background p-0 text-left shadow-lg sm:w-[calc(100vw-2rem)]",
                 div { class: "flex min-h-0 max-h-[min(86dvh,760px)] flex-col",
                     div { class: "flex shrink-0 items-start justify-between gap-4 border-b border-border/50 px-6 py-5",
                         div {
                             DialogTitle { class: "text-lg font-medium tracking-tight",
                                 if editing_id().is_some() { "编辑关系人" } else { "新增关系人" }
                             }
-                            DialogDescription { class: "mt-1", "偏好、忌口与健康备注。" }
+                            DialogDescription { class: "mt-1", "写下他/她的口味和小习惯吧。" }
                         }
                         Button {
                             variant: ButtonVariant::Ghost,
                             size: ButtonSize::IconSm,
-                            class: "rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                            class: "rounded-full border border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground",
                             onclick: move |_| dialog_open.set(false),
                             X { size: 16 }
                         }
@@ -367,11 +367,11 @@ fn CompanionsEditor(user_id: String) -> Element {
                     div { class: "flex shrink-0 items-center justify-between gap-3 border-t border-border/50 px-6 py-4",
                         Button {
                             variant: ButtonVariant::Ghost,
-                            class: "rounded-md border border-border px-5 py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                            class: "rounded-[6px] border border-border px-5 py-2 text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground",
                             onclick: move |_| dialog_open.set(false),
                             "取消"
                         }
-                        Button { class: "rounded-md bg-foreground px-5 py-2 text-background shadow-xs transition-opacity hover:opacity-90", disabled: saving() || loading(), onclick: save,
+                        Button { class: "rounded-[6px] bg-foreground px-5 py-2 text-background shadow-[inset_0_0.5px_0_rgba(255,255,255,0.2),inset_0_0_0_0.5px_rgba(0,0,0,0.2),0_1px_2px_rgba(0,0,0,0.05)] transition-all hover:opacity-80 focus:shadow-[0_4px_12px_rgba(0,0,0,0.1)]", disabled: saving() || loading(), onclick: save,
                             Save { size: 16 }
                             if saving() { "保存中..." } else { "保存" }
                         }
@@ -406,15 +406,15 @@ fn CompanionCard(
     let delete_companion_id = companion.id.clone();
 
     rsx! {
-        div { class: "rounded-2xl border border-border bg-card p-5 transition-colors hover:border-foreground/20",
+        div { class: "rounded-xl border border-border bg-background p-5 transition-colors hover:border-foreground/20",
             div { class: "flex items-start justify-between gap-3",
                 div {
                     div { class: "text-[15px] font-medium tracking-tight text-foreground", "{companion.display_name}" }
                     div { class: "mt-0.5 text-[11px] font-medium uppercase tracking-widest text-muted-foreground", "{relationship}" }
                 }
                 div { class: "flex gap-2",
-                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, class: "rounded-md border border-border transition-colors hover:bg-muted hover:text-foreground", onclick: move |_| onedit.call(edit_companion.clone()), "编辑" }
-                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::IconSm, class: "rounded-md border border-border text-muted-foreground transition-colors hover:border-destructive/30 hover:bg-destructive/5 hover:text-destructive", onclick: move |_| ondelete.call(delete_companion_id.clone()), Trash2 { size: 15 } }
+                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::Sm, class: "rounded-[6px] border border-border transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground", onclick: move |_| onedit.call(edit_companion.clone()), "编辑" }
+                    Button { variant: ButtonVariant::Ghost, size: ButtonSize::IconSm, class: "rounded-[6px] border border-border text-muted-foreground transition-colors hover:border-destructive/30 hover:bg-destructive/5 hover:text-destructive", onclick: move |_| ondelete.call(delete_companion_id.clone()), Trash2 { size: 15 } }
                 }
             }
             if !companion.introduction.trim().is_empty() {
