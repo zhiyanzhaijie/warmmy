@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
+use app::agents::{
+    is_conflict, is_duplicate, MemoryCandidate, MemoryIndex, MemoryPolicy, MemoryRecord,
+    MemoryStatus, MemoryStore,
+};
 use app::app_error::AppResult;
 
-use crate::agent::memory::long_term::index::MemoryIndex;
-use crate::agent::memory::long_term::policy::MemoryPolicy;
-use crate::agent::memory::long_term::promotion::{is_conflict, is_duplicate};
-use crate::agent::memory::long_term::store::MemoryStore;
 use domain::UserId;
-
-use crate::agent::memory::types::{MemoryCandidate, MemoryRecord, MemoryStatus};
 
 #[derive(Clone)]
 pub struct MemoryService {

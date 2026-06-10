@@ -32,9 +32,7 @@ impl MealQueryHandler {
             .map_err(AppError::upstream)
     }
 
-    pub async fn list_food_nutrition_references(
-        &self,
-    ) -> AppResult<Vec<FoodNutritionReference>> {
+    pub async fn list_food_nutrition_references(&self) -> AppResult<Vec<FoodNutritionReference>> {
         self.food_nutrition_references
             .list_references()
             .await

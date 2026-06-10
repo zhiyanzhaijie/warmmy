@@ -5,6 +5,7 @@ pub mod sqlite;
 use std::sync::Arc;
 
 use app::{
+    agents::MemoryStore,
     app_error::{AppError, AppResult},
     meal::{
         FoodNutritionReferenceRepositoryPort, MealDayFinalizationRepositoryPort,
@@ -19,7 +20,6 @@ use app::{
 
 use tokio::sync::Mutex;
 
-use crate::agent::memory::long_term::store::MemoryStore;
 use app::conversation::{ChatMessageRepositoryPort, EphemeralImageStorePort};
 
 pub struct DbRepos {

@@ -146,7 +146,7 @@ fn ProfileIdentityPanel(
                     Pencil { size: 14 }
                 }
             }
-     div { class: "flex flex-wrap gap-2 text-[14px] text-muted-foreground",
+            div { class: "flex flex-wrap gap-2 text-[14px] text-muted-foreground",
                 if !gender.trim().is_empty() {
                     span { class: "rounded-full border border-border bg-background px-3 py-1",
                         "{gender}"
@@ -161,10 +161,6 @@ fn ProfileIdentityPanel(
 
             h2 { class: "text-[36px] font-semibold leading-[1.0] tracking-[-0.9px] text-foreground md:text-[48px] md:tracking-[-1.2px]",
                 "{display_name}"
-            }
-
-            p { class: "max-w-3xl whitespace-normal break-words text-[16px] leading-[1.5] text-muted-foreground md:text-[18px] md:leading-[1.38]",
-                "{intro}"
             }
 
             Button {
@@ -182,7 +178,11 @@ fn ProfileIdentityPanel(
                     "Owner · #{user_id}"
                 }
             }
-                   }
+            p { class: "max-w-3xl whitespace-normal break-words text-[16px] leading-[1.5] text-muted-foreground md:text-[18px] md:leading-[1.38]",
+                "{intro}"
+            }
+
+        }
     }
 }
 
@@ -204,7 +204,7 @@ fn WarmmyProfileArt(user_id: String) -> Element {
         .unwrap_or_else(|| asset!("/assets/wammy_one.svg"));
 
     rsx! {
-        div { class: "pointer-events-none absolute right-[-5rem] top-[1rem] z-0 h-[20rem] w-[25rem] opacity-95 sm:h-[20.02rem] sm:w-[25.48rem] md:h-[25.48rem] md:w-[32.76rem] md:top-[2.5rem]",
+        div { class: "pointer-events-none absolute right-[-5rem] top-[2rem] z-0 h-[20rem] w-[25rem] opacity-95 sm:h-[20.02rem] sm:w-[25.48rem] md:h-[25.48rem] md:w-[32.76rem] md:top-[2.5rem]",
             img {
                 src: warmmy_src,
                 class: "absolute inset-0 h-full w-full object-contain",

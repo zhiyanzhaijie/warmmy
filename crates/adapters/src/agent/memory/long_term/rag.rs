@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use app::agents::{LongTermMemoryForm, MemoryIndex, MemoryRecord, MemoryScope, MemoryStatus};
 use app::app_error::{AppError, AppResult};
 use arrow_array::types::Float64Type;
 use arrow_array::{
@@ -17,9 +18,6 @@ use rig::vector_store::request::SearchFilter;
 use rig::vector_store::{VectorSearchRequest, VectorStoreError, VectorStoreIndex};
 use serde::Deserialize;
 use serde_json::{json, Value};
-
-use crate::agent::memory::long_term::index::MemoryIndex;
-use crate::agent::memory::types::{LongTermMemoryForm, MemoryRecord, MemoryScope, MemoryStatus};
 
 const TABLE_NAME: &str = "memory_index";
 const ID_FIELD: &str = "memory_id";

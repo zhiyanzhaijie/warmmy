@@ -29,7 +29,9 @@ impl AppError {
             Self::Validation(message) if message == "AI capability is not configured: vision" => {
                 "ai.vision_not_configured"
             }
-            Self::Validation(message) if message.starts_with("AI capability is not configured: ") => {
+            Self::Validation(message)
+                if message.starts_with("AI capability is not configured: ") =>
+            {
                 "ai.capability_not_configured"
             }
             Self::Validation(message) if message.starts_with("unsupported image mime type: ") => {

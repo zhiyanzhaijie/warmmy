@@ -1,14 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct AgentInteractionRequest {
-    pub id: String,
-    pub kind: String,
-    pub payload: Value,
-}
+use app::agents::AgentInteractionRequest;
 
 #[derive(Clone, Default)]
 pub struct AgentInteractionSink {

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use app::agents::{MemoryRecord, MemoryScope, MemoryStatus, MemoryStore};
 use app::app_error::AppError;
 use chrono::{DateTime, Utc};
 use rig::vector_store::{VectorSearchRequest, VectorStoreError, VectorStoreIndex};
@@ -7,8 +8,6 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::agent::memory::long_term::rag::{LanceDbFilter, OpenAiCompatibleRagIndex};
-use crate::agent::memory::long_term::store::MemoryStore;
-use crate::agent::memory::types::{MemoryRecord, MemoryScope, MemoryStatus};
 use domain::UserId;
 
 pub struct MemoryRetriever {

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use app::agents::NutritionReferenceRetriever;
 use app::app_error::{AppError, AppResult};
 use app::meal::FoodNutritionReferenceRepositoryPort;
 use arrow_array::types::Float64Type;
@@ -25,12 +26,6 @@ const SEARCH_TEXT_FIELD: &str = "search_text";
 const STATUS_FIELD: &str = "status";
 const SOURCE_FIELD: &str = "source";
 const EMBEDDING_FIELD: &str = "embedding";
-
-#[async_trait]
-pub trait NutritionReferenceRetriever: Send + Sync {
-    async fn retrieve(&self, query: &str) -> AppResult<Option<FoodNutritionReference>>;
-    async fn put(&self, reference: &FoodNutritionReference) -> AppResult<()>;
-}
 
 #[derive(Clone)]
 pub struct LanceDbNutritionReferenceRetriever {

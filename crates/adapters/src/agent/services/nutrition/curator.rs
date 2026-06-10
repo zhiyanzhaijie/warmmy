@@ -1,38 +1,36 @@
+use std::sync::Arc;
+
+use app::agents::{
+    prompts::nutrition_curator::NUTRITION_CURATOR_PREAMBLE, CuratedNutritionReference,
+    NutritionCurator, TextModelGateway, TextPromptRequest,
+};
 use app::app_error::{AppError, AppResult};
 use app::user::ResolvedAIModelConfig;
 use async_trait::async_trait;
 use domain::{FoodNutritionReference, FoodNutritionReferenceStatus, Nutrition};
-use rig::client::CompletionClient;
-use rig::completion::Prompt;
-use rig::providers::{deepseek, openai};
 use serde::Deserialize;
 
-use crate::agent::prompts::nutrition_curator::NUTRITION_CURATOR_PREAMBLE;
-
-#[async_trait]
-pub trait NutritionCurator: Send + Sync {
-    async fn curate(
-        &self,
-        food_name: &str,
-        estimated_grams: Option<f32>,
-    ) -> AppResult<Option<CuratedNutritionReference>>;
-}
-
-#[derive(Debug, Clone)]
-pub struct CuratedNutritionReference {
-    pub reference: FoodNutritionReference,
-    pub confidence: f32,
-    pub source: String,
-}
+use crate::agent::model::RigModelFactory;
 
 #[derive(Clone)]
 pub struct ModelNutritionCurator {
     config: ResolvedAIModelConfig,
+    text_model: Arc<dyn TextModelGateway>,
 }
 
 impl ModelNutritionCurator {
     pub fn new(config: ResolvedAIModelConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            text_model: Arc::new(RigModelFactory::new()),
+        }
+    }
+
+    pub fn with_model_gateway(
+        config: ResolvedAIModelConfig,
+        text_model: Arc<dyn TextModelGateway>,
+    ) -> Self {
+        Self { config, text_model }
     }
 }
 
@@ -44,56 +42,14 @@ impl NutritionCurator for ModelNutritionCurator {
         estimated_grams: Option<f32>,
     ) -> AppResult<Option<CuratedNutritionReference>> {
         let prompt = build_curator_prompt(food_name, estimated_grams);
-        let text = match self.config.provider.as_str() {
-            "openai" => {
-                let client = openai::Client::builder()
-                    .api_key(&self.config.api_key)
-                    .base_url(&self.config.base_url)
-                    .build()
-                    .map_err(|err| AppError::upstream(err.to_string()))?;
-                client
-                    .agent(self.config.model.as_str())
-                    .preamble(NUTRITION_CURATOR_PREAMBLE)
-                    .build()
-                    .prompt(prompt)
-                    .await
-                    .map_err(|err| AppError::upstream(err.to_string()))?
-            }
-            "openai_compatible" | "siliconflow" | "dashscope" => {
-                let client = openai::Client::builder()
-                    .api_key(&self.config.api_key)
-                    .base_url(&self.config.base_url)
-                    .build()
-                    .map_err(|err| AppError::upstream(err.to_string()))?
-                    .completions_api();
-                client
-                    .agent(self.config.model.as_str())
-                    .preamble(NUTRITION_CURATOR_PREAMBLE)
-                    .build()
-                    .prompt(prompt)
-                    .await
-                    .map_err(|err| AppError::upstream(err.to_string()))?
-            }
-            "deepseek" => {
-                let client = deepseek::Client::builder()
-                    .api_key(&self.config.api_key)
-                    .base_url(&self.config.base_url)
-                    .build()
-                    .map_err(|err| AppError::upstream(err.to_string()))?;
-                client
-                    .agent(self.config.model.as_str())
-                    .preamble(NUTRITION_CURATOR_PREAMBLE)
-                    .build()
-                    .prompt(prompt)
-                    .await
-                    .map_err(|err| AppError::upstream(err.to_string()))?
-            }
-            provider => {
-                return Err(AppError::internal(format!(
-                    "unsupported nutrition curator provider: {provider}"
-                )));
-            }
-        };
+        let text = self
+            .text_model
+            .prompt_text(TextPromptRequest {
+                model: self.config.clone(),
+                preamble: NUTRITION_CURATOR_PREAMBLE.to_string(),
+                prompt,
+            })
+            .await?;
 
         parse_curated_reference(&text)
     }

@@ -1,5 +1,12 @@
 use std::sync::Arc;
 
+use app::agents::{
+    prompts::conversation_summary::CONVERSATION_SUMMARY_PREAMBLE, AgentRoute, AgentServiceProgress,
+    AgentToolId, AgentTurnInput, AgentTurnPlan, AgentTurnPlanner, DefaultAgentTurnPlanner,
+    MemoryIndex, MemoryObservation, MemoryPolicy, MemoryStore, NutritionCurator,
+    NutritionReferenceRetriever, RoutePlanner, RouteRegistry, RuleThenModelRoutePlanner,
+    TextModelGateway, TextPromptRequest,
+};
 use app::app_error::{AppError, AppResult};
 use app::conversation::{
     AgentStatusKind, ChatMessage, ChatMessageRepositoryPort, ConversationReplyStream,
@@ -10,57 +17,36 @@ use app::meal::MealCommandHandler;
 use app::user::{ResolvedAIModelConfig, UserAIConfigQueryHandler, UserDietaryContextQueryHandler};
 use async_stream::stream;
 use futures_util::StreamExt;
-use rig::agent::{Agent, AgentBuilder, MultiTurnStreamItem, StreamingError};
-use rig::client::CompletionClient;
-use rig::completion::{CompletionModel, Message, Prompt};
+use rig::agent::{MultiTurnStreamItem, StreamingError};
 use rig::message::ToolChoice;
-use rig::providers::{deepseek, openai};
-use rig::streaming::{StreamedAssistantContent, StreamingPrompt};
-use rig::tool::ToolDyn;
+use rig::streaming::StreamedAssistantContent;
 use tokio::sync::mpsc;
 
 use crate::agent::interaction::AgentInteractionSink;
-use crate::agent::memory::long_term::extractor::{MemoryObservation, ModelMemoryExtractor};
+use crate::agent::memory::long_term::extractor::ModelMemoryExtractor;
 use crate::agent::memory::long_term::index::NoopMemoryIndex;
 use crate::agent::memory::long_term::pipeline::MemoryPipeline;
-use crate::agent::memory::long_term::policy::MemoryPolicy;
 use crate::agent::memory::long_term::rag::{build_rag_index, LanceDbMemoryIndex, RagConfig};
 use crate::agent::memory::long_term::retriever::MemoryRetriever;
 use crate::agent::memory::long_term::service::MemoryService;
-use crate::agent::memory::long_term::store::MemoryStore;
 use crate::agent::memory::MemoryContextProvider;
 use crate::agent::memory::SessionConversationMemory;
-use crate::agent::prompts::conversation_summary::CONVERSATION_SUMMARY_PREAMBLE;
-use crate::agent::routing::classifier::{classify_route, AgentRoute};
+use crate::agent::model::{AgentSpec, ModelGateway, RagAgentContext, RigModelFactory};
 use crate::agent::runtime::events::{
     initial_route_status, interaction_event, status_event, stream_event,
 };
-use crate::agent::runtime::hook::{AgentStatusSink, GuardrailHook, WarmmyPromptHook};
+use crate::agent::runtime::hook::{AgentStatusSink, GuardrailHook};
 use crate::agent::runtime::image::{build_prompt_message, persist_user_image_message};
 use crate::agent::runtime::persistence::{
     is_internal_conversation_input, persist_assistant_visible_message, persist_user_visible_message,
 };
-use crate::agent::services::nutrition::curator::{ModelNutritionCurator, NutritionCurator};
-use crate::agent::services::nutrition::retriever::{
-    LanceDbNutritionReferenceRetriever, NutritionReferenceRetriever,
-};
-use crate::agent::services::AgentServiceProgress;
+use crate::agent::services::nutrition::curator::ModelNutritionCurator;
+use crate::agent::services::nutrition::retriever::LanceDbNutritionReferenceRetriever;
 use crate::agent::tool;
 use domain::{AICapability, UserId};
 
-const DEFAULT_MAX_TURNS: usize = 4;
 const DEFAULT_HISTORY_WINDOW_MESSAGES: usize = 16;
 const DEFAULT_EMBEDDING_NDIMS: usize = 1024;
-const WARMMY_PREAMBLE: &str = r#"你是 warmmy，一个温暖、专业的对话型饮食助理。
-
-## 自我认知
-- 你可以自然聊天，回答营养健康相关问题
-- 你会优先使用 Current Context 理解用户偏好、忌口、过敏原和健康期望
-- 当用户的问题同时包含画像询问、饮食记录、分析或建议时，在同一次回答中完整处理，不要只回答其中一部分
-
-## 语言
-- 始终使用中文回复"#;
-
 enum AgentStreamStep<T> {
     Raw(Option<T>),
     Status(Option<ConversationStreamEvent>),
@@ -79,78 +65,7 @@ impl AgentServiceProgress for StreamAgentServiceProgress {
     }
 }
 
-struct RagAgentContext {
-    top_k: usize,
-    index: MemoryRetriever,
-}
-
-struct AgentSpec {
-    preamble: String,
-    tool_choice: ToolChoice,
-    memory: SessionConversationMemory,
-    tools: Vec<Box<dyn ToolDyn>>,
-    rag: Option<RagAgentContext>,
-    guardrail: Arc<GuardrailHook>,
-    status_sink: Option<AgentStatusSink>,
-}
-
-type OpenAiResponsesModel = openai::responses_api::ResponsesCompletionModel;
-type OpenAiCompletionsModel = openai::completion::CompletionModel;
-type DeepSeekModel = deepseek::CompletionModel;
-
-type WarmmyAgent<M> = Agent<M, WarmmyPromptHook<M>>;
-
-enum ConversationAgent {
-    OpenAiResponses(WarmmyAgent<OpenAiResponsesModel>),
-    OpenAiCompletions(WarmmyAgent<OpenAiCompletionsModel>),
-    DeepSeek(WarmmyAgent<DeepSeekModel>),
-}
-
-impl ConversationAgent {
-    async fn prompt(self, prompt: Message, conversation_id: &str) -> AppResult<String> {
-        match self {
-            Self::OpenAiResponses(agent) => agent
-                .prompt(prompt)
-                .conversation(conversation_id)
-                .await
-                .map_err(|e| AppError::upstream(e.to_string())),
-            Self::OpenAiCompletions(agent) => agent
-                .prompt(prompt)
-                .conversation(conversation_id)
-                .await
-                .map_err(|e| AppError::upstream(e.to_string())),
-            Self::DeepSeek(agent) => agent
-                .prompt(prompt)
-                .conversation(conversation_id)
-                .await
-                .map_err(|e| AppError::upstream(e.to_string())),
-        }
-    }
-
-    async fn stream(
-        self,
-        prompt: Message,
-        conversation_id: String,
-        wrap_ctx: StreamWrapCtx,
-    ) -> ConversationReplyStream {
-        match self {
-            Self::OpenAiResponses(agent) => {
-                let raw = agent.stream_prompt(prompt).conversation(conversation_id).await;
-                RigConversationRuntime::wrap_stream(raw, wrap_ctx)
-            }
-            Self::OpenAiCompletions(agent) => {
-                let raw = agent.stream_prompt(prompt).conversation(conversation_id).await;
-                RigConversationRuntime::wrap_stream(raw, wrap_ctx)
-            }
-            Self::DeepSeek(agent) => {
-                let raw = agent.stream_prompt(prompt).conversation(conversation_id).await;
-                RigConversationRuntime::wrap_stream(raw, wrap_ctx)
-            }
-        }
-    }
-}
-
-struct StreamWrapCtx {
+pub struct StreamWrapCtx {
     interaction_sink: AgentInteractionSink,
     has_images: bool,
     repo_for_history: Arc<dyn ChatMessageRepositoryPort>,
@@ -160,29 +75,10 @@ struct StreamWrapCtx {
     user_id_for_memory: UserId,
     session_id_for_memory: String,
     user_input_for_memory: String,
+    should_persist_assistant_visible_message: bool,
+    memory_observation_enabled: bool,
+    should_update_conversation_summary: bool,
     status_rx: mpsc::UnboundedReceiver<ConversationStreamEvent>,
-}
-
-fn configure_agent<M>(builder: AgentBuilder<M>, spec: AgentSpec) -> WarmmyAgent<M>
-where
-    M: CompletionModel + 'static,
-{
-    let hook = match spec.status_sink {
-        Some(status_sink) => WarmmyPromptHook::with_status_sink(spec.guardrail, status_sink),
-        None => WarmmyPromptHook::new(spec.guardrail),
-    };
-
-    let mut builder = builder
-        .preamble(&spec.preamble)
-        .tool_choice(spec.tool_choice)
-        .default_max_turns(DEFAULT_MAX_TURNS)
-        .memory(spec.memory);
-
-    if let Some(rag) = spec.rag {
-        builder = builder.dynamic_context(rag.top_k, rag.index);
-    }
-
-    builder.hook(hook).tools(spec.tools).build()
 }
 
 #[derive(Clone)]
@@ -196,6 +92,9 @@ pub struct RigConversationRuntime {
     lancedb_path: String,
     rag_top_k: usize,
     guardrail: Arc<GuardrailHook>,
+    model_gateway: Arc<dyn ModelGateway>,
+    text_model: Arc<dyn TextModelGateway>,
+    turn_planner: Arc<dyn AgentTurnPlanner>,
 }
 
 impl RigConversationRuntime {
@@ -209,6 +108,16 @@ impl RigConversationRuntime {
         lancedb_path: String,
         rag_top_k: usize,
     ) -> Self {
+        let model_factory = Arc::new(RigModelFactory::new());
+        let model_gateway: Arc<dyn ModelGateway> = model_factory.clone();
+        let text_model: Arc<dyn TextModelGateway> = model_factory.clone();
+        let route_registry = RouteRegistry::new();
+        let route_planner: Arc<dyn RoutePlanner> = Arc::new(RuleThenModelRoutePlanner::new(
+            route_registry.clone(),
+            text_model.clone(),
+        ));
+        let turn_planner: Arc<dyn AgentTurnPlanner> =
+            Arc::new(DefaultAgentTurnPlanner::new(route_planner, route_registry));
         Self {
             repo,
             image_store,
@@ -219,6 +128,9 @@ impl RigConversationRuntime {
             lancedb_path,
             rag_top_k,
             guardrail: Arc::new(GuardrailHook),
+            model_gateway,
+            text_model,
+            turn_planner,
         }
     }
 
@@ -231,7 +143,10 @@ impl RigConversationRuntime {
     }
 
     fn nutrition_curator(&self, chat: &ResolvedAIModelConfig) -> Option<Arc<dyn NutritionCurator>> {
-        Some(Arc::new(ModelNutritionCurator::new(chat.clone())))
+        Some(Arc::new(ModelNutritionCurator::with_model_gateway(
+            chat.clone(),
+            self.text_model.clone(),
+        )))
     }
 
     fn nutrition_retriever(
@@ -253,22 +168,6 @@ impl RigConversationRuntime {
         status_sink.map(|sink| {
             Arc::new(StreamAgentServiceProgress { sink }) as Arc<dyn AgentServiceProgress>
         })
-    }
-
-    fn openai_client(config: &ResolvedAIModelConfig) -> AppResult<openai::Client> {
-        openai::Client::builder()
-            .api_key(&config.api_key)
-            .base_url(&config.base_url)
-            .build()
-            .map_err(|e| AppError::upstream(e.to_string()))
-    }
-
-    fn deepseek_client(config: &ResolvedAIModelConfig) -> AppResult<deepseek::Client> {
-        deepseek::Client::builder()
-            .api_key(&config.api_key)
-            .base_url(&config.base_url)
-            .build()
-            .map_err(|e| AppError::upstream(e.to_string()))
     }
 
     async fn build_rag_agent_context(
@@ -293,63 +192,37 @@ impl RigConversationRuntime {
         chat: &ResolvedAIModelConfig,
         preamble: String,
         route: AgentRoute,
+        tool_ids: &[AgentToolId],
         tool_choice: ToolChoice,
         interaction_sink: AgentInteractionSink,
         nutrition_retriever: Option<Arc<dyn NutritionReferenceRetriever>>,
         rag: Option<RagAgentContext>,
         status_sink: Option<AgentStatusSink>,
     ) -> AgentSpec {
+        let tools = tool::tools_for_ids(
+            tool_ids,
+            user_id,
+            session_id,
+            self.meal_command.clone(),
+            interaction_sink,
+            self.nutrition_curator(chat),
+            nutrition_retriever,
+            self.agent_service_progress(status_sink.clone()),
+        );
+        tracing::info!(
+            agent.route = ?route,
+            tool.count = tools.len(),
+            "agent tools selected"
+        );
+
         AgentSpec {
             preamble,
             tool_choice,
             memory: self.build_memory(user_id),
-            tools: tool::tools_for_route(
-                route,
-                user_id,
-                session_id,
-                self.meal_command.clone(),
-                interaction_sink,
-                self.nutrition_curator(chat),
-                nutrition_retriever,
-                self.agent_service_progress(status_sink.clone()),
-            ),
+            tools,
             rag,
             guardrail: self.guardrail.clone(),
             status_sink,
-        }
-    }
-
-    fn build_conversation_agent(
-        &self,
-        chat: &ResolvedAIModelConfig,
-        spec: AgentSpec,
-    ) -> AppResult<ConversationAgent> {
-        let model = chat.model.as_str();
-        match chat.provider.as_str() {
-            "openai" => {
-                let client = Self::openai_client(chat)?;
-                Ok(ConversationAgent::OpenAiResponses(configure_agent(
-                    client.agent(model),
-                    spec,
-                )))
-            }
-            "openai_compatible" | "siliconflow" | "dashscope" => {
-                let client = Self::openai_client(chat)?.completions_api();
-                Ok(ConversationAgent::OpenAiCompletions(configure_agent(
-                    client.agent(model),
-                    spec,
-                )))
-            }
-            "deepseek" => {
-                let client = Self::deepseek_client(chat)?;
-                Ok(ConversationAgent::DeepSeek(configure_agent(
-                    client.agent(model),
-                    spec,
-                )))
-            }
-            provider => Err(AppError::internal(format!(
-                "unsupported provider: {provider}"
-            ))),
         }
     }
 
@@ -366,6 +239,41 @@ impl RigConversationRuntime {
         self.ai_configs.resolve(user_id, capability).await
     }
 
+    async fn plan_turn(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        model: ResolvedAIModelConfig,
+        text: String,
+        has_images: bool,
+        rag_enabled: bool,
+    ) -> AppResult<AgentTurnPlan> {
+        let context = self.context_provider.load(user_id).await;
+        let is_internal_input = is_internal_conversation_input(&text);
+        let plan = self
+            .turn_planner
+            .plan_turn(AgentTurnInput {
+                text,
+                has_images,
+                is_internal_input,
+                model,
+                current_context: context,
+                chat_enabled: true,
+                semantic_memory_enabled: rag_enabled,
+                memory_observation_enabled: true,
+            })
+            .await?;
+        tracing::info!(
+            agent.route = ?plan.route(),
+            route.source = ?plan.route_decision.source,
+            route.reason = %plan.route_decision.reason,
+            session.id = %session_id,
+            input.has_images = has_images,
+            "agent turn planned"
+        );
+        Ok(plan)
+    }
+
     pub async fn complete(
         &self,
         user_id: &UserId,
@@ -375,33 +283,39 @@ impl RigConversationRuntime {
         let chat = self.resolve_conversation_model(user_id, &input).await?;
         let rag = self.resolve_rag(user_id).await?;
         let nutrition_retriever = self.nutrition_retriever(rag.as_ref());
-        let context = self.context_provider.load(user_id).await;
-        let preamble = self.runtime_preamble(&context, true, rag.is_some(), input.has_images());
         let interaction_sink = AgentInteractionSink::default();
         let memory_input = input.visible_text();
-        let route_decision = classify_route(&memory_input, input.has_images(), &chat).await?;
-        let route = route_decision.route;
-        let tool_choice = tool_choice_for_route(route, &memory_input);
-        tracing::info!(
-            agent.route = ?route,
-            route.source = ?route_decision.source,
-            route.reason = %route_decision.reason,
-            session.id = %session_id,
-            input.has_images = input.has_images(),
-            "agent route selected"
-        );
-        let prompt = build_prompt_message(&self.image_store, &input).await?;
-        persist_user_image_message(&self.repo, user_id, session_id, &input, &memory_input).await;
-        persist_user_visible_message(&self.repo, user_id, session_id, &input, &memory_input)
+        let plan = self
+            .plan_turn(
+                user_id,
+                session_id,
+                chat.clone(),
+                memory_input.clone(),
+                input.has_images(),
+                rag.is_some(),
+            )
             .await?;
+        let route = plan.route();
+        let tool_choice = tool_choice_for_route(route, &memory_input);
+        let prompt = build_prompt_message(&self.image_store, &input).await?;
+        if plan.lifecycle.persist_user_image_message {
+            persist_user_image_message(&self.repo, user_id, session_id, &input, &memory_input)
+                .await;
+        }
+        if plan.lifecycle.persist_user_visible_message {
+            persist_user_visible_message(&self.repo, user_id, session_id, &input, &memory_input)
+                .await?;
+        }
 
         let rag_context = self.build_rag_agent_context(user_id, rag.as_ref()).await?;
+        let tool_ids = plan.tool_ids.clone();
         let spec = self.build_agent_spec(
             user_id,
             session_id,
             &chat,
-            preamble,
+            plan.preamble.clone(),
             route,
+            &tool_ids,
             tool_choice,
             interaction_sink,
             nutrition_retriever,
@@ -409,14 +323,21 @@ impl RigConversationRuntime {
             None,
         );
         let reply = self
-            .build_conversation_agent(&chat, spec)?
+            .model_gateway
+            .conversation_agent(&chat, spec)?
             .prompt(prompt, session_id)
             .await?;
 
-        persist_assistant_visible_message(&self.repo, user_id, session_id, &reply).await?;
-        self.observe_memory(user_id, session_id, &memory_input, &reply)
-            .await;
-        self.spawn_conversation_summary_update(user_id, session_id);
+        if plan.lifecycle.persist_assistant_visible_message {
+            persist_assistant_visible_message(&self.repo, user_id, session_id, &reply).await?;
+        }
+        if plan.lifecycle.memory_observation_enabled {
+            self.observe_memory(user_id, session_id, &memory_input, &reply)
+                .await;
+        }
+        if plan.lifecycle.update_conversation_summary {
+            self.spawn_conversation_summary_update(user_id, session_id);
+        }
 
         Ok(SendUserMessageResult {
             reply,
@@ -431,21 +352,23 @@ impl RigConversationRuntime {
         input: ConversationUserInput,
     ) -> AppResult<ConversationReplyStream> {
         let chat = self.resolve_conversation_model(user_id, &input).await?;
+        let rag = self.resolve_rag(user_id).await?;
         let runtime = self.clone();
         let user_id = user_id.clone();
         let session_id = session_id.to_string();
         let has_images = input.has_images();
         let visible_text = input.visible_text();
-        let route_decision = classify_route(&visible_text, has_images, &chat).await?;
-        let route = route_decision.route;
-        tracing::info!(
-            agent.route = ?route,
-            route.source = ?route_decision.source,
-            route.reason = %route_decision.reason,
-            session.id = %session_id,
-            input.has_images = has_images,
-            "agent route selected"
-        );
+        let plan = self
+            .plan_turn(
+                &user_id,
+                &session_id,
+                chat.clone(),
+                visible_text,
+                has_images,
+                rag.is_some(),
+            )
+            .await?;
+        let route = plan.route();
 
         Ok(Box::pin(stream! {
             yield Ok(stream_event(ConversationStreamEvent::RunStarted {
@@ -454,7 +377,7 @@ impl RigConversationRuntime {
             yield Ok(initial_route_status(route, has_images));
 
             match runtime
-                .open_stream_with_model(&user_id, &session_id, input, chat, route)
+                .open_stream_with_model(&user_id, &session_id, input, chat, plan, rag)
                 .await
             {
                 Ok(mut reply_stream) => {
@@ -473,19 +396,23 @@ impl RigConversationRuntime {
         session_id: &str,
         input: ConversationUserInput,
         chat: ResolvedAIModelConfig,
-        route: AgentRoute,
+        plan: AgentTurnPlan,
+        rag: Option<RagConfig>,
     ) -> AppResult<ConversationReplyStream> {
-        let rag = self.resolve_rag(user_id).await?;
         let nutrition_retriever = self.nutrition_retriever(rag.as_ref());
-        let context = self.context_provider.load(user_id).await;
-        let preamble = self.runtime_preamble(&context, true, rag.is_some(), input.has_images());
         let interaction_sink = AgentInteractionSink::default();
         let user_input = input.visible_text();
         let has_images = input.has_images();
+        let route = plan.route();
         let tool_choice = tool_choice_for_route(route, &user_input);
         let prompt = build_prompt_message(&self.image_store, &input).await?;
-        persist_user_image_message(&self.repo, user_id, session_id, &input, &user_input).await;
-        persist_user_visible_message(&self.repo, user_id, session_id, &input, &user_input).await?;
+        if plan.lifecycle.persist_user_image_message {
+            persist_user_image_message(&self.repo, user_id, session_id, &input, &user_input).await;
+        }
+        if plan.lifecycle.persist_user_visible_message {
+            persist_user_visible_message(&self.repo, user_id, session_id, &input, &user_input)
+                .await?;
+        }
         let user_id_for_history = user_id.clone();
         let user_id_for_memory = user_id.clone();
         let session_id_for_history = session_id.to_string();
@@ -497,19 +424,21 @@ impl RigConversationRuntime {
         let status_sink = AgentStatusSink::new(status_tx);
 
         let rag_context = self.build_rag_agent_context(user_id, rag.as_ref()).await?;
+        let tool_ids = plan.tool_ids.clone();
         let spec = self.build_agent_spec(
             user_id,
             session_id,
             &chat,
-            preamble,
+            plan.preamble.clone(),
             route,
+            &tool_ids,
             tool_choice,
             interaction_sink.clone(),
             nutrition_retriever,
             rag_context,
             Some(status_sink.clone()),
         );
-        let agent = self.build_conversation_agent(&chat, spec)?;
+        let agent = self.model_gateway.conversation_agent(&chat, spec)?;
         let wrap_ctx = StreamWrapCtx {
             interaction_sink,
             has_images,
@@ -520,14 +449,18 @@ impl RigConversationRuntime {
             user_id_for_memory,
             session_id_for_memory,
             user_input_for_memory,
+            should_persist_assistant_visible_message: plan
+                .lifecycle
+                .persist_assistant_visible_message,
+            memory_observation_enabled: plan.lifecycle.memory_observation_enabled,
+            should_update_conversation_summary: plan.lifecycle.update_conversation_summary,
             status_rx,
         };
 
         Ok(agent.stream(prompt, session_id.to_string(), wrap_ctx).await)
     }
 
-
-    fn wrap_stream<S, R>(mut raw: S, ctx: StreamWrapCtx) -> ConversationReplyStream
+    pub(crate) fn wrap_stream<S, R>(mut raw: S, ctx: StreamWrapCtx) -> ConversationReplyStream
     where
         S: futures_core::Stream<Item = Result<MultiTurnStreamItem<R>, StreamingError>>
             + Send
@@ -545,6 +478,9 @@ impl RigConversationRuntime {
             user_id_for_memory,
             session_id_for_memory,
             user_input_for_memory,
+            should_persist_assistant_visible_message,
+            memory_observation_enabled,
+            should_update_conversation_summary,
             mut status_rx,
         } = ctx;
         let s = stream! {
@@ -615,16 +551,18 @@ impl RigConversationRuntime {
                             AgentStatusKind::Persisting,
                             "我在保存这次对话。",
                         ));
-                        if let Err(err) = persist_assistant_visible_message(
-                            &repo_for_history,
-                            &user_id_for_history,
-                            &session_id_for_history,
-                            &assistant_output,
-                        )
-                        .await
-                        {
-                            yield Err(err);
-                            break;
+                        if should_persist_assistant_visible_message {
+                            if let Err(err) = persist_assistant_visible_message(
+                                &repo_for_history,
+                                &user_id_for_history,
+                                &session_id_for_history,
+                                &assistant_output,
+                            )
+                            .await
+                            {
+                                yield Err(err);
+                                break;
+                            }
                         }
                         while let Ok(event) = status_rx.try_recv() {
                             yield Ok(stream_event(event));
@@ -635,25 +573,29 @@ impl RigConversationRuntime {
                         let user_input_for_memory = user_input_for_memory.clone();
                         let assistant_output_for_memory = assistant_output.clone();
                         tokio::spawn(async move {
-                            runtime_for_memory
-                                .observe_memory(
+                            if memory_observation_enabled {
+                                runtime_for_memory
+                                    .observe_memory(
+                                        &user_id_for_memory,
+                                        &session_id_for_memory,
+                                        &user_input_for_memory,
+                                        &assistant_output_for_memory,
+                                    )
+                                    .await;
+                            }
+                            if should_update_conversation_summary {
+                                runtime_for_memory.spawn_conversation_summary_update(
                                     &user_id_for_memory,
                                     &session_id_for_memory,
-                                    &user_input_for_memory,
-                                    &assistant_output_for_memory,
-                                )
-                                .await;
-                            runtime_for_memory.spawn_conversation_summary_update(
-                                &user_id_for_memory,
-                                &session_id_for_memory,
-                            );
+                                );
+                            }
                         });
                         yield Ok(stream_event(ConversationStreamEvent::Done));
                         tracing::info!(output.len = output_len, "agent stream finished");
                     }
                     Ok(_) => {}
                     Err(e) => {
-                        yield Err(AppError::upstream(e.to_string()));
+                        yield Err(streaming_upstream_error(&e));
                         break;
                     }
                 }
@@ -728,18 +670,20 @@ impl RigConversationRuntime {
             }
         };
 
-        let memory_index: Arc<dyn crate::agent::memory::long_term::index::MemoryIndex> =
-            match self.resolve_rag(user_id).await {
-                Ok(Some(rag)) => Arc::new(LanceDbMemoryIndex::new(rag)),
-                Ok(None) => Arc::new(NoopMemoryIndex),
-                Err(err) => {
-                    tracing::warn!(error = %err, "failed to resolve memory index");
-                    Arc::new(NoopMemoryIndex)
-                }
-            };
+        let memory_index: Arc<dyn MemoryIndex> = match self.resolve_rag(user_id).await {
+            Ok(Some(rag)) => Arc::new(LanceDbMemoryIndex::new(rag)),
+            Ok(None) => Arc::new(NoopMemoryIndex),
+            Err(err) => {
+                tracing::warn!(error = %err, "failed to resolve memory index");
+                Arc::new(NoopMemoryIndex)
+            }
+        };
 
         let pipeline = MemoryPipeline::new(
-            Arc::new(ModelMemoryExtractor::new(extractor_model)),
+            Arc::new(ModelMemoryExtractor::with_model_gateway(
+                extractor_model,
+                self.text_model.clone(),
+            )),
             MemoryService::new(MemoryPolicy::new(), self.memory_store.clone(), memory_index),
         );
 
@@ -846,67 +790,34 @@ impl RigConversationRuntime {
         model: &ResolvedAIModelConfig,
         prompt: String,
     ) -> AppResult<String> {
-        match model.provider.as_str() {
-            "openai" | "openai_compatible" | "siliconflow" | "dashscope" => {
-                let client = Self::openai_client(model)?.completions_api();
-                client
-                    .agent(model.model.as_str())
-                    .preamble(CONVERSATION_SUMMARY_PREAMBLE)
-                    .build()
-                    .prompt(prompt)
-                    .await
-                    .map_err(|e| AppError::upstream(e.to_string()))
-            }
-            "deepseek" => {
-                let client = Self::deepseek_client(model)?;
-                client
-                    .agent(model.model.as_str())
-                    .preamble(CONVERSATION_SUMMARY_PREAMBLE)
-                    .build()
-                    .prompt(prompt)
-                    .await
-                    .map_err(|e| AppError::upstream(e.to_string()))
-            }
-            provider => Err(AppError::internal(format!(
-                "unsupported summary provider: {provider}"
-            ))),
-        }
-    }
-
-    fn runtime_preamble(
-        &self,
-        context: &str,
-        chat_enabled: bool,
-        semantic_memory_enabled: bool,
-        vision_enabled: bool,
-    ) -> String {
-        let chat_status = if chat_enabled {
-            "聊天功能已启用。"
-        } else {
-            "聊天功能未启用。"
-        };
-        let semantic_status = if semantic_memory_enabled {
-            "长期语义记忆/RAG 已启用。"
-        } else {
-            "长期语义记忆/RAG 未启用：用户尚未配置 embedding 模型或 API key。只能使用当前会话记忆和 Current Context。"
-        };
-        let vision_status = if vision_enabled {
-            "识图功能本轮已启用。"
-        } else {
-            "识图功能本轮未启用。"
-        };
-        format!(
-            "{WARMMY_PREAMBLE}\n\n## Capability Status\n- {chat_status}\n- {semantic_status}\n- {vision_status}\n\n## Current Context\n{context}"
-        )
+        self.text_model
+            .prompt_text(TextPromptRequest {
+                model: model.clone(),
+                preamble: CONVERSATION_SUMMARY_PREAMBLE.to_string(),
+                prompt,
+            })
+            .await
     }
 }
-
 
 fn tool_choice_for_route(route: AgentRoute, _input: &str) -> ToolChoice {
     match route {
         AgentRoute::MealIntake => ToolChoice::Auto,
         AgentRoute::Chat => ToolChoice::Auto,
     }
+}
+
+fn streaming_upstream_error(error: &impl std::fmt::Display) -> AppError {
+    let raw = error.to_string();
+    if raw.contains("data_inspection_failed") || raw.contains("DataInspectionFailed") {
+        tracing::warn!(
+            error = %raw,
+            "model provider rejected streamed output during content inspection"
+        );
+        return AppError::upstream("模型服务内容安全检查未通过，无法返回这次图片识别结果");
+    }
+
+    AppError::upstream(raw)
 }
 
 fn build_conversation_summary_prompt(previous_summary: &str, window: &[ChatMessage]) -> String {
@@ -933,4 +844,3 @@ fn build_conversation_summary_prompt(previous_summary: &str, window: &[ChatMessa
         "previous summary:\n{previous_summary}\n\nnew message window:\n{messages}\n\n请输出合并后的 rolling conversation summary。"
     )
 }
-

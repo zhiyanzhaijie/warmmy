@@ -1,15 +1,16 @@
 use std::sync::Arc;
 
+use app::agents::{
+    AgentInteractionRequest, AgentServiceProgress, MealIntakeFood, MealIntakeInput,
+    NutritionCurator, NutritionReferenceRetriever,
+};
 use app::meal::{
     ConfirmMealLogCommand, MealCommandHandler, RejectMealLogCommand, UpdatePendingMealLogCommand,
 };
 
-use crate::agent::chains::meal_intake::{MealIntakeChain, MealIntakeFood, MealIntakeInput};
-use crate::agent::interaction::{AgentInteractionRequest, AgentInteractionSink};
-use crate::agent::services::nutrition::curator::NutritionCurator;
+use crate::agent::chains::meal_intake::MealIntakeChain;
+use crate::agent::interaction::AgentInteractionSink;
 use crate::agent::services::nutrition::estimator::MealNutritionEstimator;
-use crate::agent::services::nutrition::retriever::NutritionReferenceRetriever;
-use crate::agent::services::AgentServiceProgress;
 use crate::agent::tool::names;
 use domain::UserId;
 use rig::completion::ToolDefinition;

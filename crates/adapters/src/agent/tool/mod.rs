@@ -1,13 +1,13 @@
 use std::sync::Arc;
 
+use app::agents::{
+    AgentRoute, AgentServiceProgress, AgentToolId, NutritionCurator, NutritionReferenceRetriever,
+    RouteRegistry,
+};
 use app::meal::MealCommandHandler;
 use rig::tool::ToolDyn;
 
 use crate::agent::interaction::AgentInteractionSink;
-use crate::agent::routing::classifier::AgentRoute;
-use crate::agent::services::nutrition::curator::NutritionCurator;
-use crate::agent::services::nutrition::retriever::NutritionReferenceRetriever;
-use crate::agent::services::AgentServiceProgress;
 use domain::UserId;
 
 mod meal;
@@ -48,34 +48,60 @@ pub fn tools_for_route(
     nutrition_retriever: Option<Arc<dyn NutritionReferenceRetriever>>,
     progress: Option<Arc<dyn AgentServiceProgress>>,
 ) -> Vec<Box<dyn ToolDyn>> {
-    match route {
-        AgentRoute::MealIntake => {
-            tracing::info!(
-                agent.route = ?route,
-                toolset = "meal_intake",
-                tool.count = 3,
-                "agent tools selected"
-            );
-            tools(
+    let tool_ids = RouteRegistry::new().tool_ids(route);
+    let tools = tools_for_ids(
+        tool_ids,
+        user_id,
+        session_id,
+        meal_command,
+        interaction_sink,
+        nutrition_curator,
+        nutrition_retriever,
+        progress,
+    );
+    tracing::info!(
+        agent.route = ?route,
+        tool.count = tools.len(),
+        "agent tools selected"
+    );
+    tools
+}
+
+pub fn tools_for_ids(
+    tool_ids: &[AgentToolId],
+    user_id: &UserId,
+    session_id: &str,
+    meal_command: Arc<MealCommandHandler>,
+    interaction_sink: AgentInteractionSink,
+    nutrition_curator: Option<Arc<dyn NutritionCurator>>,
+    nutrition_retriever: Option<Arc<dyn NutritionReferenceRetriever>>,
+    progress: Option<Arc<dyn AgentServiceProgress>>,
+) -> Vec<Box<dyn ToolDyn>> {
+    let mut tools = Vec::new();
+    for tool_id in tool_ids {
+        match tool_id {
+            AgentToolId::ProposeMealLog => tools.extend(meal::meal_propose_tools(
                 user_id,
                 session_id,
-                meal_command,
-                interaction_sink,
-                nutrition_curator,
-                nutrition_retriever,
-                progress,
-            )
-        }
-        AgentRoute::Chat => {
-            tracing::info!(
-                agent.route = ?route,
-                toolset = "none",
-                tool.count = 0,
-                "agent tools selected"
-            );
-            Vec::new()
+                meal_command.clone(),
+                interaction_sink.clone(),
+                nutrition_curator.clone(),
+                nutrition_retriever.clone(),
+                progress.clone(),
+            )),
+            AgentToolId::ConfirmMealLog => tools.extend(meal::confirm_meal_log_tools(
+                user_id,
+                meal_command.clone(),
+                nutrition_curator.clone(),
+                nutrition_retriever.clone(),
+                progress.clone(),
+            )),
+            AgentToolId::RejectMealLog => {
+                tools.extend(meal::reject_meal_log_tools(user_id, meal_command.clone()))
+            }
         }
     }
+    tools
 }
 
 pub fn meal_propose_tools(

@@ -1,8 +1,6 @@
+use app::agents::{AgentInteractionRequest, AgentRoute};
 use app::conversation::{AgentStatusKind, ConversationStreamEvent};
 use serde_json::{to_value, Value};
-
-use crate::agent::interaction::AgentInteractionRequest;
-use crate::agent::routing::classifier::AgentRoute;
 
 pub fn initial_route_status(route: AgentRoute, has_images: bool) -> String {
     match route {

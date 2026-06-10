@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
+use app::agents::{MemoryExtractor, MemoryObservation, PromotionDecision, PromotionPolicy};
 use app::app_error::AppResult;
 
-use crate::agent::memory::long_term::extractor::{MemoryExtractor, MemoryObservation};
-use crate::agent::memory::long_term::promotion::{PromotionDecision, PromotionPolicy};
 use crate::agent::memory::long_term::service::MemoryService;
 
 #[derive(Clone)]

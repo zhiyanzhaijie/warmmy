@@ -11,8 +11,8 @@ use app::user::{
 use domain::{
     AICapability, AIProviderKind, AppPreferences, DietaryPreferences, DiningCompanion,
     DiningCompanionId, ExpectationSource, HealthExpectationId, HealthExpectationKind,
-    HealthExpectationStatus, UserAIProvider, UserAIRoute, UserHealthExpectation, UserId,
-    UserApiKey, UserPreferences, UserProfile,
+    HealthExpectationStatus, UserAIProvider, UserAIRoute, UserApiKey, UserHealthExpectation,
+    UserId, UserPreferences, UserProfile,
 };
 
 use crate::crypto::SharedSecretCipher;

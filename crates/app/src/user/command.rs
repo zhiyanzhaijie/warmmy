@@ -457,7 +457,9 @@ impl UserAIConfigCommandHandler {
                     .iter()
                     .find(|item| item.secret_ref == secret_ref)
                     .map(|item| item.secret_ref.clone())
-                    .ok_or_else(|| AppError::validation(format!("api key not found: {secret_ref}")))?,
+                    .ok_or_else(|| {
+                        AppError::validation(format!("api key not found: {secret_ref}"))
+                    })?,
             ),
             None => existing.and_then(|provider| provider.secret_ref),
         };
@@ -570,7 +572,10 @@ impl UserAIConfigCommandHandler {
         Ok(route)
     }
 
-    pub async fn save_api_key(&self, input: SaveUserApiKeyCommand) -> AppResult<domain::UserApiKey> {
+    pub async fn save_api_key(
+        &self,
+        input: SaveUserApiKeyCommand,
+    ) -> AppResult<domain::UserApiKey> {
         self.ensure_profile_exists(&input.user_id).await?;
 
         let now = chrono::Utc::now().to_rfc3339();
@@ -592,7 +597,10 @@ impl UserAIConfigCommandHandler {
             .map_err(AppError::upstream)?
             .into_iter()
             .find(|item| item.id == api_key_id);
-        let secret_ref = format!("secret:user:{}:api_key:{api_key_id}", input.user_id.as_str());
+        let secret_ref = format!(
+            "secret:user:{}:api_key:{api_key_id}",
+            input.user_id.as_str()
+        );
         let secret_value = match input.api_key {
             Some(value) if !value.trim().is_empty() => value.trim().to_string(),
             _ => {
@@ -634,7 +642,9 @@ impl UserAIConfigCommandHandler {
             .map_err(AppError::upstream)?
             .into_iter()
             .find(|item| item.id == input.api_key_id)
-            .ok_or_else(|| AppError::NotFound(format!("api key not found: {}", input.api_key_id)))?;
+            .ok_or_else(|| {
+                AppError::NotFound(format!("api key not found: {}", input.api_key_id))
+            })?;
 
         let providers = self
             .repo
@@ -645,7 +655,9 @@ impl UserAIConfigCommandHandler {
             .iter()
             .any(|provider| provider.secret_ref.as_deref() == Some(api_key.secret_ref.as_str()))
         {
-            return Err(AppError::validation("api key is still referenced by a provider"));
+            return Err(AppError::validation(
+                "api key is still referenced by a provider",
+            ));
         }
 
         self.secrets

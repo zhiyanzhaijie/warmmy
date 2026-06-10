@@ -1,15 +1,14 @@
 use std::sync::Arc;
 
+use app::agents::{
+    IndexPolicy, LongTermMemoryForm, MemoryCandidate, MemoryClaim, MemoryRecord, MemoryScope,
+    MemorySource, MemoryStatus, MemoryStore,
+};
 use app::app_error::{AppError, AppResult};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::agent::memory::long_term::store::MemoryStore;
-use crate::agent::memory::types::{
-    IndexPolicy, LongTermMemoryForm, MemoryCandidate, MemoryClaim, MemoryRecord, MemoryScope,
-    MemorySource, MemoryStatus,
-};
 use crate::persistence::sqlite::models::MemoryRecordRow;
 
 #[derive(Clone)]

@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use crate::app_error::{AppError, AppResult};
 use crate::meal::{
-    FoodNutritionReferenceRepositoryPort,
-    MealDayFinalizationRepositoryPort, MealDaySummaryRepositoryPort, MealEventHandler,
-    MealRecordRepositoryPort, PendingMealLogRepositoryPort,
+    FoodNutritionReferenceRepositoryPort, MealDayFinalizationRepositoryPort,
+    MealDaySummaryRepositoryPort, MealEventHandler, MealRecordRepositoryPort,
+    PendingMealLogRepositoryPort,
 };
 use crate::user::UserDietaryContextQueryHandler;
 use domain::{

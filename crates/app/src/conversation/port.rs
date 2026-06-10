@@ -82,10 +82,7 @@ pub trait ChatMessageRepositoryPort: Send + Sync {
 
 #[async_trait]
 pub trait EphemeralImageStorePort: Send + Sync {
-    async fn put_image(
-        &self,
-        input: StoreEphemeralImageInput,
-    ) -> AppResult<StoredEphemeralImage>;
+    async fn put_image(&self, input: StoreEphemeralImageInput) -> AppResult<StoredEphemeralImage>;
 
     async fn load_image(&self, asset_id: &str) -> AppResult<EphemeralImageData>;
 

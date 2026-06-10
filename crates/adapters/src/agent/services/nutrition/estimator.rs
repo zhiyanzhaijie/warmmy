@@ -1,58 +1,17 @@
 use std::sync::Arc;
 
+use app::agents::{
+    AgentServiceProgress, CuratedNutritionReferenceRecord, MealNutritionEstimate,
+    MealNutritionStage, NutritionCurator, NutritionKnowledgeGap, NutritionKnowledgeGapReason,
+    NutritionReferenceRetriever, ResolvedMealFood,
+};
 use app::app_error::{AppError, AppResult};
 use app::meal::{
     estimate_nutrition_from_foods_with_references, FoodNutritionReferenceRepositoryPort,
 };
-use domain::{FoodItem, FoodNutritionReference, Nutrition};
+use domain::FoodItem;
 
-use crate::agent::chains::meal_intake::{critique_foods, MealIntakeCritique};
-use crate::agent::services::nutrition::curator::NutritionCurator;
-use crate::agent::services::nutrition::retriever::NutritionReferenceRetriever;
-use crate::agent::services::AgentServiceProgress;
-
-#[derive(Debug, Clone)]
-pub struct MealNutritionEstimate {
-    pub nutrition: Nutrition,
-    pub foods: Vec<ResolvedMealFood>,
-    pub gaps: Vec<NutritionKnowledgeGap>,
-    pub curated_references: Vec<CuratedNutritionReferenceRecord>,
-    pub critiques: Vec<MealIntakeCritique>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ResolvedMealFood {
-    pub item: FoodItem,
-    pub reference: Option<FoodNutritionReference>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NutritionKnowledgeGap {
-    pub food_name: String,
-    pub reason: NutritionKnowledgeGapReason,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NutritionKnowledgeGapReason {
-    MissingReference,
-}
-
-#[derive(Debug, Clone)]
-pub struct CuratedNutritionReferenceRecord {
-    pub food_name: String,
-    pub reference_id: String,
-    pub source: String,
-    pub confidence: f32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MealNutritionStage {
-    ReferenceResolved,
-    ReferenceMissing,
-    ReferenceCurated,
-    Estimated,
-    Critiqued,
-}
+use crate::agent::chains::meal_intake::critique_foods;
 
 #[derive(Clone, Default)]
 pub struct MealNutritionEstimator {

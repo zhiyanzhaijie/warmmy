@@ -7,9 +7,9 @@ use app::conversation::{
 };
 use base64::Engine;
 use domain::UserId;
-use rig::OneOrMany;
 use rig::completion::Message;
 use rig::message::{ImageDetail, ImageMediaType, MimeType, UserContent};
+use rig::OneOrMany;
 
 pub async fn build_prompt_message(
     image_store: &Arc<dyn EphemeralImageStorePort>,
