@@ -959,20 +959,20 @@ fn ModelTypeCard(
 ) -> Element {
     let has_config = status.is_some();
     let enabled = status.as_ref().map(|item| item.enabled).unwrap_or(false);
-    
-    let state_text = if enabled { 
-        "已启用" 
+
+    let state_text = if enabled {
+        "已启用"
     } else if has_config {
         "已配置 (未启用)"
-    } else { 
-        "未配置" 
+    } else {
+        "未配置"
     };
 
     let model = status
         .as_ref()
         .and_then(|item| item.model.clone())
         .unwrap_or_else(|| "尚未配置".to_string());
-        
+
     let reason = status
         .as_ref()
         .and_then(|item| item.reason.clone())
@@ -983,43 +983,43 @@ fn ModelTypeCard(
             r#type: "button",
             class: format!(
                 "group relative min-h-44 rounded-2xl border p-5 text-left transition-all duration-300 {}",
-                if enabled { 
-                    "border-foreground/20 bg-foreground/[0.02] text-foreground shadow-sm" 
+                if enabled {
+                    "border-foreground/20 bg-foreground/[0.02] text-foreground shadow-sm"
                 } else if has_config {
                     "border-border bg-card text-foreground hover:border-foreground/30 hover:bg-card/80 opacity-80"
-                } else { 
-                    "border-border border-dashed bg-card/50 text-foreground hover:border-foreground/30 hover:border-solid hover:bg-card/80 opacity-60 hover:opacity-100" 
+                } else {
+                    "border-border border-dashed bg-card/50 text-foreground hover:border-foreground/30 hover:border-solid hover:bg-card/80 opacity-60 hover:opacity-100"
                 }
             ),
             onclick: move |_| onclick.call(info.capability.to_string()),
             div { class: "flex items-start justify-between gap-3",
                 div { class: format!(
                     "flex h-10 w-10 items-center justify-center rounded-full transition-colors {}",
-                    if enabled { 
-                        "bg-foreground text-background shadow-xs" 
+                    if enabled {
+                        "bg-foreground text-background shadow-xs"
                     } else if has_config {
                         "bg-foreground/10 text-foreground"
-                    } else { 
-                        "bg-muted text-muted-foreground group-hover:bg-foreground/10 group-hover:text-foreground" 
+                    } else {
+                        "bg-muted text-muted-foreground group-hover:bg-foreground/10 group-hover:text-foreground"
                     }
                 ),
                     TypeIcon { capability: info.capability.to_string(), size: 18 }
                 }
                 span { class: format!(
                     "rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors {}",
-                    if enabled { 
-                        "border-foreground/20 bg-foreground/5 text-foreground" 
+                    if enabled {
+                        "border-foreground/20 bg-foreground/5 text-foreground"
                     } else if has_config {
                         "border-border bg-card text-muted-foreground"
-                    } else { 
-                        "border-transparent text-muted-foreground/60" 
+                    } else {
+                        "border-transparent text-muted-foreground/60"
                     }
                 ), "{state_text}" }
             }
             div { class: "mt-5 text-xs font-medium uppercase tracking-widest text-muted-foreground", "{info.current_label}" }
             div { class: "mt-2 text-xl font-medium tracking-tight text-foreground", "{info.title}" }
             div { class: "mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted-foreground", "{info.subtitle}" }
-            div { class: "mt-4 truncate text-xs text-muted-foreground", 
+            div { class: "mt-4 truncate text-xs text-muted-foreground",
                 if has_config {
                     "{reason} · {model}"
                 } else {

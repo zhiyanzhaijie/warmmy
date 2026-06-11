@@ -1,8 +1,6 @@
 use dioxus::prelude::*;
 
-use super::{
-    ChatRuntimeProvider, ChatStateProvider, PreferenceProvider, UserProvider,
-};
+use super::{ChatRuntimeProvider, ChatStateProvider, PreferenceProvider, UserProvider};
 use crate::blocks::ChatContext;
 
 #[component]

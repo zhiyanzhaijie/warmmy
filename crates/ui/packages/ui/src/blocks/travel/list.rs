@@ -197,12 +197,13 @@ fn mountain_spec_for_index(index: usize, summaries: &[DisplaySummary]) -> Mounta
         center_x: placement.center_x,
         center_y: placement.center_y,
         radius_x: cell_width * 0.28,
-        radius_y: placement.outer_radius_y / contour_scale(max_ring_index(
-            summaries
-                .get(index)
-                .map(|display| display.display_score)
-                .unwrap_or(0.0),
-        )),
+        radius_y: placement.outer_radius_y
+            / contour_scale(max_ring_index(
+                summaries
+                    .get(index)
+                    .map(|display| display.display_score)
+                    .unwrap_or(0.0),
+            )),
         seed: 2.4 + index as f32 * 1.73,
     }
 }
@@ -446,7 +447,11 @@ fn route_path_for_mountains(summaries: &[DisplaySummary]) -> String {
     for index in 0..points.len() - 1 {
         let current = points[index];
         let next = points[index + 1];
-        let previous = if index == 0 { current } else { points[index - 1] };
+        let previous = if index == 0 {
+            current
+        } else {
+            points[index - 1]
+        };
         let after_next = if index + 2 >= points.len() {
             next
         } else {
@@ -484,7 +489,10 @@ fn TimelineItem(
     let calories = compact_number(metrics.total_nutrition.calories);
     let spec = mountain_spec_for_index(index, &summaries);
     let left = format!("{:.2}%", spec.center_x);
-    let top = format!("{:.2}%", spec.center_y / map_view_height(&summaries) * 100.0);
+    let top = format!(
+        "{:.2}%",
+        spec.center_y / map_view_height(&summaries) * 100.0
+    );
     let side = if spec.center_x > 50.0 {
         ContentSide::Left
     } else {

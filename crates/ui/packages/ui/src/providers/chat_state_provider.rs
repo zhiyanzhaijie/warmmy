@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
-use crate::blocks::{ChatMessage, ChatContext, ComposerImageAttachment};
+use crate::blocks::{ChatContext, ChatMessage, ComposerImageAttachment};
 
 #[component]
 pub fn ChatStateProvider(chat: ChatContext, children: Element) -> Element {

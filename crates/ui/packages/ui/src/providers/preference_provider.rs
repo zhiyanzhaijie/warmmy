@@ -14,9 +14,10 @@ pub fn PreferenceProvider(children: Element) -> Element {
     let mut preferences = use_signal(|| None);
     use_context_provider(|| PreferenceContext { preferences });
 
-    let loaded = use_IO(move || async move {
-        user::get_user_preferences(DEFAULT_USER_ID.to_string()).await
-    });
+    let loaded =
+        use_IO(
+            move || async move { user::get_user_preferences(DEFAULT_USER_ID.to_string()).await },
+        );
 
     use_effect(move || {
         if let Some(Ok(next_preferences)) = loaded.read().as_ref() {

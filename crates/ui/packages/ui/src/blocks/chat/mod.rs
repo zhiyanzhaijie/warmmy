@@ -90,7 +90,7 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
 
     rsx! {
         div {
-            class: "h-full min-h-0 overflow-hidden bg-transparent md:px-4 md:py-4",
+            class: "h-full min-h-0 overflow-hidden bg-transparent",
             div {
                 class: "mx-auto flex h-full min-h-0 max-w-5xl flex-col overflow-hidden bg-transparent md:rounded-[1.5rem] md:bg-card/35",
                 ChatHeader {
@@ -125,7 +125,7 @@ fn ChatHeader(
         div {
             class: "border-b border-border bg-card/70 backdrop-blur md:bg-card/45",
             div {
-                class: "flex items-center justify-between gap-3 px-4 pb-1.5 pt-2.5 md:px-5 md:pt-3",
+                class: "flex items-center justify-between gap-3 px-4 py-1",
                 div { class: "flex min-w-0 items-center gap-2",
                     Button {
                         variant: ButtonVariant::Ghost,

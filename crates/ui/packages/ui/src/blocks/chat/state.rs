@@ -105,9 +105,7 @@ impl PartialEq for FinalizeConversationDay {
 }
 
 impl SendConversationMessage {
-    pub fn new(
-        handler: Rc<dyn Fn(String, String, Vec<ComposerImageAttachment>, bool)>,
-    ) -> Self {
+    pub fn new(handler: Rc<dyn Fn(String, String, Vec<ComposerImageAttachment>, bool)>) -> Self {
         Self { handler }
     }
 

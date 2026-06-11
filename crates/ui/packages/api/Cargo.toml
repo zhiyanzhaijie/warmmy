@@ -18,3 +18,4 @@ tokio = { version = "1", features = ["sync"], optional = true }
 [features]
 server = ["dioxus/server", "dep:infra"]
 local = ["dep:infra", "dep:tokio"]
+web = []

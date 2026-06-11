@@ -9,11 +9,10 @@ use api::conversation;
 use dioxus::prelude::ServerFnError;
 
 use crate::blocks::{
-    activate_chat_session, append_agent_stream, append_chat_bot_text,
-    append_outgoing_message_pair, append_streaming_bot_slot, ChatActionContext, ChatContext,
-    ChatMessageAction, ComposerImageAttachment, DEFAULT_STREAM_IDLE_TIMEOUT,
-    FinalizeConversationDay, IMAGE_STREAM_IDLE_TIMEOUT, SendConversationMessage,
-    remove_pending_meal_messages,
+    activate_chat_session, append_agent_stream, append_chat_bot_text, append_outgoing_message_pair,
+    append_streaming_bot_slot, remove_pending_meal_messages, ChatActionContext, ChatContext,
+    ChatMessageAction, ComposerImageAttachment, FinalizeConversationDay, SendConversationMessage,
+    DEFAULT_STREAM_IDLE_TIMEOUT, IMAGE_STREAM_IDLE_TIMEOUT,
 };
 
 use super::current_user_id;
@@ -27,35 +26,37 @@ pub fn ChatRuntimeProvider(children: Element) -> Element {
     let chat_state = use_context::<ChatContext>();
     let user_id = current_user_id();
 
-    let runtime = use_coroutine(move |mut rx: UnboundedReceiver<ChatRuntimeCommand>| async move {
-        while let Some(command) = rx.next().await {
-            match command {
-                ChatRuntimeCommand::Send {
-                    request_user_id,
-                    session_id,
-                    content,
-                    attachments,
-                    route_after_stream,
-                } => {
-                    send_conversation_message(
-                        chat_state,
+    let runtime = use_coroutine(
+        move |mut rx: UnboundedReceiver<ChatRuntimeCommand>| async move {
+            while let Some(command) = rx.next().await {
+                match command {
+                    ChatRuntimeCommand::Send {
                         request_user_id,
                         session_id,
                         content,
                         attachments,
                         route_after_stream,
-                    )
-                    .await;
-                }
-                ChatRuntimeCommand::FinalizeDay {
-                    request_user_id,
-                    session_id,
-                } => {
-                    finalize_conversation_day(chat_state, request_user_id, session_id).await;
+                    } => {
+                        send_conversation_message(
+                            chat_state,
+                            request_user_id,
+                            session_id,
+                            content,
+                            attachments,
+                            route_after_stream,
+                        )
+                        .await;
+                    }
+                    ChatRuntimeCommand::FinalizeDay {
+                        request_user_id,
+                        session_id,
+                    } => {
+                        finalize_conversation_day(chat_state, request_user_id, session_id).await;
+                    }
                 }
             }
-        }
-    });
+        },
+    );
     let runtime_tx = runtime.tx();
 
     let send_message = use_hook(move || {
@@ -78,12 +79,14 @@ pub fn ChatRuntimeProvider(children: Element) -> Element {
     });
     let finalize_tx = runtime.tx();
     let finalize_day = use_hook(move || {
-        FinalizeConversationDay::new(Rc::new(move |request_user_id: String, session_id: String| {
-            let _ = finalize_tx.unbounded_send(ChatRuntimeCommand::FinalizeDay {
-                request_user_id,
-                session_id,
-            });
-        }))
+        FinalizeConversationDay::new(Rc::new(
+            move |request_user_id: String, session_id: String| {
+                let _ = finalize_tx.unbounded_send(ChatRuntimeCommand::FinalizeDay {
+                    request_user_id,
+                    session_id,
+                });
+            },
+        ))
     });
     use_context_provider(|| ChatActionContext {
         send_message,
@@ -165,12 +168,8 @@ async fn send_conversation_message(
         activate_chat_session(chat_state, session_id.clone());
     }
 
-    discard_pending_meals_before_chat(
-        chat_state,
-        request_user_id.clone(),
-        session_id.clone(),
-    )
-    .await;
+    discard_pending_meals_before_chat(chat_state, request_user_id.clone(), session_id.clone())
+        .await;
 
     let bot_id = append_outgoing_message_pair(
         chat_state,
@@ -270,7 +269,12 @@ async fn discard_pending_meals_before_chat(
         .map(|messages| {
             messages
                 .iter()
-                .filter_map(|message| message.pending_meal.as_ref().map(|pending| pending.id.clone()))
+                .filter_map(|message| {
+                    message
+                        .pending_meal
+                        .as_ref()
+                        .map(|pending| pending.id.clone())
+                })
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -322,7 +326,10 @@ async fn echo_with_timeout(
 
 fn timeout_server_error(duration: Duration) -> ServerFnError {
     ServerFnError::ServerError {
-        message: format!("chat request timed out after {} seconds", duration.as_secs()),
+        message: format!(
+            "chat request timed out after {} seconds",
+            duration.as_secs()
+        ),
         code: 408,
         details: Some(serde_json::json!({
             "code": "chat.timeout",
@@ -343,7 +350,10 @@ impl FriendlyChatError {
     }
 }
 
-fn friendly_chat_request_error(stream_err: ServerFnError, fallback_err: ServerFnError) -> FriendlyChatError {
+fn friendly_chat_request_error(
+    stream_err: ServerFnError,
+    fallback_err: ServerFnError,
+) -> FriendlyChatError {
     let stream_kind = ChatErrorKind::from_server_error(&stream_err);
     let fallback_kind = ChatErrorKind::from_server_error(&fallback_err);
     let kind = stream_kind.or(fallback_kind);
@@ -445,9 +455,7 @@ impl ChatErrorKind {
             "ai.vision_not_configured" => Some(Self::VisionModelNotConfigured),
             "ai.capability_not_configured" => Some(Self::ModelUnavailable),
             "memory.database_unavailable" => Some(Self::MemoryUnavailable),
-            "media.image_unsupported" | "media.image_unavailable" => {
-                Some(Self::ImageUnsupported)
-            }
+            "media.image_unsupported" | "media.image_unavailable" => Some(Self::ImageUnsupported),
             "model.upstream_unavailable" => Some(Self::ModelUnavailable),
             "chat.timeout" => Some(Self::Timeout),
             "chat.empty_input" => Some(Self::EmptyInput),

@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::time::Duration;
 
 use super::state::{
-    ChatActivity, ChatActivityKind, ChatMessage, ChatMessageAttachment, ChatContext,
+    ChatActivity, ChatActivityKind, ChatContext, ChatMessage, ChatMessageAttachment,
     ComposerImageAttachment,
 };
 use api::meal;
@@ -24,17 +24,11 @@ enum ChatStreamWireEvent {
         label: String,
     },
     #[serde(rename = "tool_started")]
-    ToolStarted {
-        tool_name: String,
-        label: String,
-    },
+    ToolStarted { tool_name: String, label: String },
     #[serde(rename = "tool_finished")]
     ToolFinished { tool_name: String },
     #[serde(rename = "tool_error")]
-    ToolError {
-        tool_name: String,
-        label: String,
-    },
+    ToolError { tool_name: String, label: String },
     #[serde(rename = "text_delta")]
     TextDelta { text: String },
     #[serde(rename = "interaction_requested")]
@@ -240,8 +234,13 @@ pub fn append_pending_meal_messages(
 
     let mut all_sessions = chat_state.session_messages.write();
     let all = all_sessions.entry(session_id.clone()).or_default();
-    let mut next_id = start_id
-        .max(all.iter().map(|message| message.id).max().unwrap_or(0).saturating_add(1));
+    let mut next_id = start_id.max(
+        all.iter()
+            .map(|message| message.id)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1),
+    );
     for pending_meal in pending_meals {
         if all.iter().any(|message| {
             message.pending_meal.as_ref().map(|meal| &meal.id) == Some(&pending_meal.id)
@@ -326,7 +325,12 @@ pub fn append_outgoing_message_pair(
 pub fn append_bot_text(mut chat_state: ChatContext, session_id: String, text: String) {
     let mut all_sessions = chat_state.session_messages.write();
     let all = all_sessions.entry(session_id.clone()).or_default();
-    let id = all.iter().map(|message| message.id).max().unwrap_or(0).saturating_add(1);
+    let id = all
+        .iter()
+        .map(|message| message.id)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
     all.push(ChatMessage {
         id,
         text,
@@ -344,7 +348,12 @@ pub fn append_bot_text(mut chat_state: ChatContext, session_id: String, text: St
 pub fn append_streaming_bot_slot(mut chat_state: ChatContext, session_id: String) -> u64 {
     let mut all_sessions = chat_state.session_messages.write();
     let all = all_sessions.entry(session_id.clone()).or_default();
-    let id = all.iter().map(|message| message.id).max().unwrap_or(0).saturating_add(1);
+    let id = all
+        .iter()
+        .map(|message| message.id)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
     all.push(ChatMessage {
         id,
         text: String::new(),
@@ -432,7 +441,11 @@ pub async fn append_agent_stream(
                                     tool_name: None,
                                 },
                             );
-                            handle_interaction_requested(chat_state, session_id.clone(), interaction);
+                            handle_interaction_requested(
+                                chat_state,
+                                session_id.clone(),
+                                interaction,
+                            );
                         }
                     }
                 }
@@ -456,19 +469,15 @@ pub async fn append_agent_stream(
         bot_msg.is_skeleton = false;
         bot_msg.is_streaming = false;
         if bot_msg.text.trim().is_empty() {
-            bot_msg.text = "模型没有返回内容。请检查当前模型是否支持流式输出，或尝试更换模型配置。".to_string();
+            bot_msg.text = "模型没有返回内容。请检查当前模型是否支持流式输出，或尝试更换模型配置。"
+                .to_string();
         }
     }
     drop(all_sessions);
     sync_visible_session(chat_state, &session_id);
 }
 
-fn stop_stream_with_text(
-    mut chat_state: ChatContext,
-    session_id: &str,
-    bot_id: u64,
-    text: String,
-) {
+fn stop_stream_with_text(mut chat_state: ChatContext, session_id: &str, bot_id: u64, text: String) {
     clear_session_activity(chat_state, session_id);
     let mut all_sessions = chat_state.session_messages.write();
     let all = all_sessions.entry(session_id.to_string()).or_default();
@@ -525,17 +534,18 @@ fn handle_interaction_requested(
     if interaction.kind == "meal_log_confirmation" {
         match serde_json::from_value::<meal::PendingMealLogDTO>(interaction.payload) {
             Ok(meal) => push_pending_meal_message(chat_state, session_id, meal),
-            Err(err) => append_bot_text(
-                chat_state,
-                session_id,
-                format!("无法渲染待确认操作：{err}"),
-            ),
+            Err(err) => {
+                append_bot_text(chat_state, session_id, format!("无法渲染待确认操作：{err}"))
+            }
         }
     } else {
         append_bot_text(
             chat_state,
             session_id,
-            format!("收到暂不支持的操作请求：{} ({})", interaction.kind, interaction.id),
+            format!(
+                "收到暂不支持的操作请求：{} ({})",
+                interaction.kind, interaction.id
+            ),
         );
     }
 }
@@ -553,7 +563,12 @@ fn push_pending_meal_message(
     {
         return;
     }
-    let id = all.iter().map(|message| message.id).max().unwrap_or(0).saturating_add(1);
+    let id = all
+        .iter()
+        .map(|message| message.id)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
     all.push(ChatMessage {
         id,
         text: String::new(),

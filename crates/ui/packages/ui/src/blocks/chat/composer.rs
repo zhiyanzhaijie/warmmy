@@ -1,4 +1,5 @@
 use base64::Engine;
+use dioxus::html::FileData;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{ImagePlus, Send, X};
 use serde::Deserialize;
@@ -7,9 +8,7 @@ use std::rc::Rc;
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::textarea::{Textarea, TextareaVariant};
 
-use super::state::{
-    ChatContext, ComposerImageAttachment,
-};
+use super::state::{ChatContext, ComposerImageAttachment};
 use super::stream::{active_session_id, append_bot_text};
 
 const MAX_COMPOSER_IMAGE_COUNT: usize = 4;
@@ -117,15 +116,36 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
                 AttachmentPreviewStrip {}
                 div {
                     class: "flex items-end gap-2 rounded-[1.5rem] bg-background/95 p-2",
-                    button {
-                        r#type: "button",
-                        class: "mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:border-foreground/30 hover:bg-muted hover:text-foreground active:scale-[0.98] disabled:opacity-50",
-                        disabled: is_streaming,
-                        title: "选择图片",
-                        onclick: move |_| {
-                            pick_images(chat_state);
-                        },
-                        ImagePlus { size: 16 }
+                    if cfg!(any(target_os = "android", target_os = "ios", feature = "desktop")) {
+                        button {
+                            r#type: "button",
+                            class: "mb-1 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:border-foreground/30 hover:bg-muted hover:text-foreground active:scale-[0.98] disabled:opacity-50",
+                            disabled: is_streaming,
+                            title: "选择图片",
+                            onclick: move |_| {
+                                pick_images(chat_state);
+                            },
+                            ImagePlus { size: 16 }
+                        }
+                    } else {
+                        div {
+                            class: if is_streaming {
+                                "relative mb-1 inline-flex h-10 w-10 shrink-0 cursor-not-allowed items-center justify-center overflow-hidden rounded-full border border-border bg-card text-muted-foreground opacity-50 shadow-sm"
+                            } else {
+                                "relative mb-1 inline-flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:border-foreground/30 hover:bg-muted hover:text-foreground active:scale-[0.98]"
+                            },
+                            title: "选择图片",
+                            input {
+                                class: "absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0",
+                                r#type: "file",
+                                name: "images",
+                                accept: "image/*",
+                                multiple: true,
+                                disabled: is_streaming,
+                                oninput: move |event: FormEvent| handle_picked_file_event(chat_state, event),
+                            }
+                            ImagePlus { size: 16, class: "pointer-events-none" }
+                        }
                     }
                     Textarea {
                         variant: TextareaVariant::Ghost,
@@ -157,8 +177,122 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
     }
 }
 
+fn handle_picked_file_event(chat_state: ChatContext, event: FormEvent) {
+    let files = event.files();
+    if files.is_empty() {
+        append_bot_text(
+            chat_state,
+            active_session_id(chat_state),
+            "选择图片失败：未读取到图片文件".to_string(),
+        );
+        return;
+    }
+
+    spawn(async move {
+        let picked = picked_images_from_files(files).await;
+        append_picked_images(chat_state, picked);
+    });
+}
+
+#[cfg(feature = "desktop")]
+fn pick_desktop_images(chat_state: ChatContext) {
+    spawn(async move {
+        let Some(files) = rfd::AsyncFileDialog::new()
+            .add_filter("Images", &["png", "jpg", "jpeg", "gif", "webp"])
+            .pick_files()
+            .await
+        else {
+            return;
+        };
+
+        let mut picked = Vec::new();
+        for file in files {
+            let name = file.file_name();
+            let bytes = file.read().await;
+            let mime_type = desktop_image_mime_type(&name).to_string();
+            let data_url = format!(
+                "data:{};base64,{}",
+                mime_type,
+                base64::engine::general_purpose::STANDARD.encode(&bytes)
+            );
+
+            picked.push(PickedImage {
+                name,
+                mime_type,
+                size_bytes: bytes.len() as u64,
+                data_url,
+            });
+        }
+
+        append_picked_images(
+            chat_state,
+            PickedImages {
+                files: picked,
+                error: None,
+            },
+        );
+    });
+}
+
+#[cfg(feature = "desktop")]
+fn desktop_image_mime_type(file_name: &str) -> &'static str {
+    match file_name
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        _ => "application/octet-stream",
+    }
+}
+
+async fn picked_images_from_files(files: Vec<FileData>) -> PickedImages {
+    let mut picked = Vec::new();
+
+    for file in files {
+        let name = file.name();
+        let mime_type = file
+            .content_type()
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+        let bytes = match file.read_bytes().await {
+            Ok(bytes) => bytes,
+            Err(err) => {
+                return PickedImages {
+                    files: Vec::new(),
+                    error: Some(format!("读取图片失败：{err}")),
+                };
+            }
+        };
+        let data_url = format!(
+            "data:{};base64,{}",
+            mime_type,
+            base64::engine::general_purpose::STANDARD.encode(&bytes)
+        );
+
+        picked.push(PickedImage {
+            name,
+            mime_type,
+            size_bytes: bytes.len() as u64,
+            data_url,
+        });
+    }
+
+    PickedImages {
+        files: picked,
+        error: None,
+    }
+}
+
 fn pick_images(chat_state: ChatContext) {
-    #[cfg(target_os = "android")]
+    #[cfg(feature = "desktop")]
+    {
+        pick_desktop_images(chat_state);
+    }
+
+    #[cfg(all(not(feature = "desktop"), target_os = "android"))]
     {
         document::eval(
             r#"
@@ -171,10 +305,9 @@ fn pick_images(chat_state: ChatContext) {
             }
             "#,
         );
-        return;
     }
 
-    #[cfg(target_os = "ios")]
+    #[cfg(all(not(feature = "desktop"), target_os = "ios"))]
     {
         if let Err(err) = crate::platform::pick_images() {
             append_bot_text(
@@ -183,10 +316,9 @@ fn pick_images(chat_state: ChatContext) {
                 format!("选择图片失败：{err}"),
             );
         }
-        return;
     }
 
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[cfg(not(any(feature = "desktop", target_os = "android", target_os = "ios")))]
     {
         append_bot_text(
             chat_state,

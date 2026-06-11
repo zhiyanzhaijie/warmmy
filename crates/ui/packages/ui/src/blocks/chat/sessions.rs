@@ -29,7 +29,7 @@ pub(super) fn SessionStrip(user_id: String, active_session_id: String) -> Elemen
 
     rsx! {
         div {
-            class: "overflow-x-auto px-4 pb-2 pt-1 md:px-5 hide-scrollbar",
+            class: "overflow-x-auto px-4 py-1 md:px-5 hide-scrollbar",
             div {
                 class: "flex min-w-max gap-1.5 rounded-[1.15rem] bg-background/75 p-1",
                 for (day, has_session) in days {

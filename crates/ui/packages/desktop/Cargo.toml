@@ -5,10 +5,12 @@ edition = "2021"
 
 [dependencies]
 dioxus = { workspace = true, features = ["router", "fullstack"] }
+dioxus-icons = { version = "0.1.0", default-features = false }
 ui = { workspace = true }
 api = { workspace = true }
+dioxus-primitives = { git = "https://github.com/DioxusLabs/components", version = "0.0.1", default-features = false }
 
 [features]
 default = []
-desktop = ["dioxus/desktop"]
+desktop = ["dioxus/desktop", "ui/desktop", "ui/local", "api/local"]
 server = ["dioxus/server", "ui/server", "api/server"]

@@ -2,23 +2,24 @@
 #[cfg(all(feature = "server", feature = "local"))]
 compile_error!("api features `server` and `local` cannot be enabled together");
 
-pub mod conversation;
+pub mod common;
 mod impls;
 #[cfg(feature = "local")]
 pub mod local_state;
-pub mod meal;
-pub mod user;
+#[cfg(feature = "web")]
+pub mod web;
 
+pub use common::{conversation, meal, user};
 pub use conversation::{
     delete_ephemeral_image, echo, echo_stream, get_session_history, list_user_sessions,
     store_ephemeral_image,
 };
 pub use meal::{
     confirm_pending_meal, discard_pending_meals, finalize_and_summarize_meal_day,
-    get_meal_day_summary, list_food_nutrition_references, list_meal_day_summaries,
-    list_meal_logs, list_pending_meals, preview_pending_meal, reject_pending_meal,
-    ConfirmPendingMealInput, DiscardPendingMealsOutput, FoodItemDTO, FoodNutritionReferenceDTO,
-    MealDaySummaryDTO, MealRecordDTO, NutritionDTO, PendingMealLogDTO,
+    get_meal_day_summary, list_food_nutrition_references, list_meal_day_summaries, list_meal_logs,
+    list_pending_meals, preview_pending_meal, reject_pending_meal, ConfirmPendingMealInput,
+    DiscardPendingMealsOutput, FoodItemDTO, FoodNutritionReferenceDTO, MealDaySummaryDTO,
+    MealRecordDTO, NutritionDTO, PendingMealLogDTO,
 };
 pub use user::{
     confirm_health_expectation, create_user_profile, delete_dining_companion,
