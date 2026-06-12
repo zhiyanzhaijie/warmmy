@@ -70,7 +70,7 @@ impl Config {
             .to_string();
         ensure_parent_dir(Path::new(&self.rag.lancedb_path));
 
-        self.database.url = normalize_sqlite_url(&self.database.url, &data_dir);
+        self.database.url = normalize_sqlite_path(&self.database.url, &data_dir);
         ensure_sqlite_parent_dir(&self.database.url);
     }
 }
@@ -92,23 +92,17 @@ fn embedded_config_toml(env: &str) -> &'static str {
     }
 }
 
-fn normalize_sqlite_url(url: &str, data_dir: &Path) -> String {
+fn normalize_sqlite_path(url: &str, data_dir: &Path) -> String {
     if url == "sqlite::memory:" {
         return url.to_string();
     }
 
     if let Some(path) = url.strip_prefix("sqlite://") {
-        return format!(
-            "sqlite://{}",
-            normalize_path(path, data_dir).to_string_lossy()
-        );
+        return normalize_path(path, data_dir).to_string_lossy().to_string();
     }
 
     if let Some(path) = url.strip_prefix("sqlite:") {
-        return format!(
-            "sqlite:{}",
-            normalize_path(path, data_dir).to_string_lossy()
-        );
+        return normalize_path(path, data_dir).to_string_lossy().to_string();
     }
 
     normalize_path(url, data_dir).to_string_lossy().to_string()
@@ -164,5 +158,10 @@ fn app_data_dir() -> Option<PathBuf> {
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn app_data_dir() -> Option<PathBuf> {
-    None
+    if let Ok(path) = std::env::var("WARMMY_DATA_DIR") {
+        return Some(PathBuf::from(path));
+    }
+
+    directories::ProjectDirs::from("com", "zhiyanzhaijie", "Warmmy")
+        .map(|dirs| dirs.data_dir().to_path_buf())
 }

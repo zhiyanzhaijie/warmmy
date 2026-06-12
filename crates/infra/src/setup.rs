@@ -1,7 +1,9 @@
 use adapters::agent::service::ConversationAgentService;
 use adapters::prelude::build_repos_by_url;
 use app::app_error::{AppError, AppResult};
-use app::conversation::{ConversationCommandHandler, ConversationQueryHandler, EphemeralImageStorePort};
+use app::conversation::{
+    ConversationCommandHandler, ConversationQueryHandler, EphemeralImageStorePort,
+};
 use app::meal::FoodNutritionReferenceRepositoryPort;
 use app::meal::{MealCommandHandler, MealEventHandler, MealQueryHandler};
 use app::user::{
