@@ -32,7 +32,7 @@ fn TravelBackground() -> Element {
         div { class: "pointer-events-none absolute inset-0 z-0 h-full w-full opacity-60 dark:opacity-40",
             img {
                 src: asset!("/assets/wammy_travel.svg"),
-                class: "absolute left-[50%] top-[6%] w-[135%] -translate-x-[50%] object-contain md:top-[-8%] md:w-[100%] lg:left-[auto] lg:right-[-26%] lg:top-[-18%] lg:w-[88%] lg:-translate-x-0 2xl:right-[-20%] 2xl:w-[78%]",
+                class: "absolute left-1/2 top-[6%] w-[135%] -translate-x-1/2 object-contain md:top-[-8%] md:w-[100%] lg:top-[-18%] lg:w-[88%] lg:[-webkit-mask-image:linear-gradient(to_right,transparent_0%,black_24%,black_76%,transparent_100%)] lg:[mask-image:linear-gradient(to_right,transparent_0%,black_24%,black_76%,transparent_100%)] 2xl:w-[78%]",
                 alt: "",
             }
         }

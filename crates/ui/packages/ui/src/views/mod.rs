@@ -5,7 +5,7 @@ mod travel_view;
 mod warmmy_pisa_svg;
 mod warmmy_view;
 
-pub use chat_view::{ChatDetailView, ChatView};
+pub use chat_view::ChatDetailView;
 pub use home_view::HomeView;
 pub use me_view::{
     MeCompanionsView, MeDietPreferenceView, MeHealthExpectationView, MeProfileEditView, MeView,

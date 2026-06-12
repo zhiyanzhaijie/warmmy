@@ -39,11 +39,11 @@ pub fn HomeView() -> Element {
                     radial-gradient(circle at 82% 18%, rgba(15, 122, 77, 0.10), transparent 20rem),
                     linear-gradient(180deg, transparent 0%, color-mix(in oklab, var(--background) 86%, transparent) 62%, var(--background) 100%);",
             }
-            PizzaWeekBackground { active_index: today_index + 2}
+            PizzaWeekBackground { active_index: today_index }
             div { class: "pointer-events-none absolute inset-0 z-0 h-full w-full opacity-60 dark:opacity-40",
                 img {
                     src: asset!("/assets/human-warmmy.svg"),
-                    class: "absolute left-[50%] top-[4%] w-[130%] -translate-x-[50%] object-contain md:top-[-10%] md:w-[95%] lg:left-[auto] lg:right-[-25%] lg:top-[-20%] lg:w-[85%] lg:-translate-x-0 2xl:right-[-20%] 2xl:w-[75%]",
+                    class: "absolute left-1/2 top-[4%] w-[130%] -translate-x-1/2 object-contain md:bottom-[-10%] md:w-[100%] lg:top-[-18%] lg:w-[82%] 2xl:w-[72%]",
                     alt: "",
                 }
             }
@@ -53,12 +53,12 @@ pub fn HomeView() -> Element {
                         div { class: "mb-4 flex h-12 w-12 items-center justify-center rounded-[1.25rem] border border-border bg-card/75 text-foreground backdrop-blur md:h-14 md:w-14",
                             Sparkles { size: 24 }
                         }
-                        p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Warmmy local-first" }
+                        p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "你好呀" }
                         h1 { class: "mt-3 font-doodle text-4xl font-semibold leading-none text-foreground md:text-6xl",
-                            "Eat with memory"
+                            "今天你吃饭了吗"
                         }
                         p { class: "mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground md:text-base",
-                            "记录餐食，或直接问下一顿吃什么。"
+                            "我们只有补充好能量，才能移山平河哦"
                         }
                     }
 
@@ -68,7 +68,7 @@ pub fn HomeView() -> Element {
                                 variant: TextareaVariant::Ghost,
                                 class: "max-h-40 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto border-none bg-transparent px-4 py-3 text-base font-medium leading-relaxed text-foreground shadow-none outline-none placeholder:text-muted-foreground placeholder:whitespace-nowrap placeholder:overflow-hidden placeholder:text-ellipsis [field-sizing:content]",
                                 rows: "1",
-                                placeholder: "记录餐食，或询问下一顿吃什么...",
+                                placeholder: "和屋米说一下吃的，想吃的吧......",
                                 value: input(),
                                 oninput: move |e: FormEvent| {
                                     input.set(e.value());

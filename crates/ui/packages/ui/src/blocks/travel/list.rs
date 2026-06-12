@@ -72,7 +72,7 @@ pub fn TravelListBlock() -> Element {
 
     rsx! {
         div { class: "relative h-full min-h-0 overflow-y-auto px-4 py-4 pb-28 md:px-8 md:py-8 md:pb-12",
-            div { class: "relative mx-auto w-full max-w-6xl",
+            div { class: "relative mx-auto w-full max-w-2xl",
                 section { class: "min-h-0 pr-16 md:pr-28",
                     if !error.is_empty() {
                         div { class: "rounded-xl border border-border bg-card px-4 py-3 text-sm text-destructive",

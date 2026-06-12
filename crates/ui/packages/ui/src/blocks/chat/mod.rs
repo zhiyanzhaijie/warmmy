@@ -92,7 +92,7 @@ pub fn ChatBlock(session_id: Option<String>) -> Element {
         div {
             class: "h-full min-h-0 overflow-hidden bg-transparent",
             div {
-                class: "mx-auto flex h-full min-h-0 max-w-5xl flex-col overflow-hidden bg-transparent md:rounded-[1.5rem] md:bg-card/35",
+                class: "mx-auto flex h-full min-h-0 w-full flex-col overflow-hidden bg-transparent md:rounded-[1.5rem] md:bg-card/35",
                 ChatHeader {
                     user_id: user_id.clone(),
                     session_id: session_id.clone(),
