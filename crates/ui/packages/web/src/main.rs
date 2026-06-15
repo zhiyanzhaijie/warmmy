@@ -1,68 +1,47 @@
 use dioxus::prelude::*;
-use ui::providers::{use_chat_context_value, AppProviders};
-use ui::views::{ChatDetailView, HomeView, MeView};
+
+mod components;
+mod pages;
+
+use components::SiteLayout;
+use pages::{AboutPage, DownloadPage, GuidePage, HomePage};
 
 #[derive(Debug, Clone, Routable, PartialEq)]
 #[rustfmt::skip]
 enum Route {
-    #[layout(WebLayout)]
-    #[route("/")]
-    HomeView {},
-    #[route("/:session_id")]
-    ChatDetailView { session_id: String },
-    #[route("/me")]
-    MeView {},
+    #[layout(SiteLayout)]
+        #[route("/")]
+        HomePage {},
+        #[route("/guide")]
+        GuidePage {},
+        #[route("/about")]
+        AboutPage {},
+        #[route("/download")]
+        DownloadPage {},
 }
 
 const FAVICON: Asset = asset!("/assets/favicon.ico");
 const WEB_CSS: Asset = asset!("/assets/web.css");
 
 fn main() {
-    #[cfg(feature = "server")]
-    dioxus::serve(|| async move {
-        use dioxus::prelude::DioxusRouterExt;
-        use dioxus::server::axum;
-
-        let container = infra::setup::init_app_container()
-            .await
-            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        let app_state = std::sync::Arc::new(container);
-        let router = axum::Router::new()
-            .serve_dioxus_application(ServeConfig::default(), App)
-            .layer(axum::Extension(app_state));
-        Ok(router)
-    });
-    #[cfg(not(feature = "server"))]
     dioxus::launch(App);
 }
 
 #[component]
 fn App() -> Element {
-    let chat = use_chat_context_value();
-
     rsx! {
         document::Link { rel: "icon", href: FAVICON }
-        AppProviders { chat,
-            Router::<Route> {}
+        document::Link { rel: "stylesheet", href: WEB_CSS }
+        document::Link { rel: "preconnect", href: "https://fonts.googleapis.com" }
+        document::Link { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "true" }
+        document::Link { 
+            rel: "stylesheet", 
+            href: "https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400;1,500&family=Outfit:wght@300;400;500&display=swap" 
         }
+        Router::<Route> {}
     }
 }
 
-#[component]
-fn WebLayout() -> Element {
-    rsx! {
-        nav {
-            Link {
-                to: Route::HomeView {},
-                "home"
-            }
-            " · "
-            Link {
-                to: Route::MeView {},
-                "/me"
-            }
-        }
-        Outlet::<Route> {}
-        document::Link { rel: "stylesheet", href: WEB_CSS }
-    }
+pub(crate) fn github_releases_url() -> &'static str {
+    "https://github.com/zhiyanzhaijie/warmmy/releases/latest"
 }

@@ -2412,11 +2412,6 @@
       width: 88%;
     }
   }
-  .lg\:w-\[100\%\] {
-    @media (width >= 64rem) {
-      width: 100%;
-    }
-  }
   .lg\:items-start {
     @media (width >= 64rem) {
       align-items: flex-start;
@@ -2425,11 +2420,6 @@
   .lg\:justify-start {
     @media (width >= 64rem) {
       justify-content: flex-start;
-    }
-  }
-  .lg\:\[mask-image\:linear-gradient\(to_right\,transparent_0\%\,black_12\%\,black_88\%\,transparent_100\%\)\] {
-    @media (width >= 64rem) {
-      mask-image: linear-gradient(to right,transparent 0%,black 12%,black 88%,transparent 100%);
     }
   }
   .lg\:\[mask-image\:linear-gradient\(to_right\,transparent_0\%\,black_24\%\,black_76\%\,transparent_100\%\)\] {
@@ -2445,11 +2435,6 @@
   .lg\:px-8 {
     @media (width >= 64rem) {
       padding-inline: calc(var(--spacing) * 8);
-    }
-  }
-  .lg\:\[-webkit-mask-image\:linear-gradient\(to_right\,transparent_0\%\,black_12\%\,black_88\%\,transparent_100\%\)\] {
-    @media (width >= 64rem) {
-      -webkit-mask-image: linear-gradient(to right,transparent 0%,black 12%,black 88%,transparent 100%);
     }
   }
   .lg\:\[-webkit-mask-image\:linear-gradient\(to_right\,transparent_0\%\,black_24\%\,black_76\%\,transparent_100\%\)\] {
@@ -2540,13 +2525,13 @@ html[data-theme="light"] [class~="dxc-system"] {
   --primary-color-5: #eceae4;
   --primary-color-6: rgba(28, 28, 28, 0.08);
   --primary-color-7: rgba(28, 28, 28, 0.4);
-  --secondary-color: #1c1c1c;
-  --secondary-color-1: #1c1c1c;
-  --secondary-color-2: #1c1c1c;
-  --secondary-color-3: rgba(28, 28, 28, 0.83);
-  --secondary-color-4: rgba(28, 28, 28, 0.82);
-  --secondary-color-5: #5f5f5d;
-  --secondary-color-6: rgba(28, 28, 28, 0.4);
+  --secondary-color: #3b362f;
+  --secondary-color-1: #3b362f;
+  --secondary-color-2: #3b362f;
+  --secondary-color-3: rgba(59, 54, 47, 0.83);
+  --secondary-color-4: rgba(59, 54, 47, 0.82);
+  --secondary-color-5: #6b6357;
+  --secondary-color-6: rgba(59, 54, 47, 0.4);
   --focused-border-color: rgba(59, 130, 246, 0.5);
   --primary-success-color: #ecfdf5;
   --secondary-success-color: #0f7a4d;
@@ -2652,13 +2637,13 @@ html[data-theme="light"] [class~="dxc-system"] {
     --primary-color-5: rgba(247, 244, 237, 0.14);
     --primary-color-6: rgba(247, 244, 237, 0.16);
     --primary-color-7: rgba(247, 244, 237, 0.42);
-    --secondary-color: #f7f4ed;
+    --secondary-color: #d1ccbf;
     --secondary-color-1: #fcfbf8;
-    --secondary-color-2: #f7f4ed;
-    --secondary-color-3: rgba(247, 244, 237, 0.84);
-    --secondary-color-4: rgba(247, 244, 237, 0.78);
-    --secondary-color-5: rgba(247, 244, 237, 0.58);
-    --secondary-color-6: rgba(247, 244, 237, 0.42);
+    --secondary-color-2: #d1ccbf;
+    --secondary-color-3: rgba(209, 204, 191, 0.84);
+    --secondary-color-4: rgba(209, 204, 191, 0.78);
+    --secondary-color-5: rgba(209, 204, 191, 0.58);
+    --secondary-color-6: rgba(209, 204, 191, 0.42);
     --background: var(--primary-color);
     --foreground: var(--secondary-color);
     --card: var(--primary-color-1);
@@ -2693,13 +2678,13 @@ html[data-theme="dark"] {
   --primary-color-5: rgba(247, 244, 237, 0.14);
   --primary-color-6: rgba(247, 244, 237, 0.16);
   --primary-color-7: rgba(247, 244, 237, 0.42);
-  --secondary-color: #f7f4ed;
+  --secondary-color: #d1ccbf;
   --secondary-color-1: #fcfbf8;
-  --secondary-color-2: #f7f4ed;
-  --secondary-color-3: rgba(247, 244, 237, 0.84);
-  --secondary-color-4: rgba(247, 244, 237, 0.78);
-  --secondary-color-5: rgba(247, 244, 237, 0.58);
-  --secondary-color-6: rgba(247, 244, 237, 0.42);
+  --secondary-color-2: #d1ccbf;
+  --secondary-color-3: rgba(209, 204, 191, 0.84);
+  --secondary-color-4: rgba(209, 204, 191, 0.78);
+  --secondary-color-5: rgba(209, 204, 191, 0.58);
+  --secondary-color-6: rgba(209, 204, 191, 0.42);
   --background: var(--primary-color);
   --foreground: var(--secondary-color);
   --card: var(--primary-color-1);

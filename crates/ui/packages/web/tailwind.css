@@ -1,5 +1,18 @@
 @import "tailwindcss";
-@import "../ui/assets/theme.css";
+@import "./assets/theme.css";
 
 @source "./src/**/*.{rs,html,css}";
-@source "../ui/src/**/*.{rs,html,css}";
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-width: 320px;
+  }
+
+  ::selection {
+    background: rgba(184, 107, 16, 0.18);
+  }
+}

@@ -4,13 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-dioxus = { workspace = true, features = ["router", "fullstack"] }
-ui = { workspace = true }
-api = { workspace = true }
-infra = { path = "../../../infra", optional = true }
-anyhow = { version = "1", optional = true }
+dioxus = { workspace = true, features = ["router"] }
+dioxus-icons = "0.1.0"
 
 [features]
-default = []
-web = ["dioxus/web", "ui/web", "api/web"]
-server = ["dioxus/server", "ui/server", "api/server", "api/web", "dep:infra", "dep:anyhow"]
+default = ["web"]
+web = ["dioxus/web"]
