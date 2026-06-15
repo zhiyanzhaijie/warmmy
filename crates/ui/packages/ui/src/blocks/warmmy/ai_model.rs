@@ -21,6 +21,7 @@ const PROVIDER_KIND_OPTIONS: &[ChoiceOption] = &[
     ChoiceOption::new("deepseek", "DeepSeek"),
     ChoiceOption::new("siliconflow", "SiliconFlow"),
     ChoiceOption::new("dashscope", "DashScope"),
+    ChoiceOption::new("doubao", "Doubao"),
     ChoiceOption::new("openai_compatible", "兼容接口"),
 ];
 
@@ -609,6 +610,7 @@ fn provider_default_base_url(kind: &str) -> Option<&'static str> {
         "deepseek" => Some("https://api.deepseek.com"),
         "siliconflow" => Some("https://api.siliconflow.cn/v1"),
         "dashscope" => Some("https://dashscope.aliyuncs.com/compatible-mode/v1"),
+        "doubao" => Some("https://ark.cn-beijing.volces.com/api/v3"),
         _ => None,
     }
 }
@@ -1291,6 +1293,7 @@ fn provider_kind_label(kind: &str) -> &str {
         "deepseek" => "DeepSeek",
         "siliconflow" => "SiliconFlow",
         "dashscope" => "DashScope",
+        "doubao" => "Doubao",
         "openai_compatible" => "兼容接口",
         _ => kind,
     }

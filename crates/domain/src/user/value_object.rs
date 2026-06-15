@@ -143,6 +143,7 @@ pub enum AIProviderKind {
     DeepSeek,
     SiliconFlow,
     DashScope,
+    Doubao,
     OpenAICompatible,
 }
 
@@ -153,6 +154,7 @@ impl AIProviderKind {
             Self::DeepSeek => "deepseek",
             Self::SiliconFlow => "siliconflow",
             Self::DashScope => "dashscope",
+            Self::Doubao => "doubao",
             Self::OpenAICompatible => "openai_compatible",
         }
     }
@@ -163,6 +165,7 @@ impl AIProviderKind {
             "deepseek" => Some(Self::DeepSeek),
             "siliconflow" => Some(Self::SiliconFlow),
             "dashscope" => Some(Self::DashScope),
+            "doubao" => Some(Self::Doubao),
             "openai_compatible" => Some(Self::OpenAICompatible),
             _ => None,
         }

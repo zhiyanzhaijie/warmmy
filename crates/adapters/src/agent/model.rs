@@ -56,6 +56,10 @@ impl Default for RigModelFactory {
                     "dashscope",
                     build_openai_completions_agent as ConversationAgentBuilder,
                 ),
+                (
+                    "doubao",
+                    build_openai_completions_agent as ConversationAgentBuilder,
+                ),
                 ("deepseek", build_deepseek_agent as ConversationAgentBuilder),
             ]),
             text_prompters: HashMap::from([
@@ -66,6 +70,7 @@ impl Default for RigModelFactory {
                 ),
                 ("siliconflow", prompt_openai_completions as TextPrompter),
                 ("dashscope", prompt_openai_completions as TextPrompter),
+                ("doubao", prompt_openai_completions as TextPrompter),
                 ("deepseek", prompt_deepseek as TextPrompter),
             ]),
         }

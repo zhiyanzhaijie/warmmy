@@ -161,6 +161,7 @@ impl RigConversationRuntime {
         )))
     }
 
+
     fn agent_service_progress(
         &self,
         status_sink: Option<AgentStatusSink>,
@@ -619,6 +620,7 @@ impl RigConversationRuntime {
 
         Ok(Some(RagConfig {
             lancedb_path: self.lancedb_path.clone(),
+            embedding_provider: embedding.provider,
             embedding_base_url: embedding.base_url,
             embedding_api_key: embedding.api_key,
             embedding_model: embedding.model,
