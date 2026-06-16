@@ -42,7 +42,7 @@ pub fn AboutPage() -> Element {
                 }
                 AboutFeature {
                     title: "以餐食为中心",
-                    body: "应用聚焦于食物、营养上下文、个人偏好与每日对话式记忆。",
+                    body: "屋米关注于食物、营养上下文、个人偏好与每日对话式记忆。",
                     offset_class: "md:mt-16",
                     svg { class: "h-5 w-5", fill: "none", view_box: "0 0 24 24", stroke: "currentColor", stroke_width: "1.5", stroke_linecap: "round", stroke_linejoin: "round",
                         path { d: "M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" }
