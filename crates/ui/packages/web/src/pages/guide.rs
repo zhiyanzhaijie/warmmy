@@ -1,5 +1,7 @@
 use dioxus::prelude::*;
 
+use crate::components::SEO;
+
 const HUMAN_WARMMY: Asset = asset!("/assets/human-warmmy.svg");
 const GUIDE_01_02: Asset = asset!("/assets/guide-01-02.png");
 const GUIDE_01_03: Asset = asset!("/assets/guide-01-03.png");
@@ -7,6 +9,8 @@ const GUIDE_01_04: Asset = asset!("/assets/guide-01-04.png");
 const GUIDE_MODEL_ACTION: Asset = asset!("/assets/guide-model-action.png");
 const GUIDE_MODEL_INTRO: Asset = asset!("/assets/guide-model-intro.png");
 const GUIDE_MODEL_FILL: Asset = asset!("/assets/guide-model-fill.png");
+const GUIDE_EMBEDING_ENTRANCE: Asset = asset!("/assets/guide_embeding_entrance.png");
+const GUIDE_EMBEDING_FILL: Asset = asset!("/assets/guide_embeding_fill.png");
 const WAMMY_ONE: Asset = asset!("/assets/wammy_one.svg");
 const WAMMY_TWO: Asset = asset!("/assets/wammy_two.svg");
 const WAMMY_THREE: Asset = asset!("/assets/wammy_three.svg");
@@ -36,7 +40,6 @@ enum TextModelSubStep {
 #[derive(Clone, Copy, PartialEq)]
 enum VectorModelSubStep {
     ChooseModel,
-    KeyInfo,
     CompleteConfig,
 }
 #[derive(Clone, Copy, PartialEq)]
@@ -98,7 +101,7 @@ fn ApiKeyStepContent(current_sub_step: ApiKeySubStep) -> Element {
         ApiKeySubStep::EnterPage => (
             "01.01",
             "进入 API Key 页面",
-            "出于便捷考虑，我们将以豆包平台作为示例。",
+            "我们将用豆包平台作为示例。",
             "",
             "https://console.volcengine.com/ark/region:ark+cn-beijing/model",
             "",
@@ -182,6 +185,11 @@ pub fn GuidePage() -> Element {
         "shrink-0 rounded-full bg-muted/70 px-2.5 py-1 text-xs font-medium text-muted-foreground";
 
     rsx! {
+        SEO {
+            title: "配置指南",
+            description: "Warmmy 配置指南，说明如何为屋米配置 API Key、文本模型、向量模型和视觉模型。",
+            keywords: "Warmmy 配置指南,屋米配置,API Key,文本模型,向量模型,视觉模型,火山方舟",
+        }
         div { class: "fixed inset-x-0 top-0 z-50 border-b border-border/50 bg-background/95 backdrop-blur sm:hidden",
             div { class: "mx-auto flex w-full max-w-6xl items-center gap-2 overflow-x-auto px-3 py-2 whitespace-nowrap",
                 button {
@@ -261,14 +269,9 @@ pub fn GuidePage() -> Element {
                         "03.01"
                     }
                     button {
-                        class: if vector_model_sub_step() == VectorModelSubStep::KeyInfo { mobile_sub_active } else { mobile_sub_idle },
-                        onclick: move |_| vector_model_sub_step.set(VectorModelSubStep::KeyInfo),
-                        "03.02"
-                    }
-                    button {
                         class: if vector_model_sub_step() == VectorModelSubStep::CompleteConfig { mobile_sub_active } else { mobile_sub_idle },
                         onclick: move |_| vector_model_sub_step.set(VectorModelSubStep::CompleteConfig),
-                        "03.03"
+                        "03.02"
                     }
                 } else if current() == GuideStep::VisionModel {
                     button {
@@ -429,17 +432,8 @@ pub fn GuidePage() -> Element {
                                 },
                             }
                             SidebarSubStepButton {
-                                active: vector_model_sub_step() == VectorModelSubStep::KeyInfo,
-                                code: "03.02",
-                                title: "模型关键信息",
-                                onclick: move |_| {
-                                    current.set(GuideStep::VectorModel);
-                                    vector_model_sub_step.set(VectorModelSubStep::KeyInfo);
-                                },
-                            }
-                            SidebarSubStepButton {
                                 active: vector_model_sub_step() == VectorModelSubStep::CompleteConfig,
-                                code: "03.03",
+                                code: "03.02",
                                 title: "完成屋米配置",
                                 onclick: move |_| {
                                     current.set(GuideStep::VectorModel);
@@ -556,23 +550,16 @@ fn VectorModelStepContent(current_sub_step: VectorModelSubStep) -> Element {
         VectorModelSubStep::ChooseModel => (
             "03.01",
             "选择合适的向量模型",
-            "根据检索质量、成本与写入速度选择向量模型。日常记录场景优先稳定且成本可控的向量模型，高精度语义检索场景再使用更高质量模型。",
-            "",
-            "guide-model-action",
-        ),
-        VectorModelSubStep::KeyInfo => (
-            "03.02",
-            "模型关键信息",
-            "确认向量维度、最大输入长度、价格与吞吐限制，并核对是否匹配你当前的检索与存储配置。",
-            "建议统一向量维度与索引配置，避免后续检索召回异常。",
-            "guide-model-intro",
+            "进入模型广场，选择火山方舟提供的向量化模型。Warmmy 开发阶段使用的是 Doubao-embedding-vision，点击模型详情中的 API 接入获取配置所需的信息。",
+            "重点确认模型 ID 与支持维度，后续需要填入屋米的向量模型配置。",
+            "guide-embeding-entrance",
         ),
         VectorModelSubStep::CompleteConfig => (
-            "03.03",
+            "03.02",
             "完成屋米配置",
-            "在屋米中填写向量模型配置并保存，完成一次写入与检索验证后即可进入视觉模型配置。",
-            "配置完成后，屋米将获得记忆包裹。",
-            "guide-model-fill",
+            "在屋米中添加模型配置，Provider、API key 与 Base URL 保持和前面填写一致；Model 填入对应模型 ID。",
+            "Embedding dims 按模型支持维度填写，没有特殊需求时保持默认 1024 即可。配置完成后，屋米将获得记忆背包。",
+            "guide-embeding-fill",
         ),
     };
     let layout_class = "flex flex-col items-start gap-8";
@@ -602,21 +589,21 @@ fn VisionModelStepContent(current_sub_step: VisionModelSubStep) -> Element {
         VisionModelSubStep::ChooseModel => (
             "04.01",
             "选择合适的视觉模型",
-            "根据识别精度、延迟与成本选择视觉模型。日常饮食图片识别可优先低延迟模型，复杂图像理解场景再选择更强模型。",
+            "在豆包模型中，我们的文本模型同样也支持视觉，所以完全可以一样地配置呢",
             "",
             "guide-model-action",
         ),
         VisionModelSubStep::KeyInfo => (
             "04.02",
             "模型关键信息",
-            "确认支持的图片格式、分辨率限制、价格与并发能力，并核对是否满足你的上传与识别需求。",
-            "建议提前统一图片输入规格，减少识别结果波动。",
+            "确认支持的图片格式",
+            "",
             "guide-model-intro",
         ),
         VisionModelSubStep::CompleteConfig => (
             "04.03",
             "完成屋米配置",
-            "在屋米中填写视觉模型配置并保存，完成一次图像识别连通性验证后即可开启完整多模态流程。",
+            "在屋米中填写视觉模型配置并保存，并将模型状态切换为Active激活。",
             "配置完成后，屋米将获得好奇放大镜。",
             "guide-model-fill",
         ),
@@ -681,6 +668,24 @@ fn StepVisual(visual: &'static str) -> Element {
                 }
             }
         },
+        "guide-embeding-entrance" => rsx! {
+            div { class: "w-full overflow-hidden",
+                img {
+                    src: GUIDE_EMBEDING_ENTRANCE,
+                    class: "h-auto w-full max-h-[28rem] object-contain",
+                    alt: "向量模型选择指引配图",
+                }
+            }
+        },
+        "guide-embeding-fill" => rsx! {
+            div { class: "w-full overflow-hidden",
+                img {
+                    src: GUIDE_EMBEDING_FILL,
+                    class: "h-auto w-full max-h-[28rem] object-contain",
+                    alt: "向量模型屋米配置配图",
+                }
+            }
+        },
         "guide-01-03" => rsx! {
             div { class: "w-full overflow-hidden",
                 img {
@@ -735,4 +740,3 @@ fn StepVisual(visual: &'static str) -> Element {
         },
     }
 }
-

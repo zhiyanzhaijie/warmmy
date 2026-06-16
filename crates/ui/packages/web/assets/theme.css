@@ -1,4 +1,9 @@
 /* Warmmy Web Theme Variables */
+body {
+  padding: 0;
+  margin: 0;
+  background-color: var(--primary-color);
+}
 
 html[data-theme="dark"] {
   --dark: initial;

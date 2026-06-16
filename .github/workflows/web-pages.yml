@@ -1,0 +1,80 @@
+name: Deploy Warmmy Web
+
+on:
+  push:
+    branches:
+      - web-release
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  WEB_CRATE: crates/ui/packages/web
+  WEB_DIST: dist-pages
+  PUBLIC_DIR: crates/ui/packages/web/dist-pages/public
+  # GitHub project pages are served from /<repo>/ by default:
+  # https://zhiyanzhaijie.github.io/warmmy/
+  # Change this to "/" if you later add a custom domain.
+  BASE_PATH: /warmmy/
+
+jobs:
+  build:
+    name: Build web
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/ui
+
+      - name: Install Dioxus CLI
+        uses: cargo-bins/cargo-binstall@main
+
+      - name: Install dx
+        run: cargo binstall dioxus-cli --version 0.7.9 --no-confirm
+
+      - name: Bundle Dioxus web app
+        working-directory: ${{ env.WEB_CRATE }}
+        run: dx bundle --web --release --base-path "${BASE_PATH}" --out-dir "${WEB_DIST}"
+
+      - name: Add SPA fallback
+        run: |
+          set -euo pipefail
+          cp "${PUBLIC_DIR}/index.html" "${PUBLIC_DIR}/404.html"
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ env.PUBLIC_DIR }}
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,5 +1,6 @@
 use dioxus::prelude::*;
 
+use crate::components::SEO;
 use crate::Route;
 
 const HUMAN_WARMMY: Asset = asset!("/assets/human-warmmy.svg");
@@ -7,6 +8,11 @@ const HUMAN_WARMMY: Asset = asset!("/assets/human-warmmy.svg");
 #[component]
 pub fn HomePage() -> Element {
     rsx! {
+        SEO {
+            title: "Warmmy",
+            description: "Warmmy 是一个本地优先的日常饮食伙伴，帮助你记录餐食、整理身体反馈，并用可配置的模型能力陪伴日常。",
+            keywords: "Warmmy,屋米,饮食记录,饮食助手,本地优先,开源应用,AI 伙伴",
+        }
         section { class: "grid min-h-[70vh] items-center gap-16 py-12 lg:grid-cols-[1fr_0.8fr] lg:gap-24",
             div { class: "flex flex-col items-start",
                 h1 { class: "font-serif text-4xl leading-[1.1] text-foreground sm:text-6xl lg:text-4xl tracking-tight",
