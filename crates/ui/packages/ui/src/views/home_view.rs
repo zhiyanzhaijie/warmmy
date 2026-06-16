@@ -75,6 +75,8 @@ pub fn HomeView() -> Element {
                                 },
                                 onkeydown: move |e: KeyboardEvent| {
                                     if e.key() == Key::Enter && !e.modifiers().shift() {
+                                        e.prevent_default();
+                                        e.stop_propagation();
                                         start_chat_keydown();
                                     }
                                 }

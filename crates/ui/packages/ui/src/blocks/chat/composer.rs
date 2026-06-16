@@ -159,6 +159,8 @@ pub(super) fn ChatComposer(is_streaming: bool, on_send: SendChatMessage) -> Elem
                         },
                         onkeydown: move |e: KeyboardEvent| {
                             if e.key() == Key::Enter && !e.modifiers().shift() && !is_streaming {
+                                e.prevent_default();
+                                e.stop_propagation();
                                 send_message_keydown();
                             }
                         }
