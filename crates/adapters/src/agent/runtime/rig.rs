@@ -46,7 +46,7 @@ use crate::agent::tool;
 use domain::{AICapability, UserId};
 
 const DEFAULT_HISTORY_WINDOW_MESSAGES: usize = 16;
-const DEFAULT_EMBEDDING_NDIMS: usize = 1024;
+const DEFAULT_EMBEDDING_NDIMS: usize = 2048;
 enum AgentStreamStep<T> {
     Raw(Option<T>),
     Status(Option<ConversationStreamEvent>),
@@ -624,7 +624,7 @@ impl RigConversationRuntime {
             embedding_base_url: embedding.base_url,
             embedding_api_key: embedding.api_key,
             embedding_model: embedding.model,
-            embedding_ndims: embedding.embedding_ndims.unwrap_or(DEFAULT_EMBEDDING_NDIMS),
+            embedding_ndims: DEFAULT_EMBEDDING_NDIMS,
             top_k: self.rag_top_k,
         }))
     }

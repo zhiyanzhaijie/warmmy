@@ -11,11 +11,9 @@ use futures_util::TryStreamExt;
 use lancedb::arrow::arrow_schema::{DataType, Field, Fields, Schema};
 use lancedb::database::CreateTableMode;
 use lancedb::query::{ExecutableQuery, QueryBase, Select};
-use rig::client::EmbeddingsClient;
-use rig::embeddings::EmbeddingModel;
-use rig::providers::openai;
 use tokio::sync::OnceCell;
 
+use crate::agent::memory::long_term::embedding::embed_text_with_provider;
 use crate::agent::memory::long_term::rag::RagConfig;
 use domain::FoodNutritionReference;
 
@@ -116,21 +114,24 @@ impl NutritionReferenceRetriever for LanceDbNutritionReferenceRetriever {
 async fn search_reference_ids(config: &RagConfig, query: &str) -> AppResult<Vec<String>> {
     config.validate()?;
     let table = open_or_create_table(config).await?;
-    let model = build_embedding_model(config)?;
-    let embedding = model
-        .embed_text(query)
-        .await
-        .map_err(|err| AppError::upstream(err.to_string()))?;
-    if embedding.vec.len() != config.embedding_ndims {
+    let embedding = embed_text_with_provider(
+        &config.embedding_provider,
+        &config.embedding_base_url,
+        &config.embedding_api_key,
+        &config.embedding_model,
+        query,
+    )
+    .await?;
+    if embedding.len() != config.embedding_ndims {
         return Err(AppError::internal(format!(
             "nutrition embedding dimension mismatch: expected {}, got {}",
             config.embedding_ndims,
-            embedding.vec.len()
+            embedding.len()
         )));
     }
 
     let stream = table
-        .vector_search(embedding.vec)
+        .vector_search(embedding)
         .map_err(|err| AppError::database(err.to_string()))?
         .distance_type(lancedb::DistanceType::Cosine)
         .column(EMBEDDING_FIELD)
@@ -172,28 +173,26 @@ async fn put_reference(config: &RagConfig, reference: &FoodNutritionReference) -
         embedding.model = config.embedding_model.as_str(),
         "nutrition reference embedding requested"
     );
-    let model = build_embedding_model(config)?;
-    let embedding = model
-        .embed_text(&search_text)
-        .await
-        .map_err(|err| AppError::upstream(err.to_string()))?;
-    if embedding.vec.len() != config.embedding_ndims {
+    let embedding = embed_text_with_provider(
+        &config.embedding_provider,
+        &config.embedding_base_url,
+        &config.embedding_api_key,
+        &config.embedding_model,
+        &search_text,
+    )
+    .await?;
+    if embedding.len() != config.embedding_ndims {
         return Err(AppError::internal(format!(
             "nutrition embedding dimension mismatch: expected {}, got {}",
             config.embedding_ndims,
-            embedding.vec.len()
+            embedding.len()
         )));
     }
 
     let table = open_or_create_table(config).await?;
     delete_reference_id(&table, &reference.id).await?;
-    let batch = reference_record_batch(
-        config.embedding_ndims,
-        reference,
-        search_text,
-        embedding.vec,
-    )
-    .map_err(|err| AppError::database(err.to_string()))?;
+    let batch = reference_record_batch(config.embedding_ndims, reference, search_text, embedding)
+        .map_err(|err| AppError::database(err.to_string()))?;
     let reader: Box<dyn arrow_array::RecordBatchReader + Send> =
         Box::new(RecordBatchIterator::new(
             vec![Ok(batch)],
@@ -265,15 +264,6 @@ async fn create_empty_table(
     .execute()
     .await
     .map_err(|err| AppError::database(err.to_string()))
-}
-
-fn build_embedding_model(config: &RagConfig) -> AppResult<rig::providers::openai::EmbeddingModel> {
-    let client = openai::Client::builder()
-        .api_key(&config.embedding_api_key)
-        .base_url(&config.embedding_base_url)
-        .build()
-        .map_err(|err| AppError::upstream(err.to_string()))?;
-    Ok(client.embedding_model(&config.embedding_model))
 }
 
 fn reference_schema(dims: usize) -> Schema {

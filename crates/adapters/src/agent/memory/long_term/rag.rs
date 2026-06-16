@@ -7,19 +7,17 @@ use arrow_array::{
     ArrayRef, FixedSizeListArray, Float32Array, Float64Array, RecordBatch, RecordBatchIterator,
     StringArray,
 };
+use domain::AIProviderKind;
 use futures_util::TryStreamExt;
 use lancedb::arrow::arrow_schema::{DataType, Field, Fields, Schema};
 use lancedb::database::CreateTableMode;
 use lancedb::query::{ExecutableQuery, QueryBase};
-use rig::client::EmbeddingsClient;
-use rig::embeddings::EmbeddingModel;
-use rig::http_client::HttpClientExt;
-use rig::providers::openai;
 use rig::vector_store::request::SearchFilter;
 use rig::vector_store::{VectorSearchRequest, VectorStoreError, VectorStoreIndex};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use domain::AIProviderKind;
+
+use crate::agent::memory::long_term::embedding::embed_text_with_provider;
 
 const TABLE_NAME: &str = "memory_index";
 const ID_FIELD: &str = "memory_id";
@@ -31,7 +29,6 @@ const CONTENT_FIELD: &str = "content";
 const SOURCE_FIELD: &str = "source";
 const UPDATED_AT_FIELD: &str = "updated_at";
 const EMBEDDING_FIELD: &str = "embedding";
-const DOUBAO_MULTIMODAL_EMBEDDINGS_PATH: &str = "/embeddings/multimodal";
 
 #[derive(Clone, Debug)]
 pub struct RagConfig {
@@ -67,12 +64,10 @@ impl RagConfig {
     }
 }
 
-pub type OpenAiCompatibleRagIndex =
-    WarmmyLanceDbVectorIndex<rig::providers::openai::EmbeddingModel>;
+pub type OpenAiCompatibleRagIndex = WarmmyLanceDbVectorIndex;
 
-pub struct WarmmyLanceDbVectorIndex<M: EmbeddingModel> {
+pub struct WarmmyLanceDbVectorIndex {
     table: lancedb::Table,
-    model: M,
     config: RagConfig,
 }
 
@@ -129,104 +124,22 @@ impl SearchFilter for LanceDbFilter {
 
 pub async fn build_rag_index(config: &RagConfig) -> AppResult<OpenAiCompatibleRagIndex> {
     config.validate()?;
-
-    let model = build_embedding_model(config)?;
     let table = open_or_create_table(config).await?;
     Ok(WarmmyLanceDbVectorIndex {
         table,
-        model,
         config: config.clone(),
     })
 }
 
-fn build_embedding_model(config: &RagConfig) -> AppResult<rig::providers::openai::EmbeddingModel> {
-    let client = openai::Client::builder()
-        .api_key(&config.embedding_api_key)
-        .base_url(&config.embedding_base_url)
-        .build()
-        .map_err(|e| AppError::upstream(e.to_string()))?;
-
-    // SiliconFlow and other OpenAI-compatible providers may reject OpenAI's
-    // `dimensions` request field. Keep schema dimensions in config and do not
-    // send a dimensions override to the embedding endpoint.
-    Ok(client.embedding_model(&config.embedding_model))
-}
-
 async fn embed_text_by_provider(config: &RagConfig, text: &str) -> AppResult<Vec<f64>> {
-    match config.embedding_provider {
-        AIProviderKind::Doubao => embed_text_with_doubao_multimodal(config, text).await,
-        _ => {
-            let model = build_embedding_model(config)?;
-            let embedding = model
-                .embed_text(text)
-                .await
-                .map_err(|error| AppError::upstream(error.to_string()))?;
-            Ok(embedding.vec)
-        }
-    }
-}
-
-async fn embed_text_with_doubao_multimodal(config: &RagConfig, text: &str) -> AppResult<Vec<f64>> {
-    let client = openai::Client::builder()
-        .api_key(&config.embedding_api_key)
-        .base_url(&config.embedding_base_url)
-        .build()
-        .map_err(|error| AppError::upstream(error.to_string()))?;
-    let request_body = json!({
-        "model": config.embedding_model,
-        "input": [
-            {
-                "type": "text",
-                "text": text,
-            }
-        ],
-    });
-    let request_body = serde_json::to_vec(&request_body)
-        .map_err(|error| AppError::upstream(error.to_string()))?;
-    let request = client
-        .post(DOUBAO_MULTIMODAL_EMBEDDINGS_PATH)
-        .map_err(|error| AppError::upstream(error.to_string()))?
-        .body(request_body)
-        .map_err(|error| AppError::upstream(error.to_string()))?;
-    let response = client
-        .send(request)
-        .await
-        .map_err(|error| AppError::upstream(error.to_string()))?;
-    let response_body: Vec<u8> = response
-        .into_body()
-        .await
-        .map_err(|error| AppError::upstream(error.to_string()))?;
-    parse_doubao_embedding_response(response_body.as_slice())
-}
-
-fn parse_doubao_embedding_response(body: &[u8]) -> AppResult<Vec<f64>> {
-    let response_json: Value =
-        serde_json::from_slice(body).map_err(|error| AppError::upstream(error.to_string()))?;
-    let Some(data) = response_json.get("data").and_then(Value::as_array) else {
-        return Err(AppError::upstream(
-            "doubao multimodal embedding response missing data".to_string(),
-        ));
-    };
-    let Some(first) = data.first() else {
-        return Err(AppError::upstream(
-            "doubao multimodal embedding response has empty data".to_string(),
-        ));
-    };
-    let Some(embedding) = first.get("embedding").and_then(Value::as_array) else {
-        return Err(AppError::upstream(
-            "doubao multimodal embedding response missing data[0].embedding".to_string(),
-        ));
-    };
-    let mut vector = Vec::with_capacity(embedding.len());
-    for value in embedding {
-        let Some(number) = value.as_f64() else {
-            return Err(AppError::upstream(
-                "doubao multimodal embedding response contains non-number item".to_string(),
-            ));
-        };
-        vector.push(number);
-    }
-    Ok(vector)
+    embed_text_with_provider(
+        &config.embedding_provider,
+        &config.embedding_base_url,
+        &config.embedding_api_key,
+        &config.embedding_model,
+        text,
+    )
+    .await
 }
 
 async fn open_or_create_table(config: &RagConfig) -> AppResult<lancedb::Table> {
@@ -371,10 +284,7 @@ fn rag_record_batch(
     )
 }
 
-impl<M> VectorStoreIndex for WarmmyLanceDbVectorIndex<M>
-where
-    M: EmbeddingModel + Send + Sync,
-{
+impl VectorStoreIndex for WarmmyLanceDbVectorIndex {
     type Filter = LanceDbFilter;
 
     async fn top_n<T: for<'a> Deserialize<'a> + Send>(
@@ -388,14 +298,15 @@ where
             rag.threshold = req.threshold().unwrap_or_default(),
             "memory rag search requested"
         );
-        let embedding = match self.config.embedding_provider {
-            AIProviderKind::Doubao => {
-                embed_text_with_doubao_multimodal(&self.config, req.query())
-                    .await
-                    .map_err(app_error_to_vector_store_error)?
-            }
-            _ => self.model.embed_text(req.query()).await?.vec,
-        };
+        let embedding = embed_text_with_provider(
+            &self.config.embedding_provider,
+            &self.config.embedding_base_url,
+            &self.config.embedding_api_key,
+            &self.config.embedding_model,
+            req.query(),
+        )
+        .await
+        .map_err(app_error_to_vector_store_error)?;
         let mut query = table
             .vector_search(embedding)
             .map_err(lancedb_to_vector_store_error)?
