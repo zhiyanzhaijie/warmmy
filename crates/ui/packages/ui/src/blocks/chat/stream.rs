@@ -83,54 +83,69 @@ impl ChatStreamParser {
             if line.is_empty() {
                 continue;
             }
-            match serde_json::from_str::<ChatStreamWireEvent>(&line) {
-                Ok(ChatStreamWireEvent::RunStarted { run_id }) => {
-                    let _ = run_id;
-                    events.push(ChatStreamEvent::RunStarted);
-                }
-                Ok(ChatStreamWireEvent::Status { kind, label }) => {
-                    events.push(ChatStreamEvent::Activity(ChatActivity {
-                        kind: kind.into(),
-                        label,
-                        tool_name: None,
-                    }));
-                }
-                Ok(ChatStreamWireEvent::ToolStarted { tool_name, label }) => {
-                    events.push(ChatStreamEvent::Activity(ChatActivity {
-                        kind: ChatActivityKind::UsingTool,
-                        label,
-                        tool_name: Some(tool_name),
-                    }));
-                }
-                Ok(ChatStreamWireEvent::ToolFinished { tool_name }) => {
-                    let _ = tool_name;
-                    events.push(ChatStreamEvent::Activity(ChatActivity {
-                        kind: ChatActivityKind::Thinking,
-                        label: "我在整理刚才的结果。".to_string(),
-                        tool_name: None,
-                    }));
-                }
-                Ok(ChatStreamWireEvent::ToolError { tool_name, label }) => {
-                    events.push(ChatStreamEvent::Activity(ChatActivity {
-                        kind: ChatActivityKind::UsingTool,
-                        label,
-                        tool_name: Some(tool_name),
-                    }));
-                }
-                Ok(ChatStreamWireEvent::TextDelta { text }) => {
-                    events.push(ChatStreamEvent::TextDelta(text));
-                }
-                Ok(ChatStreamWireEvent::InteractionRequested { interaction }) => {
-                    events.push(ChatStreamEvent::InteractionRequested(interaction));
-                }
-                Ok(ChatStreamWireEvent::Cancelled | ChatStreamWireEvent::Done) => {
-                    events.push(ChatStreamEvent::ClearActivity);
-                }
-                Err(_) if line.starts_with('{') => {}
-                Err(_) => events.push(ChatStreamEvent::TextDelta(line)),
-            }
+            events.extend(self.parse_line(&line));
         }
 
+        events
+    }
+
+    fn finish(&mut self) -> Vec<ChatStreamEvent> {
+        let line = self.buffer.trim().to_string();
+        self.buffer.clear();
+        if line.is_empty() {
+            return Vec::new();
+        }
+        self.parse_line(&line)
+    }
+
+    fn parse_line(&self, line: &str) -> Vec<ChatStreamEvent> {
+        let mut events = Vec::new();
+        match serde_json::from_str::<ChatStreamWireEvent>(line) {
+            Ok(ChatStreamWireEvent::RunStarted { run_id }) => {
+                let _ = run_id;
+                events.push(ChatStreamEvent::RunStarted);
+            }
+            Ok(ChatStreamWireEvent::Status { kind, label }) => {
+                events.push(ChatStreamEvent::Activity(ChatActivity {
+                    kind: kind.into(),
+                    label,
+                    tool_name: None,
+                }));
+            }
+            Ok(ChatStreamWireEvent::ToolStarted { tool_name, label }) => {
+                events.push(ChatStreamEvent::Activity(ChatActivity {
+                    kind: ChatActivityKind::UsingTool,
+                    label,
+                    tool_name: Some(tool_name),
+                }));
+            }
+            Ok(ChatStreamWireEvent::ToolFinished { tool_name }) => {
+                let _ = tool_name;
+                events.push(ChatStreamEvent::Activity(ChatActivity {
+                    kind: ChatActivityKind::Thinking,
+                    label: "我在整理刚才的结果。".to_string(),
+                    tool_name: None,
+                }));
+            }
+            Ok(ChatStreamWireEvent::ToolError { tool_name, label }) => {
+                events.push(ChatStreamEvent::Activity(ChatActivity {
+                    kind: ChatActivityKind::UsingTool,
+                    label,
+                    tool_name: Some(tool_name),
+                }));
+            }
+            Ok(ChatStreamWireEvent::TextDelta { text }) => {
+                events.push(ChatStreamEvent::TextDelta(text));
+            }
+            Ok(ChatStreamWireEvent::InteractionRequested { interaction }) => {
+                events.push(ChatStreamEvent::InteractionRequested(interaction));
+            }
+            Ok(ChatStreamWireEvent::Cancelled | ChatStreamWireEvent::Done) => {
+                events.push(ChatStreamEvent::ClearActivity);
+            }
+            Err(_) if line.starts_with('{') => {}
+            Err(_) => events.push(ChatStreamEvent::TextDelta(line.to_string())),
+        }
         events
     }
 }
@@ -462,6 +477,42 @@ pub async fn append_agent_stream(
         }
     }
 
+    for event in parser.finish() {
+        match event {
+            ChatStreamEvent::RunStarted => {}
+            ChatStreamEvent::Activity(activity) => {
+                set_session_activity(chat_state, session_id.clone(), activity);
+            }
+            ChatStreamEvent::ClearActivity => {
+                clear_session_activity(chat_state, &session_id);
+            }
+            ChatStreamEvent::TextDelta(delta) => {
+                let mut all_sessions = chat_state.session_messages.write();
+                let all = all_sessions.entry(session_id.clone()).or_default();
+                let bot_index = ensure_streaming_bot_slot(all, bot_id);
+                let bot_msg = &mut all[bot_index];
+                if first {
+                    bot_msg.is_skeleton = false;
+                    first = false;
+                }
+                bot_msg.text.push_str(&delta);
+                drop(all_sessions);
+                sync_visible_session(chat_state, &session_id);
+            }
+            ChatStreamEvent::InteractionRequested(interaction) => {
+                set_session_activity(
+                    chat_state,
+                    session_id.clone(),
+                    ChatActivity {
+                        kind: ChatActivityKind::WaitingUser,
+                        label: "我整理好了一条需要你确认的记录。".to_string(),
+                        tool_name: None,
+                    },
+                );
+                handle_interaction_requested(chat_state, session_id.clone(), interaction);
+            }
+        }
+    }
     clear_session_activity(chat_state, &session_id);
     let mut all_sessions = chat_state.session_messages.write();
     let all = all_sessions.entry(session_id.clone()).or_default();
@@ -600,3 +651,4 @@ fn composer_attachments_to_message_attachments(
         })
         .collect()
 }
+

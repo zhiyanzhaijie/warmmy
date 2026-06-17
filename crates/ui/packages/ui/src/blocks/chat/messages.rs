@@ -1,67 +1,322 @@
 use dioxus::prelude::*;
 use dioxus_sdk_time::sleep;
+use serde::Deserialize;
+use std::collections::HashSet;
 use std::time::Duration;
 
 use crate::components::common::MarkdownContent;
 use crate::components::ui::skeleton::Skeleton;
+use crate::providers::current_user_id;
 
 use super::pending_meal::PendingMealCard;
 use super::state::{
-    ChatActivity, ChatActivityKind, ChatContext, ChatMessage, ChatMessageAction,
-    ChatMessageAttachment,
+    ChatActivity, ChatActivityKind, ChatContext, ChatMessage, ChatMessageAction, ChatMessageAttachment,
+    SessionHistoryLoadPhase,
 };
+use api::conversation;
+
+const MESSAGE_VIEWPORT_STYLE: &str = r#"#chat-message-viewport-wrapper {
+  position: relative;
+  overflow-y: auto;
+}"#;
+
+#[derive(Debug, Deserialize)]
+struct ScrollProbe {
+    near_top: bool,
+}
 
 #[component]
 pub(super) fn ChatMessageList(has_pending_transition: bool) -> Element {
-    let chat_state = use_context::<ChatContext>();
-    let scroll_signature = use_memo(move || {
-        let messages = chat_state.messages.read();
+    let mut chat_state = use_context::<ChatContext>();
+    let mut loading_more = use_signal(|| false);
+    let mut near_top_tick = use_signal(|| 0_u64);
+    let mut last_initial_scrolled_session = use_signal(String::new);
+    let mut top_paging_enabled = use_signal(|| false);
+    let active_session_id = chat_state
+        .active_session_id
+        .read()
+        .clone()
+        .unwrap_or_default();
+    let messages = chat_state.messages.read().clone();
+    let has_messages = !messages.is_empty();
+    let messages_for_render = messages.clone();
+    let active_session_for_initial_effect = active_session_id.clone();
+    let active_session_for_reset_effect = active_session_id.clone();
+    let active_session_for_listener_effect = active_session_id.clone();
+    let should_auto_scroll_bottom = messages
+        .last()
+        .map(|message| message.is_streaming || message.is_skeleton)
+        .unwrap_or(false);
+    let scroll_signature = {
         let last = messages.last();
         format!(
-            "{}:{}:{}",
-            messages.len(),
+            "{}:{}:{}:{}",
+            active_session_id,
+            last.map(|msg| msg.id).unwrap_or_default(),
             last.map(|msg| msg.text.len()).unwrap_or_default(),
             last.map(|msg| msg.is_streaming || msg.is_skeleton)
-                .unwrap_or_default()
+                .unwrap_or(false)
         )
-    });
+    };
 
-    use_effect(move || {
-        let _ = scroll_signature();
-        document::eval(
+    use_effect(use_reactive((&active_session_for_reset_effect,), move |_| {
+        top_paging_enabled.set(false);
+        last_initial_scrolled_session.set(String::new());
+        near_top_tick.set(0);
+    }));
+
+    use_effect(use_reactive(
+        (
+            &active_session_for_initial_effect,
+            &scroll_signature,
+            &has_messages,
+            &should_auto_scroll_bottom,
+        ),
+        move |(session_for_initial, _signature, has_messages, should_auto_follow)| {
+            let should_initial_scroll =
+                has_messages && last_initial_scrolled_session() != session_for_initial;
+            if !should_auto_follow && !should_initial_scroll {
+                return;
+            }
+            if should_initial_scroll {
+                top_paging_enabled.set(false);
+                last_initial_scrolled_session.set(session_for_initial.clone());
+            }
+            document::eval(
+                r#"
+                const stickBottom = () => {
+                    const viewport = document.querySelector('#chat-message-viewport-wrapper');
+                    if (!viewport) return;
+                    viewport.scrollTop = viewport.scrollHeight;
+                };
+                requestAnimationFrame(() => {
+                    stickBottom();
+                    requestAnimationFrame(stickBottom);
+                    setTimeout(stickBottom, 80);
+                    setTimeout(stickBottom, 180);
+                    setTimeout(stickBottom, 320);
+                });
+                "#,
+            );
+            if should_initial_scroll {
+                spawn(async move {
+                    sleep(Duration::from_millis(420)).await;
+                    top_paging_enabled.set(true);
+                });
+            }
+        },
+    ));
+
+    use_effect(use_reactive((&active_session_for_listener_effect,), move |_| {
+        let mut eval = document::eval(
             r#"
-            requestAnimationFrame(() => {
-                const viewport = document.getElementById("chat-message-viewport");
-                const anchor = document.getElementById("chat-message-bottom");
-                if (!viewport || !anchor) return;
-                anchor.scrollIntoView({ block: "end", behavior: "smooth" });
-            });
+            let viewport = document.querySelector('#chat-message-viewport-wrapper');
+            while (!viewport) {
+                await new Promise((resolve) => requestAnimationFrame(resolve));
+                viewport = document.querySelector('#chat-message-viewport-wrapper');
+            }
+
+            if (window.__warmmyChatViewport && window.__warmmyChatOnScroll) {
+                window.__warmmyChatViewport.removeEventListener('scroll', window.__warmmyChatOnScroll);
+            }
+
+            const onScroll = () => {
+                if (viewport.scrollTop <= 24) {
+                    dioxus.send({ near_top: true });
+                }
+            };
+
+            window.__warmmyChatViewport = viewport;
+            window.__warmmyChatOnScroll = onScroll;
+            viewport.addEventListener('scroll', onScroll, { passive: true });
+            onScroll();
+            await new Promise(() => {});
             "#,
         );
-    });
+
+        spawn(async move {
+            while let Ok(event) = eval.recv::<ScrollProbe>().await {
+                if event.near_top {
+                    near_top_tick.set(near_top_tick().saturating_add(1));
+                }
+            }
+        });
+    }));
+
+    use_effect(use_reactive((&near_top_tick,), move |_| {
+        if near_top_tick() == 0 || loading_more() || !top_paging_enabled() {
+            return;
+        }
+        let Some(session_id) = chat_state.active_session_id.read().clone() else {
+            return;
+        };
+        let history_window = chat_state
+            .session_history_windows
+            .read()
+            .get(&session_id)
+            .cloned()
+            .unwrap_or_default();
+        if history_window.phase == SessionHistoryLoadPhase::LoadingOlder {
+            return;
+        }
+        if !history_window.has_more {
+            return;
+        }
+        let Some(before_message_id) = history_window.next_before_message_id else {
+            return;
+        };
+        {
+            let mut windows = chat_state.session_history_windows.write();
+            if let Some(window) = windows.get_mut(&session_id) {
+                window.phase = SessionHistoryLoadPhase::LoadingOlder;
+            }
+        }
+        let user_id = current_user_id();
+        loading_more.set(true);
+        spawn(async move {
+            let page = conversation::get_session_history_cursor(
+                user_id,
+                session_id.clone(),
+                conversation::SessionHistoryCursorInput {
+                    limit: Some(8),
+                    before_message_id: Some(before_message_id),
+                },
+            )
+            .await;
+
+            match page {
+                Ok(page) => {
+                    let existing = chat_state
+                        .session_messages
+                        .peek()
+                        .get(&session_id)
+                        .cloned()
+                        .unwrap_or_default();
+                    let existing_ids = existing
+                        .iter()
+                        .map(|message| message.id)
+                        .collect::<HashSet<_>>();
+                    let mut older = page
+                        .items
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(offset, item)| {
+                            let fallback = existing
+                                .first()
+                                .map(|message| message.id.saturating_sub(offset as u64 + 1))
+                                .unwrap_or(offset as u64 + 1);
+                            let mapped = ChatMessage {
+                                id: item.id.parse::<u64>().unwrap_or(fallback),
+                                text: item.content,
+                                is_bot: item.role != "user",
+                                is_skeleton: false,
+                                is_streaming: false,
+                                attachments: item
+                                    .attachments
+                                    .into_iter()
+                                    .map(|attachment| ChatMessageAttachment {
+                                        id: attachment.id,
+                                        kind: attachment.kind,
+                                        mime_type: attachment.mime_type,
+                                        size_bytes: attachment.size_bytes,
+                                        width: attachment.width,
+                                        height: attachment.height,
+                                        data_url: attachment.data_url,
+                                        status: attachment.status,
+                                    })
+                                    .collect(),
+                                action: None,
+                                pending_meal: None,
+                            };
+                            if existing_ids.contains(&mapped.id) {
+                                return None;
+                            }
+                            Some(mapped)
+                        })
+                        .collect::<Vec<_>>();
+
+                    if !older.is_empty() {
+                        older.extend(existing.clone());
+                        chat_state
+                            .session_messages
+                            .write()
+                            .insert(session_id.clone(), older.clone());
+                        if chat_state
+                            .active_session_id
+                            .peek()
+                            .as_ref()
+                            .map(|active| active == &session_id)
+                            .unwrap_or(false)
+                        {
+                            chat_state.messages.set(older);
+                        }
+                    }
+
+                    let mut windows = chat_state.session_history_windows.write();
+                    let window = windows.entry(session_id.clone()).or_default();
+                    if window.end_index > window.start_index || window.has_more {
+                        window.start_index = window.start_index.min(page.start_index);
+                        window.end_index = window.end_index.max(page.end_index);
+                    } else {
+                        window.start_index = page.start_index;
+                        window.end_index = page.end_index;
+                    }
+                    window.total_count = page.total_count;
+                    window.next_before_message_id = page.next_before_message_id;
+                    window.has_more = page.has_more;
+                    window.phase = SessionHistoryLoadPhase::Ready;
+                    drop(windows);
+
+                    let mut probe_eval = document::eval(
+                        r#"
+                        const viewport = document.querySelector('#chat-message-viewport-wrapper');
+                        dioxus.send({ near_top: viewport ? viewport.scrollTop <= 24 : false });
+                        "#,
+                    );
+                    if let Ok(probe) = probe_eval.recv::<ScrollProbe>().await {
+                        if probe.near_top {
+                            near_top_tick.set(near_top_tick().saturating_add(1));
+                        }
+                    }
+                }
+                Err(_) => {
+                    let mut windows = chat_state.session_history_windows.write();
+                    if let Some(window) = windows.get_mut(&session_id) {
+                        if window.phase == SessionHistoryLoadPhase::LoadingOlder {
+                            window.phase = SessionHistoryLoadPhase::Ready;
+                        }
+                    }
+                }
+            }
+            loading_more.set(false);
+        });
+    }));
 
     let activity = current_activity(chat_state);
 
     rsx! {
         div {
-            id: "chat-message-viewport",
-            class: "flex-1 min-h-0 overflow-y-auto space-y-4 px-4 py-4 md:px-5 md:py-5",
-            if chat_state.messages.read().is_empty() && has_pending_transition {
+            id: "chat-message-viewport-wrapper",
+            class: "flex-1 min-h-0 overflow-y-auto px-4 py-4 md:px-5 md:py-5",
+            style { "{MESSAGE_VIEWPORT_STYLE}" }
+            if !has_messages && has_pending_transition {
                 PendingChatPlaceholder {}
             } else {
-                for msg in chat_state.messages.read().iter() {
-                    ChatMessageBubble {
-                        key: "{msg.id}",
-                        message: msg.clone(),
-                        activity: if msg.is_bot && (msg.is_streaming || msg.is_skeleton) {
-                            activity.clone()
-                        } else {
-                            None
-                        },
+                div { class: "flex flex-col",
+                    for msg in messages_for_render {
+                        div { key: "{msg.id}", class: "pb-4",
+                            ChatMessageBubble {
+                                message: msg.clone(),
+                                activity: if msg.is_bot && (msg.is_streaming || msg.is_skeleton) {
+                                    activity.clone()
+                                } else {
+                                    None
+                                },
+                            }
+                        }
                     }
                 }
             }
-            div { id: "chat-message-bottom", class: "h-px w-full" }
         }
     }
 }

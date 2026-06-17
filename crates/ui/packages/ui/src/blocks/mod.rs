@@ -10,7 +10,7 @@ pub(crate) use chat::{
 };
 pub use chat::{
     ChatActionContext, ChatBlock, ChatContext, ChatMessage, ChatMessageAction,
-    FinalizeConversationDay,
+    FinalizeConversationDay, SessionHistoryWindow,
 };
 pub use me::{
     CompanionsBlock, DietPreferenceEditBlock, HealthExpectationEditBlock, MeBlock, ProfileEditBlock,

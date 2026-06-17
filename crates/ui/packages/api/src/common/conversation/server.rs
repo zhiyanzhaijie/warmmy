@@ -1,4 +1,6 @@
-use super::types::{ChatSendInput, EchoResponse};
+use super::types::{
+    ChatSendInput, EchoResponse, SessionHistoryCursorInput, SessionHistoryCursorPage,
+};
 use crate::impls::error::api_error;
 use crate::impls::state::State;
 use dioxus::fullstack::payloads::TextStream;
@@ -69,6 +71,37 @@ pub async fn get_session_history(
         .await
         .map_err(api_error)?;
     Ok(result)
+}
+
+#[post("/api/get_session_history_cursor", state: State)]
+pub async fn get_session_history_cursor(
+    user_id: String,
+    session_id: String,
+    input: SessionHistoryCursorInput,
+) -> Result<SessionHistoryCursorPage, ServerFnError> {
+    let user_id = parse_user_id(&user_id)?;
+    let result = state
+        .0
+        .conversation
+        .query
+        .get_session_history_cursor(
+            &user_id,
+            &session_id,
+            app::common::CursorPagination {
+                limit: input.limit,
+                before: input.before_message_id,
+            },
+        )
+        .await
+        .map_err(api_error)?;
+    Ok(SessionHistoryCursorPage {
+        items: result.items,
+        next_before_message_id: result.next_cursor,
+        has_more: result.has_more,
+        total_count: result.total_count,
+        start_index: result.start_index,
+        end_index: result.end_index,
+    })
 }
 
 #[post("/api/store_ephemeral_image", state: State)]

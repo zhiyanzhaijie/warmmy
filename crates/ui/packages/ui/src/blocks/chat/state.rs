@@ -36,6 +36,26 @@ pub struct ChatMessageAttachment {
     pub status: String,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum SessionHistoryLoadPhase {
+    #[default]
+    InitialLoading,
+    Ready,
+    LoadingOlder,
+}
+
+#[derive(Clone, PartialEq, Debug, Default)]
+pub struct SessionHistoryWindow {
+    pub total_count: usize,
+    pub start_index: usize,
+    pub end_index: usize,
+    pub items: Vec<Option<ChatMessage>>,
+    pub next_before_message_id: Option<String>,
+    pub has_more: bool,
+    pub phase: SessionHistoryLoadPhase,
+    pub initial_bottom_done: bool,
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum ChatActivityKind {
     Thinking,
@@ -69,6 +89,7 @@ pub struct ComposerImageAttachment {
 pub struct ChatContext {
     pub messages: Signal<Vec<ChatMessage>>,
     pub session_messages: Signal<HashMap<String, Vec<ChatMessage>>>,
+    pub session_history_windows: Signal<HashMap<String, SessionHistoryWindow>>,
     pub session_activities: Signal<HashMap<String, ChatActivity>>,
     pub active_session_id: Signal<Option<String>>,
     pub input: Signal<String>,

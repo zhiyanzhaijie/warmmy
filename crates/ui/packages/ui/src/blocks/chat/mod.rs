@@ -22,7 +22,7 @@ use stream::{activate_session, append_pending_meal_messages, set_active_session_
 
 pub use state::{
     ChatActionContext, ChatContext, ChatMessage, ChatMessageAction, FinalizeConversationDay,
-    SendConversationMessage,
+    SendConversationMessage, SessionHistoryLoadPhase, SessionHistoryWindow,
 };
 
 pub(crate) use state::ComposerImageAttachment;
@@ -38,6 +38,7 @@ struct LoadedSessionHistory {
     session_id: String,
     is_detail_route: bool,
     history: Option<Vec<ChatMessage>>,
+    history_window: SessionHistoryWindow,
     pending_meals: Vec<meal::PendingMealLogDTO>,
 }
 
@@ -262,8 +263,9 @@ fn load_session_history(
     history_user_id: String,
     history_session_id: String,
     history_is_detail_route: bool,
-    chat_state: ChatContext,
+    mut chat_state: ChatContext,
 ) {
+    let mut applied_history_signature = use_signal(|| None::<String>);
     let history_loader = use_IO(use_reactive(
         (
             &history_user_id,
@@ -278,46 +280,79 @@ fn load_session_history(
             let pending_meals = meal::list_pending_meals(request_user_id.clone(), sid.clone())
                 .await
                 .unwrap_or_default();
+            let (history, history_window) = match conversation::get_session_history_cursor(
+                request_user_id.clone(),
+                sid.clone(),
+                conversation::SessionHistoryCursorInput {
+                    limit: Some(8),
+                    before_message_id: None,
+                },
+            )
+            .await
+            {
+                Ok(page) => {
+                    let history = page
+                        .items
+                        .into_iter()
+                        .enumerate()
+                        .map(|(offset, msg)| ChatMessage {
+                            id: msg
+                                .id
+                                .parse::<u64>()
+                                .unwrap_or(page.start_index as u64 + offset as u64 + 1),
+                            text: msg.content,
+                            is_bot: msg.role != "user",
+                            is_skeleton: false,
+                            is_streaming: false,
+                            attachments: msg
+                                .attachments
+                                .into_iter()
+                                .map(|attachment| state::ChatMessageAttachment {
+                                    id: attachment.id,
+                                    kind: attachment.kind,
+                                    mime_type: attachment.mime_type,
+                                    size_bytes: attachment.size_bytes,
+                                    width: attachment.width,
+                                    height: attachment.height,
+                                    data_url: attachment.data_url,
+                                    status: attachment.status,
+                                })
+                                .collect(),
+                            action: None,
+                            pending_meal: None,
+                        })
+                        .collect::<Vec<_>>();
 
-            let history =
-                match conversation::get_session_history(request_user_id.clone(), sid.clone()).await
-                {
-                    Ok(history) => Some(
-                        history
-                            .into_iter()
-                            .enumerate()
-                            .map(|(index, msg)| ChatMessage {
-                                id: index as u64 + 1,
-                                text: msg.content,
-                                is_bot: msg.role != "user",
-                                is_skeleton: false,
-                                is_streaming: false,
-                                attachments: msg
-                                    .attachments
-                                    .into_iter()
-                                    .map(|attachment| state::ChatMessageAttachment {
-                                        id: attachment.id,
-                                        kind: attachment.kind,
-                                        mime_type: attachment.mime_type,
-                                        size_bytes: attachment.size_bytes,
-                                        width: attachment.width,
-                                        height: attachment.height,
-                                        data_url: attachment.data_url,
-                                        status: attachment.status,
-                                    })
-                                    .collect(),
-                                action: None,
-                                pending_meal: None,
-                            })
-                            .collect::<Vec<_>>(),
-                    ),
-                    Err(_) => None,
-                };
+                    let mut slots = vec![None; page.total_count];
+                    for (offset, item) in history.iter().cloned().enumerate() {
+                        let idx = page.start_index + offset;
+                        if idx < slots.len() {
+                            slots[idx] = Some(item);
+                        }
+                    }
+
+                    (
+                        Some(history),
+                        SessionHistoryWindow {
+                            total_count: page.total_count,
+                            start_index: page.start_index,
+                            end_index: page.end_index,
+                            items: slots,
+                            next_before_message_id: page.next_before_message_id,
+                            has_more: page.has_more,
+                            phase: SessionHistoryLoadPhase::Ready,
+                            initial_bottom_done: false,
+                        },
+                    )
+                }
+                Err(_) => (None, SessionHistoryWindow::default()),
+            };
 
             Some(LoadedSessionHistory {
                 session_id: sid,
                 is_detail_route,
                 history,
+                history_window,
                 pending_meals,
             })
         },
@@ -327,6 +362,34 @@ fn load_session_history(
         let Some(Some(loaded)) = history_loader.read().clone() else {
             return;
         };
+        let signature = format!(
+            "{}:{}:{}:{}:{}:{}:{}:{}",
+            loaded.session_id,
+            loaded.is_detail_route,
+            loaded.history.as_ref().map(|items| items.len()).unwrap_or_default(),
+            loaded
+                .history_window
+                .next_before_message_id
+                .clone()
+                .unwrap_or_default(),
+            loaded.history_window.total_count,
+            loaded.history_window.start_index,
+            loaded.history_window.end_index,
+            loaded.pending_meals.len(),
+        );
+        if applied_history_signature
+            .read()
+            .as_ref()
+            .map(|saved| saved == &signature)
+            .unwrap_or(false)
+        {
+            return;
+        }
+        applied_history_signature.set(Some(signature));
+        chat_state
+            .session_history_windows
+            .write()
+            .insert(loaded.session_id.clone(), loaded.history_window.clone());
 
         activate_session(chat_state, loaded.session_id.clone());
         let has_streaming = chat_state
@@ -381,7 +444,12 @@ fn load_session_history(
                 if !loaded.is_detail_route {
                     navigator().replace(format!("/{}", loaded.session_id));
                 }
-                let mut current_next_id = history.len() as u64 + 1;
+                let mut current_next_id = history
+                    .iter()
+                    .map(|message| message.id)
+                    .max()
+                    .unwrap_or(0)
+                    .saturating_add(1);
                 for pending_meal in loaded.pending_meals {
                     history.push(ChatMessage {
                         id: current_next_id,

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use dioxus::prelude::*;
 
-use crate::blocks::{ChatContext, ChatMessage, ComposerImageAttachment};
+use crate::blocks::{ChatContext, ChatMessage, ComposerImageAttachment, SessionHistoryWindow};
 
 #[component]
 pub fn ChatStateProvider(chat: ChatContext, children: Element) -> Element {
@@ -16,6 +16,7 @@ pub fn ChatStateProvider(chat: ChatContext, children: Element) -> Element {
 pub fn use_chat_context_value() -> ChatContext {
     let messages = use_signal(Vec::<ChatMessage>::new);
     let session_messages = use_signal(HashMap::<String, Vec<ChatMessage>>::new);
+    let session_history_windows = use_signal(HashMap::<String, SessionHistoryWindow>::new);
     let session_activities = use_signal(HashMap::new);
     let active_session_id = use_signal(|| None);
     let input = use_signal(String::new);
@@ -27,6 +28,7 @@ pub fn use_chat_context_value() -> ChatContext {
     ChatContext {
         messages,
         session_messages,
+        session_history_windows,
         session_activities,
         active_session_id,
         input,

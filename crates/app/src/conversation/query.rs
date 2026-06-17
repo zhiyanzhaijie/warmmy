@@ -3,6 +3,7 @@ use std::sync::Arc;
 use domain::UserId;
 
 use crate::app_error::{AppError, AppResult};
+use crate::common::{paginate_before, CursorPage, CursorPagination};
 use crate::conversation::ChatMessageRepositoryPort;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -45,6 +46,23 @@ impl ConversationQueryHandler {
             .find_by_session(user_id, session_id)
             .await
             .map_err(AppError::upstream)
+    }
+
+    pub async fn get_session_history_cursor(
+        &self,
+        user_id: &UserId,
+        session_id: &str,
+        pagination: CursorPagination<String>,
+    ) -> AppResult<CursorPage<ChatMessage, String>> {
+        let messages = self
+            .repo
+            .find_by_session(user_id, session_id)
+            .await
+            .map_err(AppError::upstream)?;
+
+        Ok(paginate_before(&messages, &pagination, |message| {
+            message.id.clone()
+        }))
     }
 
     pub async fn list_user_sessions(&self, user_id: &UserId) -> AppResult<Vec<String>> {
