@@ -340,7 +340,6 @@ fn pending_to_dto(item: domain::PendingMealLog) -> PendingMealLogDTO {
         id: item.id.to_string(),
         day_cycle: item.day_cycle.to_string(),
         foods: item.foods.into_iter().map(food_to_dto).collect(),
-        nutrition: nutrition_to_dto(item.nutrition),
         status: match item.status {
             domain::PendingMealLogStatus::Proposed => "proposed",
             domain::PendingMealLogStatus::Confirmed => "confirmed",

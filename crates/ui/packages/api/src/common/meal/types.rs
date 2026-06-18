@@ -43,7 +43,6 @@ pub struct PendingMealLogDTO {
     pub id: String,
     pub day_cycle: String,
     pub foods: Vec<FoodItemDTO>,
-    pub nutrition: NutritionDTO,
     pub status: String,
 }
 

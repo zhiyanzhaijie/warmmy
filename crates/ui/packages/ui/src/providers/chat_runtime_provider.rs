@@ -12,7 +12,6 @@ use crate::blocks::{
     activate_chat_session, append_agent_stream, append_chat_bot_text, append_outgoing_message_pair,
     append_streaming_bot_slot, remove_pending_meal_messages, ChatActionContext, ChatContext,
     ChatMessageAction, ComposerImageAttachment, FinalizeConversationDay, SendConversationMessage,
-    DEFAULT_STREAM_IDLE_TIMEOUT, IMAGE_STREAM_IDLE_TIMEOUT,
 };
 
 use super::current_user_id;
@@ -130,7 +129,6 @@ async fn finalize_conversation_day(
                 stream,
                 bot_id,
                 session_id,
-                DEFAULT_STREAM_IDLE_TIMEOUT,
             )
             .await;
         }
@@ -217,11 +215,6 @@ async fn send_conversation_message(
         text: content,
         attachments: uploaded_attachments,
     };
-    let idle_timeout = if send_input.attachments.is_empty() {
-        DEFAULT_STREAM_IDLE_TIMEOUT
-    } else {
-        IMAGE_STREAM_IDLE_TIMEOUT
-    };
     match echo_stream_with_timeout(
         request_user_id.clone(),
         send_input.clone(),
@@ -230,7 +223,7 @@ async fn send_conversation_message(
     .await
     {
         Ok(stream) => {
-            append_agent_stream(chat_state, stream, bot_id, session_id.clone(), idle_timeout).await;
+            append_agent_stream(chat_state, stream, bot_id, session_id.clone()).await;
             if route_after_stream {
                 navigator().replace(format!("/{session_id}"));
             }

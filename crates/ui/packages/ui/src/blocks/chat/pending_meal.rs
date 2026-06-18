@@ -8,7 +8,7 @@ use crate::providers::current_user_id;
 use super::state::ChatContext;
 use super::stream::{
     active_session_id, append_agent_stream, append_bot_text, append_streaming_bot_slot,
-    DEFAULT_STREAM_IDLE_TIMEOUT,
+    remove_pending_meal_messages,
 };
 use api::meal;
 
@@ -24,38 +24,8 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
     let mut confirmed = use_signal(|| pending_meal.status == "confirmed");
     let day_cycle = use_signal(|| pending_meal.day_cycle.clone());
     let mut foods = use_signal(|| pending_meal.foods.clone());
-    let mut nutrition = use_signal(|| pending_meal.nutrition.clone());
-    let mut previewing = use_signal(|| false);
-
-    let update_preview = {
-        let user_id = user_id.clone();
-        let pending_id = pending_meal.id.clone();
-        move || {
-            let request_user_id = user_id.clone();
-            let input = meal::ConfirmPendingMealInput {
-                pending_id: pending_id.clone(),
-                day_cycle: day_cycle(),
-                foods: foods(),
-            };
-            spawn(async move {
-                previewing.set(true);
-                match meal::preview_pending_meal(request_user_id, input).await {
-                    Ok(updated) => {
-                        nutrition.set(updated.nutrition);
-                    }
-                    Err(err) => append_bot_text(
-                        chat_state,
-                        active_session_id(chat_state),
-                        format!("更新营养估算失败：{err}"),
-                    ),
-                }
-                previewing.set(false);
-            });
-        }
-    };
 
     let add_food = {
-        let update_preview = update_preview.clone();
         move |_| {
             foods.with_mut(|items| {
                 items.push(meal::FoodItemDTO {
@@ -66,7 +36,6 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                     amount_confidence: Some(0.4),
                 });
             });
-            update_preview();
         }
     };
 
@@ -76,8 +45,9 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
         move |_| {
             let request_user_id = user_id.clone();
             let request_session_id = confirm_session_id.clone();
+            let pending_id_for_call = pending_id.clone();
             let input = meal::ConfirmPendingMealInput {
-                pending_id: pending_id.clone(),
+                pending_id: pending_id_for_call.clone(),
                 day_cycle: day_cycle(),
                 foods: foods(),
             };
@@ -89,12 +59,17 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                 {
                     Ok(stream) => {
                         confirmed.set(true);
+                        let removed_ids = vec![pending_id_for_call];
+                        remove_pending_meal_messages(
+                            chat_state,
+                            request_session_id.clone(),
+                            &removed_ids,
+                        );
                         append_agent_stream(
                             chat_state,
                             stream,
                             bot_id,
                             request_session_id,
-                            DEFAULT_STREAM_IDLE_TIMEOUT,
                         )
                         .await;
                     }
@@ -115,7 +90,8 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
         move |_| {
             let request_user_id = user_id.clone();
             let request_session_id = reject_session_id.clone();
-            let request_pending_id = pending_id.clone();
+            let pending_id_for_call = pending_id.clone();
+            let request_pending_id = pending_id_for_call.clone();
             spawn(async move {
                 saving.set(true);
                 let bot_id = append_streaming_bot_slot(chat_state, request_session_id.clone());
@@ -128,12 +104,17 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                 {
                     Ok(stream) => {
                         rejected.set(true);
+                        let removed_ids = vec![pending_id_for_call];
+                        remove_pending_meal_messages(
+                            chat_state,
+                            request_session_id.clone(),
+                            &removed_ids,
+                        );
                         append_agent_stream(
                             chat_state,
                             stream,
                             bot_id,
                             request_session_id,
-                            DEFAULT_STREAM_IDLE_TIMEOUT,
                         )
                         .await;
                     }
@@ -164,14 +145,12 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                             class: "min-w-0 rounded-xl border border-border bg-card px-3 py-2 text-sm",
                             value: food.name.clone(),
                             oninput: {
-                                let update_preview = update_preview.clone();
                                 move |e: FormEvent| {
                                     foods.with_mut(|items| {
                                         if let Some(item) = items.get_mut(index) {
                                             item.name = e.value();
                                         }
                                     });
-                                    update_preview();
                                 }
                             },
                         }
@@ -180,7 +159,6 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                                 class: "min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm",
                                 value: food_grams(&food).to_string(),
                                 oninput: {
-                                    let update_preview = update_preview.clone();
                                     move |e: FormEvent| {
                                         foods.with_mut(|items| {
                                             if let Some(item) = items.get_mut(index) {
@@ -190,7 +168,6 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                                                 item.estimated_grams = Some(grams);
                                             }
                                         });
-                                        update_preview();
                                     }
                                 },
                             }
@@ -202,14 +179,12 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                             class: "rounded-xl border border-border text-muted-foreground",
                             disabled: saving() || confirmed() || rejected() || foods().len() <= 1,
                             onclick: {
-                                let update_preview = update_preview.clone();
                                 move |_| {
                                     foods.with_mut(|items| {
                                         if items.len() > 1 && index < items.len() {
                                             items.remove(index);
                                         }
                                     });
-                                    update_preview();
                                 }
                             },
                             Trash2 { size: 15 }
@@ -226,13 +201,6 @@ pub(super) fn PendingMealCard(pending_meal: meal::PendingMealLogDTO) -> Element 
                     onclick: add_food,
                     Plus { size: 15 }
                     "新增食物"
-                }
-            }
-            div { class: "mt-4 rounded-xl border border-border bg-card px-3 py-2 text-xs leading-relaxed text-muted-foreground",
-                if previewing() {
-                    "正在更新估算..."
-                } else {
-                    "估算：{nutrition().calories:.0} kcal · 蛋白质 {nutrition().protein_g:.1}g · 碳水 {nutrition().carbs_g:.1}g · 脂肪 {nutrition().fat_g:.1}g"
                 }
             }
             div { class: "mt-4 flex flex-wrap gap-2",

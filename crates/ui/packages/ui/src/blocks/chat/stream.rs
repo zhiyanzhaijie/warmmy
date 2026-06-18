@@ -1,8 +1,5 @@
 use dioxus::prelude::*;
-use dioxus_sdk_time::sleep;
-use futures_util::future::{select, Either};
 use serde_json::Value;
-use std::time::Duration;
 
 use super::state::{
     ChatActivity, ChatActivityKind, ChatContext, ChatMessage, ChatMessageAttachment,
@@ -10,8 +7,6 @@ use super::state::{
 };
 use api::meal;
 
-pub const DEFAULT_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
-pub const IMAGE_STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(serde::Deserialize)]
 #[serde(tag = "type")]
@@ -389,31 +384,11 @@ pub async fn append_agent_stream(
     mut stream: dioxus::fullstack::payloads::TextStream,
     bot_id: u64,
     session_id: String,
-    idle_timeout: Duration,
 ) {
     let mut first = true;
     let mut parser = ChatStreamParser::default();
     loop {
-        let next_chunk = stream.next();
-        let timeout = sleep(idle_timeout);
-        futures_util::pin_mut!(next_chunk);
-        futures_util::pin_mut!(timeout);
-
-        let chunk = match select(next_chunk, timeout).await {
-            Either::Left((chunk, _)) => chunk,
-            Either::Right((_, _)) => {
-                stop_stream_with_text(
-                    chat_state,
-                    &session_id,
-                    bot_id,
-                    format!(
-                        "模型响应超时（{} 秒没有收到新内容）。请检查手机网络、API base URL、模型名称，或尝试关闭流式输出/更换模型。",
-                        idle_timeout.as_secs()
-                    ),
-                );
-                return;
-            }
-        };
+        let chunk = stream.next().await;
 
         let Some(chunk) = chunk else {
             break;
