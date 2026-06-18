@@ -8,7 +8,7 @@ use crate::components::ui::sheet::{
     SheetTitle,
 };
 use crate::hooks::use_IO;
-use crate::providers::set_current_preferences;
+use crate::providers::{set_current_preferences, PreferenceContext};
 
 use super::common::{
     apply_document_theme, normalize_theme, BlockMessage, ChoiceOption, LabeledChoiceGroup,
@@ -20,16 +20,35 @@ pub fn SystemPreferenceBlock(
     user_id: String,
     on_saved: EventHandler<user::UserPreferencesDTO>,
 ) -> Element {
+    let preference_context = use_context::<PreferenceContext>();
+    let initial_preferences = (preference_context.preferences)();
     let mut loading = use_signal(|| false);
     let mut saving = use_signal(|| false);
     let mut sheet_open = use_signal(|| false);
-    let mut theme = use_signal(|| "system".to_string());
-    let mut language = use_signal(|| "zh-CN".to_string());
+    let mut theme = use_signal({
+        let initial_preferences = initial_preferences.clone();
+        move || {
+            initial_preferences
+                .as_ref()
+                .and_then(|preferences| preferences.theme.as_deref())
+                .map(normalize_theme)
+                .unwrap_or_else(|| "system".to_string())
+        }
+    });
+    let mut language = use_signal({
+        let initial_preferences = initial_preferences.clone();
+        move || {
+            initial_preferences
+                .as_ref()
+                .and_then(|preferences| preferences.language.as_deref())
+                .unwrap_or("zh-CN")
+                .to_string()
+        }
+    });
     let mut message = use_signal(String::new);
-    let mut hydrated = use_signal(|| false);
-
-    use_effect(move || {
-        apply_document_theme(&theme());
+    let mut initialized = use_signal({
+        let has_initial_preferences = initial_preferences.is_some();
+        move || has_initial_preferences
     });
 
     let loaded_preferences = use_IO({
@@ -43,7 +62,7 @@ pub fn SystemPreferenceBlock(
         loading.set(loaded_preferences.read().is_none());
         if let Some(result) = loaded_preferences.read().as_ref() {
             match result {
-                Ok(preferences) if !hydrated() => {
+                Ok(preferences) if !initialized() => {
                     message.set(String::new());
                     let next_theme = normalize_theme(
                         preferences
@@ -62,7 +81,7 @@ pub fn SystemPreferenceBlock(
                     );
                     set_current_preferences(preferences.clone());
                     on_saved.call(preferences.clone());
-                    hydrated.set(true);
+                    initialized.set(true);
                 }
                 Ok(_) => {}
                 Err(err) => message.set(format!("加载系统偏好失败: {err}")),
@@ -109,7 +128,7 @@ pub fn SystemPreferenceBlock(
                     );
                     set_current_preferences(result.clone());
                     on_saved.call(result);
-                    hydrated.set(true);
+                    initialized.set(true);
                     message.set("系统偏好已保存".to_string());
                     sheet_open.set(false);
                 }
