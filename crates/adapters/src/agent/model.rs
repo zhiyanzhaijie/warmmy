@@ -194,28 +194,28 @@ impl ConversationAgent {
         prompt: Message,
         conversation_id: String,
         wrap_ctx: StreamWrapCtx,
-    ) -> ConversationReplyStream {
+    ) -> AppResult<ConversationReplyStream> {
         match self {
             Self::OpenAiResponses(agent) => {
                 let raw = agent
                     .stream_prompt(prompt)
                     .conversation(conversation_id)
                     .await;
-                RigConversationRuntime::wrap_stream(raw, wrap_ctx)
+                Ok(RigConversationRuntime::wrap_stream(raw, wrap_ctx))
             }
             Self::OpenAiCompletions(agent) => {
                 let raw = agent
                     .stream_prompt(prompt)
                     .conversation(conversation_id)
                     .await;
-                RigConversationRuntime::wrap_stream(raw, wrap_ctx)
+                Ok(RigConversationRuntime::wrap_stream(raw, wrap_ctx))
             }
             Self::DeepSeek(agent) => {
                 let raw = agent
                     .stream_prompt(prompt)
                     .conversation(conversation_id)
                     .await;
-                RigConversationRuntime::wrap_stream(raw, wrap_ctx)
+                Ok(RigConversationRuntime::wrap_stream(raw, wrap_ctx))
             }
         }
     }

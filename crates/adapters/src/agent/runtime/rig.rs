@@ -286,6 +286,7 @@ impl RigConversationRuntime {
         let nutrition_retriever = self.nutrition_retriever(rag.as_ref());
         let interaction_sink = AgentInteractionSink::default();
         let memory_input = input.visible_text();
+        let is_internal_input = is_internal_conversation_input(&memory_input);
         let plan = self
             .plan_turn(
                 user_id,
@@ -307,8 +308,11 @@ impl RigConversationRuntime {
             persist_user_visible_message(&self.repo, user_id, session_id, &input, &memory_input)
                 .await?;
         }
-
-        let rag_context = self.build_rag_agent_context(user_id, rag.as_ref()).await?;
+        let rag_context = if is_internal_input {
+            None
+        } else {
+            self.build_rag_agent_context(user_id, rag.as_ref()).await?
+        };
         let tool_ids = plan.tool_ids.clone();
         let spec = self.build_agent_spec(
             user_id,
@@ -403,8 +407,10 @@ impl RigConversationRuntime {
         let nutrition_retriever = self.nutrition_retriever(rag.as_ref());
         let interaction_sink = AgentInteractionSink::default();
         let user_input = input.visible_text();
+        let is_internal_input = is_internal_conversation_input(&user_input);
         let has_images = input.has_images();
         let route = plan.route();
+        let tool_ids = plan.tool_ids.clone();
         let tool_choice = tool_choice_for_route(route, &user_input);
         let prompt = build_prompt_message(&self.image_store, &input).await?;
         if plan.lifecycle.persist_user_image_message {
@@ -423,9 +429,11 @@ impl RigConversationRuntime {
         let user_input_for_memory = user_input.clone();
         let (status_tx, status_rx) = mpsc::unbounded_channel();
         let status_sink = AgentStatusSink::new(status_tx);
-
-        let rag_context = self.build_rag_agent_context(user_id, rag.as_ref()).await?;
-        let tool_ids = plan.tool_ids.clone();
+        let rag_context = if is_internal_input {
+            None
+        } else {
+            self.build_rag_agent_context(user_id, rag.as_ref()).await?
+        };
         let spec = self.build_agent_spec(
             user_id,
             session_id,
@@ -457,8 +465,8 @@ impl RigConversationRuntime {
             should_update_conversation_summary: plan.lifecycle.update_conversation_summary,
             status_rx,
         };
-
-        Ok(agent.stream(prompt, session_id.to_string(), wrap_ctx).await)
+        let stream = agent.stream(prompt, session_id.to_string(), wrap_ctx).await?;
+        Ok(stream)
     }
 
     pub(crate) fn wrap_stream<S, R>(mut raw: S, ctx: StreamWrapCtx) -> ConversationReplyStream
@@ -495,7 +503,6 @@ impl RigConversationRuntime {
             ));
             let mut has_text_delta = false;
             let mut assistant_output = String::new();
-            let mut output_len = 0usize;
             let mut status_open = true;
             loop {
                 let step = if status_open {
@@ -524,7 +531,6 @@ impl RigConversationRuntime {
                     Ok(MultiTurnStreamItem::StreamAssistantItem(StreamedAssistantContent::Text(text))) => {
                         if !text.text.is_empty() {
                             has_text_delta = true;
-                            output_len += text.text.len();
                             assistant_output.push_str(&text.text);
                             yield Ok(stream_event(ConversationStreamEvent::TextDelta {
                                 text: text.text,
@@ -533,7 +539,6 @@ impl RigConversationRuntime {
                     }
                     Ok(MultiTurnStreamItem::FinalResponse(r)) => {
                         if !has_text_delta && !r.response().is_empty() {
-                            output_len += r.response().len();
                             assistant_output.push_str(r.response());
                             yield Ok(stream_event(ConversationStreamEvent::TextDelta {
                                 text: r.response().to_string(),
@@ -592,7 +597,6 @@ impl RigConversationRuntime {
                             }
                         });
                         yield Ok(stream_event(ConversationStreamEvent::Done));
-                        tracing::info!(output.len = output_len, "agent stream finished");
                     }
                     Ok(_) => {}
                     Err(e) => {
@@ -808,6 +812,7 @@ fn tool_choice_for_route(route: AgentRoute, _input: &str) -> ToolChoice {
         AgentRoute::Chat => ToolChoice::Auto,
     }
 }
+
 
 fn streaming_upstream_error(error: &impl std::fmt::Display) -> AppError {
     let raw = error.to_string();

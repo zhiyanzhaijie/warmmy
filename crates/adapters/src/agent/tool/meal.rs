@@ -233,7 +233,6 @@ impl Tool for ProposeMealLogTool {
             "id": result.pending.id.to_string(),
             "day_cycle": result.pending.day_cycle.to_string(),
             "foods": foods_payload,
-            "nutrition": result.pending.nutrition,
             "status": "proposed",
         });
         let interaction = AgentInteractionRequest {

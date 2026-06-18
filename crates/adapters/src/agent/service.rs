@@ -3,13 +3,14 @@ use std::sync::Arc;
 use app::agents::{prompts::interaction::interaction_continuation_prompt, MemoryStore};
 use app::app_error::AppResult;
 use app::conversation::{
-    ChatMessageRepositoryPort, ContinueInteractionCommand, ConversationAgentPort,
-    ConversationReplyStream, ConversationUserInput, EphemeralImageStorePort,
-    SendUserMessageCommand, SendUserMessageResult,
+    AgentStatusKind, ChatMessageRepositoryPort, ContinueInteractionCommand, ConversationAgentPort,
+    ConversationReplyStream, ConversationStreamEvent, ConversationUserInput,
+    EphemeralImageStorePort, SendUserMessageCommand, SendUserMessageResult,
 };
 use app::meal::MealCommandHandler;
 use app::user::{UserAIConfigQueryHandler, UserDietaryContextQueryHandler};
 use async_trait::async_trait;
+use crate::agent::runtime::events::{status_event, stream_event};
 
 use crate::agent::runtime::rig::RigConversationRuntime;
 
@@ -66,13 +67,37 @@ impl ConversationAgentPort for ConversationAgentService {
         &self,
         command: ContinueInteractionCommand,
     ) -> AppResult<ConversationReplyStream> {
+        let continuation_prompt = interaction_continuation_prompt(command.interaction.clone());
+        let is_pending_continuation = matches!(
+            command.interaction,
+            app::conversation::AgentInteractionContinuation::ConfirmMealLog { .. }
+                | app::conversation::AgentInteractionContinuation::RejectMealLog { .. }
+        );
+        if is_pending_continuation {
+            let result = self
+                .runtime
+                .complete(
+                    &command.user_id,
+                    &command.session_id,
+                    ConversationUserInput::text_only(continuation_prompt),
+                )
+                .await?;
+            let reply = result.reply;
+            let s = async_stream::stream! {
+                yield Ok(status_event(AgentStatusKind::CallingModel, "我在执行这次确认操作。"));
+                if !reply.trim().is_empty() {
+                    yield Ok(stream_event(ConversationStreamEvent::TextDelta { text: reply }));
+                }
+                yield Ok(stream_event(ConversationStreamEvent::Done));
+            };
+            return Ok(Box::pin(s));
+        }
+
         self.runtime
             .stream(
                 &command.user_id,
                 &command.session_id,
-                ConversationUserInput::text_only(interaction_continuation_prompt(
-                    command.interaction,
-                )),
+                ConversationUserInput::text_only(continuation_prompt),
             )
             .await
     }
