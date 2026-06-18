@@ -61,11 +61,24 @@ pub fn TravelDetailBlock(summary_id: String) -> Element {
                             session_id: item.session_id.clone(),
                         }
                     } else {
-                        div { class: "rounded-xl border border-dashed border-border bg-card px-5 py-10 text-center",
-                            CalendarDays { size: 32, class: "mx-auto text-muted-foreground" }
-                            h1 { class: "mt-4 text-3xl font-semibold tracking-[-0.6px] text-foreground", "没有找到这一天" }
-                            p { class: "mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground",
-                                "这个 summary 可能还没有生成，或者当前用户下没有对应记录。"
+                        div { class: "flex h-full w-full flex-col items-center justify-center pb-20",
+                            div { class: "flex flex-col items-center",
+                                div { class: "mb-6 h-12 w-px bg-gradient-to-b from-transparent to-border" }
+
+                                div { class: "mb-6 flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background/70 text-muted-foreground",
+                                    CalendarDays { size: 12 }
+                                }
+
+                                p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground [writing-mode:vertical-rl]",
+                                    "Not found"
+                                }
+
+                                div { class: "mt-6 mb-8 h-12 w-px bg-gradient-to-b from-border to-transparent" }
+
+                                h2 { class: "text-lg font-medium tracking-[-0.3px] text-foreground", "没有找到这一天" }
+                                p { class: "mt-2 max-w-[16rem] text-center text-sm leading-relaxed text-muted-foreground",
+                                    "这个 summary 可能还没有生成，或者当前用户下没有对应记录。"
+                                }
                             }
                         }
                     }
@@ -189,8 +202,16 @@ fn MealLogsSection(user_id: String, session_id: String) -> Element {
                     }
                 }
             } else if logs.is_empty() {
-                div { class: "mt-5 rounded-lg border border-dashed border-border bg-background px-4 py-8 text-center text-sm text-muted-foreground",
-                    "这一天还没有保存的 meal log。"
+                div { class: "mt-5 flex flex-col items-center justify-center py-10 text-center",
+                    div { class: "flex h-6 w-6 items-center justify-center rounded-full border border-border bg-background/70 text-muted-foreground",
+                        ListChecks { size: 12 }
+                    }
+                    p { class: "mt-4 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground",
+                        "Empty logs"
+                    }
+                    p { class: "mt-2 text-sm text-muted-foreground",
+                        "这一天还没有保存的 meal log。"
+                    }
                 }
             } else {
                 div { class: "mt-5 grid grid-cols-1 gap-3",

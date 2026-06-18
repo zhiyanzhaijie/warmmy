@@ -72,8 +72,8 @@ pub fn TravelListBlock() -> Element {
 
     rsx! {
         div { class: "relative h-full min-h-0 overflow-y-auto px-4 py-4 pb-28 md:px-8 md:py-8 md:pb-12",
-            div { class: "relative mx-auto w-full max-w-2xl",
-                section { class: "min-h-0 pr-16 md:pr-28",
+            div { class: "relative mx-auto flex min-h-full w-full max-w-2xl flex-col",
+                section { class: "flex min-h-0 flex-1 flex-col",
                     if !error.is_empty() {
                         div { class: "rounded-xl border border-border bg-card px-4 py-3 text-sm text-destructive",
                             "{error}"
@@ -588,11 +588,23 @@ fn TimelineSkeleton() -> Element {
 #[component]
 fn EmptyTimeline() -> Element {
     rsx! {
-        div { class: "rounded-2xl border border-dashed border-border bg-card/70 px-5 py-12 text-center",
-            CalendarDays { size: 32, class: "mx-auto text-muted-foreground" }
-            h2 { class: "mt-4 text-3xl font-semibold tracking-[-0.6px] text-foreground", "还没有旅程记录" }
-            p { class: "mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground",
-                "在 chat 中完成某一天的餐食敲定和 summary 后，它会出现在这里。"
+        div { class: "flex flex-1 flex-col items-center justify-center pb-20",
+            div { class: "flex flex-col items-center",
+                div { class: "mb-6 text-muted-foreground",
+                    Tent { size: 32 }
+                }
+
+                h2 { class: "text-2xl font-semibold tracking-[-0.6px] text-foreground", "暂无旅程" }
+                
+                div { class: "my-6 h-12 w-px bg-gradient-to-b from-border to-transparent" }
+                
+                p { class: "text-[11px] font-semibold tracking-[0.22em] text-muted-foreground [writing-mode:vertical-rl]",
+                    "出发"
+                }
+
+                p { class: "mt-8 max-w-[16rem] text-center text-sm leading-relaxed text-muted-foreground",
+                    "在 chat 中完成某一天的 summary 后，它会在这里化作你的第一座山峰。"
+                }
             }
         }
     }
