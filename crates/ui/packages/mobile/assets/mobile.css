@@ -16,7 +16,6 @@
     --color-black: #000;
     --color-white: #fff;
     --spacing: 0.25rem;
-    --container-md: 28rem;
     --container-xl: 36rem;
     --container-2xl: 42rem;
     --container-3xl: 48rem;
@@ -320,6 +319,9 @@
   .mx-auto {
     margin-inline: auto;
   }
+  .my-6 {
+    margin-block: calc(var(--spacing) * 6);
+  }
   .mt-0\.5 {
     margin-top: calc(var(--spacing) * 0.5);
   }
@@ -340,6 +342,9 @@
   }
   .mt-5 {
     margin-top: calc(var(--spacing) * 5);
+  }
+  .mt-6 {
+    margin-top: calc(var(--spacing) * 6);
   }
   .mt-8 {
     margin-top: calc(var(--spacing) * 8);
@@ -364,6 +369,9 @@
   }
   .mb-6 {
     margin-bottom: calc(var(--spacing) * 6);
+  }
+  .mb-8 {
+    margin-bottom: calc(var(--spacing) * 8);
   }
   .mb-12 {
     margin-bottom: calc(var(--spacing) * 12);
@@ -431,6 +439,9 @@
   .h-5 {
     height: calc(var(--spacing) * 5);
   }
+  .h-6 {
+    height: calc(var(--spacing) * 6);
+  }
   .h-8 {
     height: calc(var(--spacing) * 8);
   }
@@ -482,9 +493,6 @@
   .h-full {
     height: 100%;
   }
-  .h-px {
-    height: 1px;
-  }
   .max-h-0 {
     max-height: calc(var(--spacing) * 0);
   }
@@ -530,6 +538,9 @@
   .min-h-\[212px\] {
     min-height: 212px;
   }
+  .min-h-full {
+    min-height: 100%;
+  }
   .\!w-8 {
     width: calc(var(--spacing) * 8) !important;
   }
@@ -538,6 +549,9 @@
   }
   .w-5 {
     width: calc(var(--spacing) * 5);
+  }
+  .w-6 {
+    width: calc(var(--spacing) * 6);
   }
   .w-8 {
     width: calc(var(--spacing) * 8);
@@ -596,6 +610,9 @@
   .w-full {
     width: 100%;
   }
+  .w-px {
+    width: 1px;
+  }
   .max-w-2xl {
     max-width: var(--container-2xl);
   }
@@ -610,6 +627,9 @@
   }
   .max-w-6xl {
     max-width: var(--container-6xl);
+  }
+  .max-w-\[16rem\] {
+    max-width: 16rem;
   }
   .max-w-\[17rem\] {
     max-width: 17rem;
@@ -631,9 +651,6 @@
   }
   .max-w-full {
     max-width: 100%;
-  }
-  .max-w-md {
-    max-width: var(--container-md);
   }
   .max-w-none {
     max-width: none;
@@ -1106,6 +1123,26 @@
   .bg-zinc-500 {
     background-color: var(--color-zinc-500);
   }
+  .bg-gradient-to-b {
+    --tw-gradient-position: to bottom in oklab;
+    background-image: linear-gradient(var(--tw-gradient-stops));
+  }
+  .from-border {
+    --tw-gradient-from: var(--border);
+    --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
+  }
+  .from-transparent {
+    --tw-gradient-from: transparent;
+    --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
+  }
+  .to-border {
+    --tw-gradient-to: var(--border);
+    --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
+  }
+  .to-transparent {
+    --tw-gradient-to: transparent;
+    --tw-gradient-stops: var(--tw-gradient-via-stops, var(--tw-gradient-position), var(--tw-gradient-from) var(--tw-gradient-from-position), var(--tw-gradient-to) var(--tw-gradient-to-position));
+  }
   .object-contain {
     object-fit: contain;
   }
@@ -1202,9 +1239,6 @@
   .py-10 {
     padding-block: calc(var(--spacing) * 10);
   }
-  .py-12 {
-    padding-block: calc(var(--spacing) * 12);
-  }
   .pt-1 {
     padding-top: calc(var(--spacing) * 1);
   }
@@ -1238,9 +1272,6 @@
   .pr-10 {
     padding-right: calc(var(--spacing) * 10);
   }
-  .pr-16 {
-    padding-right: calc(var(--spacing) * 16);
-  }
   .pb-0 {
     padding-bottom: calc(var(--spacing) * 0);
   }
@@ -1255,6 +1286,9 @@
   }
   .pb-6 {
     padding-bottom: calc(var(--spacing) * 6);
+  }
+  .pb-20 {
+    padding-bottom: calc(var(--spacing) * 20);
   }
   .pb-28 {
     padding-bottom: calc(var(--spacing) * 28);
@@ -1390,6 +1424,10 @@
   .tracking-\[-0\.2px\] {
     --tw-tracking: -0.2px;
     letter-spacing: -0.2px;
+  }
+  .tracking-\[-0\.3px\] {
+    --tw-tracking: -0.3px;
+    letter-spacing: -0.3px;
   }
   .tracking-\[-0\.4px\] {
     --tw-tracking: -0.4px;
@@ -2301,11 +2339,6 @@
       padding-right: calc(var(--spacing) * 4);
     }
   }
-  .md\:pr-28 {
-    @media (width >= 48rem) {
-      padding-right: calc(var(--spacing) * 28);
-    }
-  }
   .md\:pb-5 {
     @media (width >= 48rem) {
       padding-bottom: calc(var(--spacing) * 5);
@@ -2525,13 +2558,13 @@ html[data-theme="light"] [class~="dxc-system"] {
   --primary-color-5: #eceae4;
   --primary-color-6: rgba(28, 28, 28, 0.08);
   --primary-color-7: rgba(28, 28, 28, 0.4);
-  --secondary-color: #3b362f;
-  --secondary-color-1: #3b362f;
-  --secondary-color-2: #3b362f;
-  --secondary-color-3: rgba(59, 54, 47, 0.83);
-  --secondary-color-4: rgba(59, 54, 47, 0.82);
-  --secondary-color-5: #6b6357;
-  --secondary-color-6: rgba(59, 54, 47, 0.4);
+  --secondary-color: #1c1c1c;
+  --secondary-color-1: #1c1c1c;
+  --secondary-color-2: #1c1c1c;
+  --secondary-color-3: rgba(28, 28, 28, 0.83);
+  --secondary-color-4: rgba(28, 28, 28, 0.82);
+  --secondary-color-5: #5f5f5d;
+  --secondary-color-6: rgba(28, 28, 28, 0.4);
   --focused-border-color: rgba(59, 130, 246, 0.5);
   --primary-success-color: #ecfdf5;
   --secondary-success-color: #0f7a4d;
@@ -2637,13 +2670,13 @@ html[data-theme="light"] [class~="dxc-system"] {
     --primary-color-5: rgba(247, 244, 237, 0.14);
     --primary-color-6: rgba(247, 244, 237, 0.16);
     --primary-color-7: rgba(247, 244, 237, 0.42);
-    --secondary-color: #d1ccbf;
+    --secondary-color: #f7f4ed;
     --secondary-color-1: #fcfbf8;
-    --secondary-color-2: #d1ccbf;
-    --secondary-color-3: rgba(209, 204, 191, 0.84);
-    --secondary-color-4: rgba(209, 204, 191, 0.78);
-    --secondary-color-5: rgba(209, 204, 191, 0.58);
-    --secondary-color-6: rgba(209, 204, 191, 0.42);
+    --secondary-color-2: #f7f4ed;
+    --secondary-color-3: rgba(247, 244, 237, 0.84);
+    --secondary-color-4: rgba(247, 244, 237, 0.78);
+    --secondary-color-5: rgba(247, 244, 237, 0.58);
+    --secondary-color-6: rgba(247, 244, 237, 0.42);
     --background: var(--primary-color);
     --foreground: var(--secondary-color);
     --card: var(--primary-color-1);
@@ -2678,13 +2711,13 @@ html[data-theme="dark"] {
   --primary-color-5: rgba(247, 244, 237, 0.14);
   --primary-color-6: rgba(247, 244, 237, 0.16);
   --primary-color-7: rgba(247, 244, 237, 0.42);
-  --secondary-color: #d1ccbf;
+  --secondary-color: #f7f4ed;
   --secondary-color-1: #fcfbf8;
-  --secondary-color-2: #d1ccbf;
-  --secondary-color-3: rgba(209, 204, 191, 0.84);
-  --secondary-color-4: rgba(209, 204, 191, 0.78);
-  --secondary-color-5: rgba(209, 204, 191, 0.58);
-  --secondary-color-6: rgba(209, 204, 191, 0.42);
+  --secondary-color-2: #f7f4ed;
+  --secondary-color-3: rgba(247, 244, 237, 0.84);
+  --secondary-color-4: rgba(247, 244, 237, 0.78);
+  --secondary-color-5: rgba(247, 244, 237, 0.58);
+  --secondary-color-6: rgba(247, 244, 237, 0.42);
   --background: var(--primary-color);
   --foreground: var(--secondary-color);
   --card: var(--primary-color-1);
@@ -2776,6 +2809,48 @@ html[data-theme="dark"] {
   syntax: "*";
   inherits: false;
   initial-value: solid;
+}
+@property --tw-gradient-position {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-gradient-from {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #0000;
+}
+@property --tw-gradient-via {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #0000;
+}
+@property --tw-gradient-to {
+  syntax: "<color>";
+  inherits: false;
+  initial-value: #0000;
+}
+@property --tw-gradient-stops {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-gradient-via-stops {
+  syntax: "*";
+  inherits: false;
+}
+@property --tw-gradient-from-position {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 0%;
+}
+@property --tw-gradient-via-position {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 50%;
+}
+@property --tw-gradient-to-position {
+  syntax: "<length-percentage>";
+  inherits: false;
+  initial-value: 100%;
 }
 @property --tw-leading {
   syntax: "*";
@@ -2980,6 +3055,15 @@ html[data-theme="dark"] {
       --tw-skew-y: initial;
       --tw-space-y-reverse: 0;
       --tw-border-style: solid;
+      --tw-gradient-position: initial;
+      --tw-gradient-from: #0000;
+      --tw-gradient-via: #0000;
+      --tw-gradient-to: #0000;
+      --tw-gradient-stops: initial;
+      --tw-gradient-via-stops: initial;
+      --tw-gradient-from-position: 0%;
+      --tw-gradient-via-position: 50%;
+      --tw-gradient-to-position: 100%;
       --tw-leading: initial;
       --tw-font-weight: initial;
       --tw-tracking: initial;
