@@ -24,6 +24,7 @@ const PROVIDER_KIND_OPTIONS: &[ChoiceOption] = &[
     ChoiceOption::new("doubao", "Doubao"),
     ChoiceOption::new("openai_compatible", "兼容接口"),
 ];
+const FIXED_EMBEDDING_NDIMS: usize = 2048;
 
 #[derive(Clone, Copy, PartialEq)]
 struct ModelTypeInfo {
@@ -35,7 +36,6 @@ struct ModelTypeInfo {
     default_name: &'static str,
     default_base_url: &'static str,
     model_placeholder: &'static str,
-    show_embedding_ndims: bool,
 }
 
 const MODEL_TYPES: [ModelTypeInfo; 3] = [
@@ -48,7 +48,6 @@ const MODEL_TYPES: [ModelTypeInfo; 3] = [
         default_name: "DeepSeek",
         default_base_url: "https://api.deepseek.com",
         model_placeholder: "deepseek-chat / qwen3.7-plus / gpt-4.1-mini",
-        show_embedding_ndims: false,
     },
     ModelTypeInfo {
         capability: "embedding",
@@ -59,7 +58,6 @@ const MODEL_TYPES: [ModelTypeInfo; 3] = [
         default_name: "SiliconFlow",
         default_base_url: "https://api.siliconflow.cn/v1",
         model_placeholder: "BAAI/bge-m3",
-        show_embedding_ndims: true,
     },
     ModelTypeInfo {
         capability: "vision",
@@ -70,7 +68,6 @@ const MODEL_TYPES: [ModelTypeInfo; 3] = [
         default_name: "OpenAI Vision",
         default_base_url: "https://api.openai.com/v1",
         model_placeholder: "qwen3.7-plus / gpt-4.1-mini / gpt-4o-mini",
-        show_embedding_ndims: false,
     },
 ];
 
@@ -85,7 +82,6 @@ struct ModelEditorDraft {
     provider_enabled: bool,
     route_id: String,
     route_model: String,
-    route_embedding_ndims: String,
     route_enabled: bool,
 }
 
@@ -712,8 +708,8 @@ fn ModelEditorDialog(
                     if next_provider_id.trim().is_empty() {
                         on_message_for_save.call("保存失败：未找到刚保存的供应商".to_string());
                     } else {
-                        let ndims = if info.show_embedding_ndims {
-                            snapshot.route_embedding_ndims.trim().parse::<usize>().ok()
+                        let ndims = if snapshot.capability == "embedding" {
+                            Some(FIXED_EMBEDDING_NDIMS)
                         } else {
                             None
                         };
@@ -892,22 +888,6 @@ fn ModelEditorDialog(
                                     oninput: move |e: FormEvent| {
                                         draft.with_mut(|next| next.route_model = e.value());
                                     },
-                                }
-                            }
-                            if info.show_embedding_ndims {
-                                label { class: "flex flex-col gap-2",
-                                    span { class: "flex items-center gap-2 text-sm font-medium text-foreground",
-                                        Database { size: 16 }
-                                        "Embedding dims"
-                                    }
-                                    Input {
-                                        class: "rounded-md border border-border bg-card px-3 py-2.5 text-sm shadow-none transition-all hover:border-foreground/20 focus:border-foreground/40 focus:ring-4 focus:ring-foreground/5",
-                                        value: current.route_embedding_ndims.clone(),
-                                        placeholder: "例如 1024",
-                                        oninput: move |e: FormEvent| {
-                                            draft.with_mut(|next| next.route_embedding_ndims = e.value());
-                                        },
-                                    }
                                 }
                             }
                         }
@@ -1201,7 +1181,6 @@ fn new_editor_draft(info: ModelTypeInfo) -> ModelEditorDraft {
         provider_enabled: true,
         route_id: String::new(),
         route_model: String::new(),
-        route_embedding_ndims: "1024".to_string(),
         route_enabled: true,
     }
 }
@@ -1249,11 +1228,6 @@ fn editor_draft_from_pick(picked: &ModelRoutePick) -> ModelEditorDraft {
             .unwrap_or(true),
         route_id: picked.route.id.clone(),
         route_model: picked.route.model.clone(),
-        route_embedding_ndims: picked
-            .route
-            .embedding_ndims
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "1024".to_string()),
         route_enabled: picked.route.enabled,
     }
 }
