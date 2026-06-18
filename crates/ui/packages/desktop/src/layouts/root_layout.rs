@@ -3,6 +3,7 @@ use crate::components::sidebar::{
     SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuButtonSize,
     SidebarMenuItem, SidebarProvider, SidebarRail, SidebarTrigger, SidebarVariant,
 };
+use crate::components::titlebar::WindowTitlebar;
 use crate::Route;
 use dioxus::prelude::*;
 use dioxus_icons::lucide::{House, Map, MessageCircle, Settings, User};
@@ -10,20 +11,25 @@ use dioxus_icons::lucide::{House, Map, MessageCircle, Settings, User};
 #[component]
 pub fn RootLayout() -> Element {
     rsx! {
-        SidebarProvider {
-            class: "bg-background text-foreground font-sans",
-            Sidebar {
-                variant: SidebarVariant::Sidebar,
-                collapsible: SidebarCollapsible::Icon,
-                AppSidebarHeader {}
-                AppSidebarContent {}
-                AppSidebarFooter {}
-                SidebarRail {}
-            }
-            SidebarInset {
-                class: "min-w-0 bg-background m-0",
-                div { class: "min-h-0 flex-1 overflow-hidden",
-                    Outlet::<Route> {}
+        div { class: "h-screen min-h-0 flex flex-col bg-background text-foreground font-sans",
+            WindowTitlebar {}
+            div { class: "min-h-0 flex-1",
+                SidebarProvider {
+                    class: "h-full bg-background text-foreground font-sans",
+                    Sidebar {
+                        variant: SidebarVariant::Sidebar,
+                        collapsible: SidebarCollapsible::Icon,
+                        AppSidebarHeader {}
+                        AppSidebarContent {}
+                        AppSidebarFooter {}
+                        SidebarRail {}
+                    }
+                    SidebarInset {
+                        class: "min-w-0 bg-background m-0",
+                        div { class: "min-h-0 flex-1 overflow-hidden",
+                            Outlet::<Route> {}
+                        }
+                    }
                 }
             }
         }

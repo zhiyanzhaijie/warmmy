@@ -3,9 +3,10 @@
 
 @source "./src/**/*.{rs,html,css}";
 @source "../ui/src/**/*.{rs,html,css}";
+@source "../ui/assets/**/*.css";
 
 @layer utilities {
-  @media (width >= 48rem) {
+  @media (width >=48rem) {
     .md\:p-8 {
       padding: calc(var(--spacing) * 5);
     }

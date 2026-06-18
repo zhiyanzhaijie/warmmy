@@ -4,4 +4,5 @@ pub mod separator;
 pub mod sheet;
 pub mod sidebar;
 pub mod skeleton;
+pub mod titlebar;
 pub mod tooltip;

@@ -1,4 +1,8 @@
 use dioxus::prelude::*;
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+use dioxus::desktop::tao::platform::macos::WindowBuilderExtMacOS;
+#[cfg(feature = "desktop")]
+use dioxus::desktop::tao::dpi::LogicalSize;
 use ui::providers::{use_chat_context_value, AppProviders};
 use ui::views::{
     ChatDetailView, HomeView, MeCompanionsView, MeDietPreferenceView, MeHealthExpectationView,
@@ -40,7 +44,39 @@ enum Route {
 
 fn main() {
     let _ = dioxus::logger::init(dioxus::logger::tracing::Level::INFO);
-    dioxus::launch(App);
+
+    #[cfg(feature = "desktop")]
+    {
+        let mut window = dioxus::desktop::WindowBuilder::new()
+            .with_title("Warmmy")
+            .with_resizable(true)
+            .with_inner_size(LogicalSize::new(1280.0, 820.0));
+
+        #[cfg(target_os = "macos")]
+        {
+            window = window
+                .with_title_hidden(true)
+                .with_titlebar_transparent(true)
+                .with_fullsize_content_view(true);
+        }
+
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        {
+            window = window.with_decorations(false);
+        }
+
+        let config = dioxus::desktop::Config::new().with_window(window);
+
+        dioxus::LaunchBuilder::desktop()
+            .with_cfg(config)
+            .launch(App);
+        return;
+    }
+
+    #[cfg(not(feature = "desktop"))]
+    {
+        dioxus::launch(App);
+    }
 }
 
 #[component]
