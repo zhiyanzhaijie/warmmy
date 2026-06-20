@@ -1,0 +1,5 @@
+[database]
+url = "sqlite://data/warmmy.db"
+
+[rag]
+top_k = 3
