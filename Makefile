@@ -59,7 +59,7 @@ ensure-profiles:
 	@TEAM_ID="$(IOS_TEAM_ID)" APP_BUNDLE_ID="$(IOS_BUNDLE_ID)" bash scripts/check-profiles.sh > /dev/null 2>&1 || TEAM_ID="$(IOS_TEAM_ID)" APP_BUNDLE_ID="$(IOS_BUNDLE_ID)" bash scripts/renew-profiles.sh
 
 android-release:
-	cd $(UI_DIR) && APP_ENV=production dx bundle -p warmmy-mobile --android --release --package-types apk
+	cd $(UI_DIR) && APP_ENV=production dx bundle -p warmmy-mobile --android --release --target aarch64-linux-android --package-types apk --verbose
 	@ANDROID_MAIN_DIR="$(UI_DIR)/target/dx/warmmy-mobile/release/android/app/app/src/main" ICON_SOURCE="$(UI_DIR)/packages/ui/assets/app-icon.png" bash scripts/patch-android-icons.sh
 	@cd $(UI_DIR)/target/dx/warmmy-mobile/release/android/app && ./gradlew :app:assembleDebug >/dev/null
 	@mkdir -p dist
@@ -67,13 +67,13 @@ android-release:
 	@echo "Android release build saved to: dist/warmmy-v$(VERSION)-android.apk"
 
 desktop-mac-release:
-	cd $(UI_DIR) && APP_ENV=production dx bundle -p warmmy --macos --release --package-types dmg
+	cd $(UI_DIR) && APP_ENV=production dx bundle -p warmmy --macos --release --package-types dmg --verbose
 	@mkdir -p dist
 	@find $(UI_DIR)/target/dx/warmmy -name "*.dmg" -exec cp {} dist/warmmy-v$(VERSION)-macos.dmg \;
 	@echo "macOS release build saved to: dist/warmmy-v$(VERSION)-macos.dmg"
 
 desktop-window-release:
-	cd $(UI_DIR) && APP_ENV=production dx bundle -p warmmy --windows --release --package-types msi
+	cd $(UI_DIR) && APP_ENV=production dx bundle -p warmmy --windows --release --package-types msi --verbose
 	@mkdir -p dist
 	@find $(UI_DIR)/target/dx/warmmy -name "*.msi" -exec cp {} dist/warmmy-v$(VERSION)-windows.msi \;
 	@echo "Windows release build saved to: dist/warmmy-v$(VERSION)-windows.msi"

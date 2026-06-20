@@ -16,8 +16,26 @@ if [[ ! -d "${RES_DIR}" ]]; then
   exit 1
 fi
 
-command -v sips >/dev/null 2>&1 || {
-  echo "sips is required to generate Android launcher icons" >&2
+resize_icon() {
+  local size="$1"
+  local out="$2"
+
+  if command -v magick >/dev/null 2>&1; then
+    magick "${ICON_SOURCE}" -resize "${size}x${size}" "${out}"
+    return
+  fi
+
+  if command -v convert >/dev/null 2>&1; then
+    convert "${ICON_SOURCE}" -resize "${size}x${size}" "${out}"
+    return
+  fi
+
+  if command -v sips >/dev/null 2>&1; then
+    sips -s format png -z "${size}" "${size}" "${ICON_SOURCE}" --out "${out}" >/dev/null
+    return
+  fi
+
+  echo "ImageMagick or sips is required to generate Android launcher icons" >&2
   exit 1
 }
 
@@ -36,6 +54,5 @@ do
   size="${entry#* }"
   mkdir -p "${RES_DIR}/${dir}"
   rm -f "${RES_DIR}/${dir}/ic_launcher.webp"
-  sips -s format png -z "${size}" "${size}" "${ICON_SOURCE}" --out "${RES_DIR}/${dir}/ic_launcher.png" >/dev/null
+  resize_icon "${size}" "${RES_DIR}/${dir}/ic_launcher.png"
 done
-
