@@ -1,0 +1,132 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 0.1.0"
+        required: true
+      prerelease:
+        description: "Mark as prerelease"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  DX_VERSION: 0.7.9
+  RELEASE_VERSION: ${{ inputs.version }}
+
+jobs:
+  macos:
+    name: macOS DMG
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install Dioxus CLI
+        run: cargo binstall dioxus-cli --version "$DX_VERSION" --no-confirm
+
+      - name: Build macOS bundle
+        run: make desktop-mac-release VERSION="$RELEASE_VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: warmmy-macos
+          path: dist/warmmy-v*-macos.dmg
+
+  windows:
+    name: Windows MSI
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install Make
+        shell: pwsh
+        run: choco install make -y
+
+      - name: Install Dioxus CLI
+        shell: bash
+        run: cargo binstall dioxus-cli --version "$DX_VERSION" --no-confirm
+
+      - name: Build Windows bundle
+        shell: bash
+        run: make desktop-win-release VERSION="$RELEASE_VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: warmmy-windows
+          path: dist/warmmy-v*-windows.msi
+
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: cargo-bins/cargo-binstall@main
+
+      - name: Install Dioxus CLI
+        run: cargo binstall dioxus-cli --version "$DX_VERSION" --no-confirm
+
+      - name: Build Android bundle
+        run: make android-release VERSION="$RELEASE_VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: warmmy-android
+          path: dist/warmmy-v*-android.apk
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - macos
+      - windows
+      - android
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          gh release create "$TAG" artifacts/* \
+            --title "Warmmy $TAG" \
+            --notes "Warmmy $TAG" \
+            "${args[@]}"
