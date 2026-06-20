@@ -16,7 +16,7 @@ pub struct DatabaseConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RagSettings {
-    #[serde(default = "default_lancedb_path")]
+    #[serde(skip)]
     pub lancedb_path: String,
     #[serde(default = "default_rag_top_k")]
     pub top_k: usize,
@@ -25,7 +25,7 @@ pub struct RagSettings {
 impl Default for RagSettings {
     fn default() -> Self {
         Self {
-            lancedb_path: default_lancedb_path(),
+            lancedb_path: String::new(),
             top_k: default_rag_top_k(),
         }
     }
@@ -60,12 +60,15 @@ impl Config {
 
     fn normalize_local_paths(&mut self) {
         let Some(data_dir) = app_data_dir() else {
+            self.rag.lancedb_path = fixed_lancedb_path(Path::new("."))
+                .to_string_lossy()
+                .to_string();
             ensure_parent_dir(Path::new(&self.rag.lancedb_path));
             ensure_sqlite_parent_dir(&self.database.url);
             return;
         };
 
-        self.rag.lancedb_path = normalize_path(&self.rag.lancedb_path, &data_dir)
+        self.rag.lancedb_path = fixed_lancedb_path(&data_dir)
             .to_string_lossy()
             .to_string();
         ensure_parent_dir(Path::new(&self.rag.lancedb_path));
@@ -75,8 +78,8 @@ impl Config {
     }
 }
 
-fn default_lancedb_path() -> String {
-    "data/lancedb-store".to_string()
+fn fixed_lancedb_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("vectordb")
 }
 
 fn default_rag_top_k() -> usize {
@@ -86,7 +89,7 @@ fn default_rag_top_k() -> usize {
 #[cfg(any(target_os = "ios", target_os = "android"))]
 fn embedded_config_toml(env: &str) -> &'static str {
     match env {
-        "mobile" => include_str!("toml/mobile.toml"),
+        "production" => include_str!("toml/production.toml"),
         "development" => include_str!("toml/development.toml"),
         _ => include_str!("toml/development.toml"),
     }

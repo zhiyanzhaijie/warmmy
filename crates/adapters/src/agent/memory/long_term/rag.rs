@@ -67,7 +67,7 @@ impl RagConfig {
 pub type OpenAiCompatibleRagIndex = WarmmyLanceDbVectorIndex;
 
 pub struct WarmmyLanceDbVectorIndex {
-    table: lancedb::Table,
+    table: Option<lancedb::Table>,
     config: RagConfig,
 }
 
@@ -124,7 +124,7 @@ impl SearchFilter for LanceDbFilter {
 
 pub async fn build_rag_index(config: &RagConfig) -> AppResult<OpenAiCompatibleRagIndex> {
     config.validate()?;
-    let table = open_or_create_table(config).await?;
+    let table = open_table_if_present(config).await?;
     Ok(WarmmyLanceDbVectorIndex {
         table,
         config: config.clone(),
@@ -150,6 +150,18 @@ async fn open_or_create_table(config: &RagConfig) -> AppResult<lancedb::Table> {
     match db.open_table(TABLE_NAME).execute().await {
         Ok(table) => Ok(table),
         Err(lancedb::Error::TableNotFound { .. }) => create_empty_memory_table(&db, config).await,
+        Err(err) => Err(AppError::database(err.to_string())),
+    }
+}
+
+async fn open_table_if_present(config: &RagConfig) -> AppResult<Option<lancedb::Table>> {
+    let db = lancedb::connect(&config.lancedb_path)
+        .execute()
+        .await
+        .map_err(|e| AppError::database(e.to_string()))?;
+    match db.open_table(TABLE_NAME).execute().await {
+        Ok(table) => Ok(Some(table)),
+        Err(lancedb::Error::TableNotFound { .. }) => Ok(None),
         Err(err) => Err(AppError::database(err.to_string())),
     }
 }
@@ -291,7 +303,10 @@ impl VectorStoreIndex for WarmmyLanceDbVectorIndex {
         &self,
         req: VectorSearchRequest<Self::Filter>,
     ) -> Result<Vec<(f64, String, T)>, VectorStoreError> {
-        let table = &self.table;
+        let Some(table) = self.table.as_ref() else {
+            tracing::info!("memory rag search skipped: lancedb table missing");
+            return Ok(Vec::new());
+        };
 
         tracing::info!(
             rag.samples = req.samples(),

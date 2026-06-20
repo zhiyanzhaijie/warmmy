@@ -1,8 +1,5 @@
 [database]
 url = "sqlite://data/warmmy.db"
 
-# RAG only contains non-secret local storage settings.
-# Chat / embedding provider API keys and models are configured by the owner user in the app.
 [rag]
-lancedb_path = "data/lancedb-store"
 top_k = 3
