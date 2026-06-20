@@ -2,8 +2,8 @@ use super::types::{
     ChatSendInput, EchoResponse, SessionHistoryCursorInput, SessionHistoryCursorPage,
 };
 use crate::impls::error::api_error;
-use dioxus::fullstack::payloads::TextStream;
-use dioxus::prelude::*;
+use dioxus_fullstack::payloads::TextStream;
+use dioxus_fullstack_core::ServerFnError;
 use futures_util::StreamExt;
 
 pub async fn echo(

@@ -1,4 +1,5 @@
 use dioxus::prelude::*;
+use dioxus_fullstack::payloads::TextStream;
 use serde_json::Value;
 
 use super::state::{
@@ -381,7 +382,7 @@ pub fn append_streaming_bot_slot(mut chat_state: ChatContext, session_id: String
 
 pub async fn append_agent_stream(
     mut chat_state: ChatContext,
-    mut stream: dioxus::fullstack::payloads::TextStream,
+    mut stream: TextStream,
     bot_id: u64,
     session_id: String,
 ) {
@@ -626,4 +627,3 @@ fn composer_attachments_to_message_attachments(
         })
         .collect()
 }
-

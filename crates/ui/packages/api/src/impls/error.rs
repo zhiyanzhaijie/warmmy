@@ -1,5 +1,6 @@
 use app::app_error::AppError;
-use dioxus::prelude::{ServerFnError, StatusCode};
+use dioxus_fullstack::StatusCode;
+use dioxus_fullstack_core::ServerFnError;
 
 pub fn api_error(err: AppError) -> ServerFnError {
     let status = match &err {

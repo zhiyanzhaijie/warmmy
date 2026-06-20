@@ -5,7 +5,7 @@ use super::types::{
     UserAIProviderDTO, UserAIRouteDTO, UserPreferencesDTO, UserProfileDTO,
 };
 use crate::impls::error::api_error;
-use dioxus::prelude::*;
+use dioxus_fullstack_core::ServerFnError;
 
 const DEFAULT_DISPLAY_NAME: &str = "屋主";
 

@@ -3,8 +3,8 @@ use super::types::{
     MealDayFinalizationDTO, MealDaySummaryDTO, MealRecordDTO, NutritionDTO, PendingMealLogDTO,
 };
 use crate::impls::error::api_error;
-use dioxus::fullstack::payloads::TextStream;
-use dioxus::prelude::*;
+use dioxus_fullstack::payloads::TextStream;
+use dioxus_fullstack_core::ServerFnError;
 use futures_util::StreamExt;
 
 pub async fn get_meal_day_finalization(

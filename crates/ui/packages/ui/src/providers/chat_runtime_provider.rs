@@ -6,7 +6,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use api::conversation;
-use dioxus::prelude::ServerFnError;
+use dioxus_fullstack::payloads::TextStream;
+use dioxus_fullstack_core::ServerFnError;
 
 use crate::blocks::{
     activate_chat_session, append_agent_stream, append_chat_bot_text, append_outgoing_message_pair,
@@ -289,7 +290,7 @@ async fn echo_stream_with_timeout(
     user_id: String,
     input: conversation::ChatSendInput,
     session_id: String,
-) -> Result<dioxus::fullstack::payloads::TextStream, ServerFnError> {
+) -> Result<TextStream, ServerFnError> {
     let stream = conversation::echo_stream(user_id, input, session_id);
     let timeout = sleep(CHAT_STREAM_CONNECT_TIMEOUT);
     futures_util::pin_mut!(stream);

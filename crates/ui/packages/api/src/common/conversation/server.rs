@@ -3,8 +3,9 @@ use super::types::{
 };
 use crate::impls::error::api_error;
 use crate::impls::state::State;
-use dioxus::fullstack::payloads::TextStream;
 use dioxus::prelude::*;
+use dioxus_fullstack::payloads::TextStream;
+use dioxus_fullstack_core::ServerFnError;
 use futures_util::StreamExt;
 
 #[post("/api/echo", state: State)]

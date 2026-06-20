@@ -7,6 +7,7 @@ use super::types::{
 use crate::impls::error::api_error;
 use crate::impls::state::State;
 use dioxus::prelude::*;
+use dioxus_fullstack_core::ServerFnError;
 
 const DEFAULT_DISPLAY_NAME: &str = "屋主";
 
