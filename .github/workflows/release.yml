@@ -16,6 +16,7 @@ permissions:
 
 env:
   DX_VERSION: 0.7.9
+  ANDROID_NDK_VERSION: 27.2.12479018
   RELEASE_VERSION: ${{ inputs.version }}
 
 jobs:
@@ -29,6 +30,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Install build dependencies
+        run: brew install protobuf
 
       - name: Install Dioxus CLI
         run: cargo install dioxus-cli --version "$DX_VERSION" --locked --force
@@ -58,6 +62,10 @@ jobs:
       - name: Install Make
         shell: pwsh
         run: choco install make -y
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: choco install protoc -y
 
       - name: Install Dioxus CLI
         shell: bash
@@ -89,8 +97,12 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Install Android icon tools
-        run: sudo apt-get update && sudo apt-get install -y imagemagick
+      - name: Install Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y imagemagick protobuf-compiler
+          sdkmanager "ndk;$ANDROID_NDK_VERSION"
+          echo "$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin" >> "$GITHUB_PATH"
 
       - uses: Swatinem/rust-cache@v2
 
@@ -98,9 +110,19 @@ jobs:
         run: cargo install dioxus-cli --version "$DX_VERSION" --locked --force
 
       - name: Check Android build
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.ANDROID_NDK_VERSION }}
+          CC_aarch64_linux_android: ${{ env.ANDROID_HOME }}/ndk/${{ env.ANDROID_NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+          CXX_aarch64_linux_android: ${{ env.ANDROID_HOME }}/ndk/${{ env.ANDROID_NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++
+          AR_aarch64_linux_android: ${{ env.ANDROID_HOME }}/ndk/${{ env.ANDROID_NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
         run: cargo check -p warmmy-mobile --features mobile --manifest-path crates/ui/Cargo.toml --target aarch64-linux-android
 
       - name: Build Android bundle
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.ANDROID_NDK_VERSION }}
+          CC_aarch64_linux_android: ${{ env.ANDROID_HOME }}/ndk/${{ env.ANDROID_NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang
+          CXX_aarch64_linux_android: ${{ env.ANDROID_HOME }}/ndk/${{ env.ANDROID_NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang++
+          AR_aarch64_linux_android: ${{ env.ANDROID_HOME }}/ndk/${{ env.ANDROID_NDK_VERSION }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
         run: make android-release VERSION="$RELEASE_VERSION"
 
       - uses: actions/upload-artifact@v4
