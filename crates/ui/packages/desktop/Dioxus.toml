@@ -1,7 +1,12 @@
 [application]
+name = "Warmmy屋米"
 tailwind_input = "tailwind.css"
 tailwind_output = "assets/desktop.css"
+
+[package]
+productName = "Warmmy屋米"
 
 [bundle]
 identifier = "com.zhiyanzhaijie.warmmy.desktop"
 publisher = "zhiyanzhaijie"
+icon = ["../ui/assets/app-icon.ico", "../ui/assets/app-icon.png", "../ui/assets/app-icon.icns"]

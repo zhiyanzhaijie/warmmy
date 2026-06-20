@@ -1,7 +1,12 @@
 [package]
-name = "mobile"
+name = "warmmy-mobile"
 version = "0.1.0"
 edition = "2021"
+
+[package.metadata.bundle]
+name = "Warmmy屋米"
+identifier = "com.zhiyanzhaijie.warmmy"
+icon = ["../ui/assets/app-icon.ico", "../ui/assets/app-icon.png", "../ui/assets/app-icon.icns"]
 
 [dependencies]
 dioxus = { workspace = true, features = ["router"] }

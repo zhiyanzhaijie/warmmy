@@ -1,12 +1,19 @@
 [application]
-name = "warmmy"
+name = "Warmmy屋米"
 tailwind_input = "tailwind.css"
 tailwind_output = "assets/mobile.css"
 android_main_activity = "android/MainActivity.kt"
 
+[package]
+productName = "Warmmy屋米"
+
 [bundle]
 identifier = "com.zhiyanzhaijie.warmmy"
 publisher = "zhiyanzhaijie"
+icon = ["../ui/assets/app-icon.ico", "../ui/assets/app-icon.png", "../ui/assets/app-icon.icns"]
+
+[android]
+icon = ["../ui/assets/app-icon.png"]
 
 [ios]
 deployment_target = "15.0"
