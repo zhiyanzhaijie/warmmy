@@ -33,21 +33,14 @@ impl Default for RagSettings {
 
 impl Config {
     pub fn load() -> Result<Self, ConfigError> {
-        let env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
+        let env = std::env::var("APP_ENV").unwrap_or_else(|_| default_app_env().to_string());
 
         let builder = ConfigBuilder::builder();
 
-        #[cfg(any(target_os = "ios", target_os = "android"))]
         let builder = builder.add_source(File::from_str(
             embedded_config_toml(&env),
             config::FileFormat::Toml,
         ));
-
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        let builder = {
-            let path = format!("{}/src/config/toml/{env}.toml", env!("CARGO_MANIFEST_DIR"));
-            builder.add_source(File::new(&path, config::FileFormat::Toml))
-        };
 
         let mut config: Self = builder
             .add_source(Environment::with_prefix("APP").separator("__"))
@@ -86,7 +79,14 @@ fn default_rag_top_k() -> usize {
     3
 }
 
-#[cfg(any(target_os = "ios", target_os = "android"))]
+fn default_app_env() -> &'static str {
+    if cfg!(debug_assertions) {
+        "development"
+    } else {
+        "production"
+    }
+}
+
 fn embedded_config_toml(env: &str) -> &'static str {
     match env {
         "production" => include_str!("toml/production.toml"),
