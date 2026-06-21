@@ -1,8 +1,8 @@
-use dioxus::prelude::*;
-#[cfg(all(feature = "desktop", target_os = "macos"))]
-use dioxus::desktop::tao::platform::macos::WindowBuilderExtMacOS;
 #[cfg(feature = "desktop")]
 use dioxus::desktop::tao::dpi::LogicalSize;
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+use dioxus::desktop::tao::platform::macos::WindowBuilderExtMacOS;
+use dioxus::prelude::*;
 use ui::providers::{use_chat_context_value, AppProviders};
 use ui::views::{
     ChatDetailView, HomeView, MeCompanionsView, MeDietPreferenceView, MeHealthExpectationView,
@@ -58,11 +58,6 @@ fn main() {
                 .with_title_hidden(true)
                 .with_titlebar_transparent(true)
                 .with_fullsize_content_view(true);
-        }
-
-        #[cfg(any(target_os = "linux", target_os = "windows"))]
-        {
-            window = window.with_decorations(false);
         }
 
         let config = dioxus::desktop::Config::new().with_window(window);

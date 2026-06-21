@@ -27,10 +27,10 @@ pub fn WarmmyBlock() -> Element {
                                 "Warmmy agent"
                             }
                             h1 { class: "font-doodle text-4xl font-semibold leading-none tracking-[-0.9px] text-foreground md:text-6xl md:tracking-[-1.5px]",
-                                "配置 Warmmy 的模型能力"
+                                "Warmmy 的模型能力"
                             }
                             p { class: "mt-4 max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg",
-                                "这里集中维护 Warmmy agent 使用的对话、RAG 嵌入和图像识别模型。页面不出现在主导航，只从个人页进入。"
+                                "屋米通过AI大模型获得能力。文本模型-说话围巾，向量嵌入模型-记忆背包，图像模型-好奇放大镜"
                             }
                         }
                         div { class: "flex shrink-0 gap-2",
@@ -42,7 +42,7 @@ pub fn WarmmyBlock() -> Element {
                                     nav.push("/me");
                                 },
                                 ArrowLeft { size: 16 }
-                                "返回 Me"
+                                "Me"
                             }
                             div { class: "hidden h-10 w-10 items-center justify-center rounded-full bg-foreground text-background shadow-sm sm:flex",
                                 Bot { size: 18 }

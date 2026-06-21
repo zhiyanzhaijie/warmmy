@@ -125,8 +125,8 @@ fn ChatHeader(
         div {
             class: "border-b border-border bg-card/70 backdrop-blur md:bg-card/45",
             div {
-                class: "flex items-center justify-between gap-3 px-4 py-1",
-                div { class: "flex min-w-0 items-center gap-2",
+                class: "flex min-w-0 items-center justify-between gap-3 px-4 py-1",
+                div { class: "flex min-w-0 flex-1 items-center gap-2",
                     Button {
                         variant: ButtonVariant::Ghost,
                         size: ButtonSize::IconSm,
@@ -138,10 +138,10 @@ fn ChatHeader(
                     }
                     WarmmyMascotIcon { active: is_streaming || finalizing_day }
                     div { class: "min-w-0 pl-1",
-                        p { class: "text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Conversation memory" }
+                        p { class: "truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground", "Conversation memory" }
                     }
                 }
-                div { class: "flex items-center gap-2",
+                div { class: "flex shrink-0 items-center gap-2",
                     Button {
                         variant: ButtonVariant::Ghost,
                         size: ButtonSize::Sm,
@@ -152,7 +152,7 @@ fn ChatHeader(
                         if finalizing_day { "总结中" } else { "敲定今日" }
                     }
                     span {
-                        class: "hidden rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground md:inline-flex",
+                        class: "hidden rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground xl:inline-flex",
                         "{active_session_id}"
                     }
                 }

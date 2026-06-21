@@ -7,7 +7,7 @@ use dioxus_icons::lucide::{
 
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::card::{Card, CardContent, CardHeader, CardTitle};
-use crate::components::ui::dialog::{DialogContent, DialogDescription, DialogRoot, DialogTitle};
+use crate::components::ui::dialog::{DialogContent, DialogRoot, DialogTitle};
 use crate::components::ui::input::Input;
 use crate::components::ui::popover::{PopoverContent, PopoverRoot, PopoverTrigger};
 use crate::components::ui::select::{Select, SelectOption};
@@ -42,7 +42,7 @@ const MODEL_TYPES: [ModelTypeInfo; 3] = [
     ModelTypeInfo {
         capability: "chat",
         title: "文本对话模型",
-        subtitle: "用于日常对话、饮食问答和工具调用。",
+        subtitle: "说话围巾",
         current_label: "当前对话模型",
         default_kind: "deepseek",
         default_name: "DeepSeek",
@@ -52,7 +52,7 @@ const MODEL_TYPES: [ModelTypeInfo; 3] = [
     ModelTypeInfo {
         capability: "embedding",
         title: "向量 RAG 嵌入模型",
-        subtitle: "用于长期语义记忆和相似度检索。",
+        subtitle: "记忆背包",
         current_label: "当前嵌入模型",
         default_kind: "siliconflow",
         default_name: "SiliconFlow",
@@ -62,7 +62,7 @@ const MODEL_TYPES: [ModelTypeInfo; 3] = [
     ModelTypeInfo {
         capability: "vision",
         title: "图像识别模型",
-        subtitle: "用于餐食图片、标签和截图内容识别。",
+        subtitle: "好奇放大镜",
         current_label: "当前视觉模型",
         default_kind: "openai",
         default_name: "OpenAI Vision",
@@ -184,9 +184,6 @@ pub fn AIModelBlock(user_id: String) -> Element {
                         CardTitle { class: "flex items-center gap-2 text-xl font-medium tracking-tight text-foreground",
                             BrainCircuit { size: 20 }
                             "AI 模型"
-                        }
-                        p { class: "mt-2 text-sm leading-relaxed text-muted-foreground",
-                            "按使用场景管理三类模型：文本对话、向量 RAG 嵌入和图像识别。API key 会通过现有密钥存储加密保存。"
                         }
                     }
                     div {
@@ -590,7 +587,7 @@ fn APIKeyLibraryDialog(
                             }
                         } else {
                             div { class: "rounded-2xl border border-dashed border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground",
-                                "点击 + 新增 key"
+                                "No keys"
                             }
                         }
                     }
@@ -753,9 +750,6 @@ fn ModelEditorDialog(
                             DialogTitle { class: "text-lg font-medium tracking-tight",
                                 if is_edit { "编辑模型" } else { "添加模型" }
                             }
-                            DialogDescription { class: "mt-1.5 text-sm text-muted-foreground",
-                                "配置 Provider 与模型路由"
-                            }
                         }
                         Button {
                             variant: ButtonVariant::Ghost,
@@ -826,7 +820,7 @@ fn ModelEditorDialog(
                                     Input {
                                         class: "rounded-md border border-border bg-card px-3 py-2.5 text-sm shadow-none transition-all hover:border-foreground/20 focus:border-foreground/40 focus:ring-4 focus:ring-foreground/5",
                                         value: provider_api_key(),
-                                        placeholder: "直接输入，保存时会自动创建 key",
+                                        placeholder: "sk-...",
                                         oninput: move |e: FormEvent| provider_api_key.set(e.value()),
                                     }
                                 }
@@ -894,7 +888,6 @@ fn ModelEditorDialog(
                         div { class: "grid grid-cols-1 gap-3 md:grid-cols-2",
                             SwitcherLine {
                                 label: "启用供应商".to_string(),
-                                hint: "关闭后该 Provider 不参与路由".to_string(),
                                 enabled: current.provider_enabled,
                                 on_change: move |next: bool| {
                                     draft.with_mut(|item| item.provider_enabled = next);
@@ -902,7 +895,6 @@ fn ModelEditorDialog(
                             }
                             SwitcherLine {
                                 label: "设为当前启用".to_string(),
-                                hint: "当前能力只会启用一个模型".to_string(),
                                 enabled: current.route_enabled,
                                 on_change: move |next: bool| {
                                     draft.with_mut(|item| item.route_enabled = next);
@@ -1005,7 +997,7 @@ fn ModelTypeCard(
                 if has_config {
                     "{reason} · {model}"
                 } else {
-                    "点击开始配置"
+                    "{info.subtitle}"
                 }
             }
         }
@@ -1126,23 +1118,16 @@ fn EmptyModelListCard(title: String, onclick: EventHandler<MouseEvent>) -> Eleme
                 Plus { size: 20 }
             }
             div { class: "text-base font-medium tracking-tight text-foreground", "添加第一个{title}" }
-            div { class: "mt-1.5 text-sm leading-relaxed text-muted-foreground", "填写供应商、Base URL、API key 和模型名后即可启用该类型。" }
         }
     }
 }
 
 #[component]
-fn SwitcherLine(
-    label: String,
-    hint: String,
-    enabled: bool,
-    on_change: EventHandler<bool>,
-) -> Element {
+fn SwitcherLine(label: String, enabled: bool, on_change: EventHandler<bool>) -> Element {
     rsx! {
         div { class: "flex w-full items-center justify-between rounded-xl border border-border bg-card px-5 py-4 text-left transition-colors hover:border-foreground/20",
             div { class: "min-w-0",
                 div { class: "text-sm font-medium text-foreground", "{label}" }
-                div { class: "mt-1 text-xs text-muted-foreground", "{hint}" }
             }
             div { class: "flex items-center gap-3",
                 span { class: "text-xs font-medium text-muted-foreground", if enabled { "ON" } else { "OFF" } }

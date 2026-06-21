@@ -248,8 +248,8 @@
   .top-4 {
     top: calc(var(--spacing) * 4);
   }
-  .top-6 {
-    top: calc(var(--spacing) * 6);
+  .top-5 {
+    top: calc(var(--spacing) * 5);
   }
   .top-\[2rem\] {
     top: 2rem;
@@ -440,9 +440,6 @@
   .h-8 {
     height: calc(var(--spacing) * 8);
   }
-  .h-9 {
-    height: calc(var(--spacing) * 9);
-  }
   .h-10 {
     height: calc(var(--spacing) * 10);
   }
@@ -547,9 +544,6 @@
   }
   .w-10 {
     width: calc(var(--spacing) * 10);
-  }
-  .w-11 {
-    width: calc(var(--spacing) * 11);
   }
   .w-12 {
     width: calc(var(--spacing) * 12);
@@ -724,6 +718,9 @@
   }
   .flex-col {
     flex-direction: column;
+  }
+  .flex-nowrap {
+    flex-wrap: nowrap;
   }
   .flex-wrap {
     flex-wrap: wrap;
@@ -1249,8 +1246,8 @@
   .pr-3 {
     padding-right: calc(var(--spacing) * 3);
   }
-  .pr-10 {
-    padding-right: calc(var(--spacing) * 10);
+  .pr-12 {
+    padding-right: calc(var(--spacing) * 12);
   }
   .pb-0 {
     padding-bottom: calc(var(--spacing) * 0);
@@ -1447,6 +1444,9 @@
   .whitespace-normal {
     white-space: normal;
   }
+  .whitespace-nowrap {
+    white-space: nowrap;
+  }
   .whitespace-pre-wrap {
     white-space: pre-wrap;
   }
@@ -1614,10 +1614,6 @@
   .outline-none {
     --tw-outline-style: none;
     outline-style: none;
-  }
-  .select-none {
-    -webkit-user-select: none;
-    user-select: none;
   }
   .\[writing-mode\:vertical-rl\] {
     writing-mode: vertical-rl;
@@ -1864,13 +1860,6 @@
       }
     }
   }
-  .hover\:bg-rose-500 {
-    &:hover {
-      @media (hover: hover) {
-        background-color: var(--color-rose-500);
-      }
-    }
-  }
   .hover\:\!text-destructive {
     &:hover {
       @media (hover: hover) {
@@ -1889,13 +1878,6 @@
     &:hover {
       @media (hover: hover) {
         color: var(--foreground);
-      }
-    }
-  }
-  .hover\:text-white {
-    &:hover {
-      @media (hover: hover) {
-        color: var(--color-white);
       }
     }
   }
@@ -2102,11 +2084,6 @@
   .md\:col-span-2 {
     @media (width >= 48rem) {
       grid-column: span 2 / span 2;
-    }
-  }
-  .md\:inline-flex {
-    @media (width >= 48rem) {
-      display: inline-flex;
     }
   }
   .md\:h-14 {
@@ -2431,6 +2408,11 @@
   .xl\:top-8 {
     @media (width >= 80rem) {
       top: calc(var(--spacing) * 8);
+    }
+  }
+  .xl\:inline-flex {
+    @media (width >= 80rem) {
+      display: inline-flex;
     }
   }
   .xl\:grid-cols-3 {

@@ -73,7 +73,7 @@ pub fn Button(
     children: Element,
 ) -> Element {
     let base = attributes!(button {
-        class: Styles::dx_button,
+        class: "{Styles::dx_button} inline-flex flex-nowrap items-center justify-center whitespace-nowrap",
         "data-style": variant.class(),
         "data-size": size.class(),
     });

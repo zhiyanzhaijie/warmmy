@@ -4,8 +4,7 @@ use dioxus_icons::lucide::{Globe, Palette, Sparkles};
 
 use crate::components::ui::button::{Button, ButtonSize, ButtonVariant};
 use crate::components::ui::sheet::{
-    Sheet, SheetContent, SheetContentClose, SheetDescription, SheetFooter, SheetHeader, SheetSide,
-    SheetTitle,
+    Sheet, SheetContent, SheetContentClose, SheetFooter, SheetHeader, SheetSide, SheetTitle,
 };
 use crate::hooks::use_IO;
 use crate::providers::{set_current_preferences, PreferenceContext};
@@ -162,24 +161,21 @@ pub fn SystemPreferenceBlock(
         Sheet {
             open: sheet_open(),
             on_open_change: move |open| sheet_open.set(open),
+            style: "position:fixed;inset:0;z-index:1000;background:rgb(0 0 0 / 50%);",
             SheetContent {
                 side: SheetSide::Right,
                 class: "w-[min(88vw,26rem)] max-w-none gap-0 border-l border-border bg-background p-0 text-foreground shadow-2xl",
+                style: "position:fixed;z-index:1001;top:0;right:0;bottom:0;left:auto;width:min(88vw,26rem);max-width:none;height:100dvh;display:flex;box-sizing:border-box;flex-direction:column;margin:0;transform:none;",
                 div { class: "flex h-full min-h-0 flex-col overflow-hidden",
-                    SheetHeader { class: "relative shrink-0 border-b border-border/50 px-6 pb-5 pt-6",
-                        div { class: "relative pr-10",
+                    SheetHeader { class: "relative shrink-0 border-b border-border/50 px-6 py-5",
+                        div { class: "min-w-0 pr-12",
                             p { class: "text-[11px] font-medium uppercase tracking-widest text-muted-foreground", "System" }
-                            div { class: "mt-3 flex items-center gap-3",
-                                div { class: "grid h-10 w-10 place-items-center rounded-xl border border-border bg-background text-foreground shadow-xs" ,
-                                    Palette { size: 18 }
-                                }
-                                div { class: "min-w-0",
-                                    SheetTitle { class: "text-lg font-medium tracking-tight", "系统偏好" }
-                                    SheetDescription { class: "mt-1", "把界面调成你最顺眼的样子吧。" }
-                                }
-                            }
+                            SheetTitle { class: "mt-2 truncate text-lg font-medium tracking-tight", "系统偏好" }
                         }
-                        SheetContentClose { class: "right-5 top-6 rounded-full border border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground" }
+                        SheetContentClose {
+                            class: "right-5 top-5 rounded-full border border-border text-muted-foreground transition-colors hover:border-foreground/40 hover:bg-foreground/5 hover:text-foreground",
+                            style: "position:absolute;top:1.25rem;right:1.25rem;display:inline-flex;width:2rem;height:2rem;flex-shrink:0;align-items:center;justify-content:center;padding:0;",
+                        }
                     }
 
                     div { class: "min-h-0 flex-1 overflow-y-auto px-6 py-6",
